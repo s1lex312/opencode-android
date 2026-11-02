@@ -32,6 +32,29 @@ class TarGzExtractorTest {
     }
 
     @Test
+    fun `extracts a raw tar, the way aapt2 leaves it inside the APK`() {
+        val root = File(tempDir(), "raw")
+        val bytes = TestTar.buildRaw(
+            TestTar.dir("rootfs/"),
+            TestTar.file("rootfs/bin/sh", "#!/bin/sh\n", mode = 0b111_101_101),
+            TestTar.file("rootfs/usr/local/bin/opencode", "opencode-binary"),
+        )
+
+        val stats = TarGzExtractor.extract(bytes.inputStream(), root)
+
+        assertEquals(3, stats.entries)
+        assertTrue(File(root, "rootfs/usr/local/bin/opencode").readText() == "opencode-binary")
+        assertTrue(File(root, "rootfs/bin/sh").canExecute())
+    }
+
+    @Test
+    fun `sniffs the container from the magic bytes`() {
+        assertTrue(TarGzExtractor.looksGzipped(0x1F, 0x8B))
+        assertFalse(TarGzExtractor.looksGzipped(0x72, 0x6F)) // "ro" of rootfs/... in a raw tar
+        assertFalse(TarGzExtractor.looksGzipped(-1, -1))
+    }
+
+    @Test
     fun `supports gnu long names`() {
         val longName = "rootfs/usr/" + "nested/".repeat(30) + "opencode"
         val archive = tarGz(

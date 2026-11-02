@@ -23,19 +23,12 @@ object TestTar {
 
     fun symlink(name: String, target: String): Entry = Entry(name, '2', link = target)
 
+    /** Same tar, but without the gzip wrapper — exactly what aapt2 leaves inside an APK. */
+    fun buildRaw(vararg entries: Entry): ByteArray = tar(entries.toList())
+
     fun build(vararg entries: Entry): ByteArray {
         val out = ByteArrayOutputStream()
-        GZIPOutputStream(out).use { gz ->
-            for (entry in entries) {
-                gz.write(header(entry))
-                if (entry.data.isNotEmpty()) {
-                    gz.write(entry.data)
-                    val padding = (512 - (entry.data.size % 512)) % 512
-                    if (padding > 0) gz.write(ByteArray(padding))
-                }
-            }
-            gz.write(ByteArray(1024))
-        }
+        GZIPOutputStream(out).use { gz -> gz.write(tar(entries.toList())) }
         return out.toByteArray()
     }
 
