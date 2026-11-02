@@ -1,5 +1,6 @@
 package ai.opencode.android.di
 
+import ai.opencode.android.BuildConfig
 import ai.opencode.android.data.cache.SessionCache
 import ai.opencode.android.data.repo.ServerConnectionManager
 import ai.opencode.android.data.repo.SessionRepository
@@ -42,6 +43,12 @@ class AppContainer(context: Context) {
     /** Location of the rootfs/proot bundle; `noBackupFilesDir` keeps ~300 MB out of cloud backups. */
     val envPaths: EnvPaths by lazy { EnvPaths(File(appContext.noBackupFilesDir, "opencode-env")) }
 
+    /** Gradle product flavor: `full` embeds the bundle, `lite` downloads/imports it. */
+    val flavor: String get() = BuildConfig.FLAVOR
+
+    /** True when this APK ships `assets/local-env.tar.gz` (Full build). */
+    val hasEmbeddedBundle: Boolean get() = EnvConfig.hasEmbeddedBundle(appContext)
+
     private val downloadClient by lazy { EnvConfig.downloadClient() }
 
     val provisioner: EnvProvisioner by lazy {
@@ -78,6 +85,7 @@ class AppContainer(context: Context) {
             manager = localServerManager,
             connection = connectionManager,
             scope = appScope,
+            embeddedBundle = { hasEmbeddedBundle },
         ).also { runtime ->
             connectionManager.localReadiness = { runtime.awaitReadyForClient() }
         }

@@ -22,6 +22,28 @@ android {
         vectorDrawables { useSupportLibrary = true }
     }
 
+    /**
+     * Two distribution variants share the same applicationId, so installing Full over Lite (and
+     * vice versa) is a normal update: settings, the server password and an already unpacked
+     * environment are preserved.
+     *
+     * - `full` ships the Local-mode bundle (`src/full/assets/local-env.tar.gz`, ~105 MB) and works
+     *   completely offline;
+     * - `lite` is the thin client (~19 MB): the bundle is downloaded or imported on first run.
+     */
+    flavorDimensions += "packaging"
+
+    productFlavors {
+        create("lite") {
+            dimension = "packaging"
+            versionNameSuffix = "-lite"
+        }
+        create("full") {
+            dimension = "packaging"
+            versionNameSuffix = "-full"
+        }
+    }
+
     signingConfigs {
         // Release signing is intentionally read from an untracked keystore.properties file.
         val keystorePropertiesFile = rootProject.file("keystore.properties")
@@ -67,6 +89,12 @@ android {
         buildConfig = true
     }
 
+    androidResources {
+        // The environment bundle is already gzip-compressed; storing it as-is keeps the Full APK
+        // smaller (and aapt2 otherwise tries to deflate it again, costing minutes per build).
+        noCompress += "tar.gz"
+    }
+
     packaging {
         resources {
             excludes += setOf(
@@ -86,6 +114,110 @@ android {
     lint {
         abortOnError = false
         checkReleaseBuilds = false
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Full flavor: the environment bundle
+// ---------------------------------------------------------------------------------------------
+
+/** Where the Full flavor expects the bundle (created by `:app:prepareFullBundle`). */
+val fullBundleDir = layout.projectDirectory.dir("src/full/assets")
+val fullBundleFile = fullBundleDir.file("local-env.tar.gz").asFile
+val fullBundleManifest = fullBundleDir.file("local-env.json").asFile
+val MIN_BUNDLE_BYTES = 1_000_000L
+
+fun fullBundleProblem(): String? = when {
+    !fullBundleFile.isFile -> "no file at ${fullBundleFile.path}"
+    fullBundleFile.length() < MIN_BUNDLE_BYTES ->
+        "the file at ${fullBundleFile.path} is only ${fullBundleFile.length()} bytes (the real bundle is ~105 MB)"
+    else -> null
+}
+
+/**
+ * Fails the build with an actionable message instead of silently producing a 19 MB "Full" APK.
+ */
+fun requireFullBundle(taskName: String) {
+    val problem = fullBundleProblem() ?: return
+    throw GradleException(
+        """
+        |The `full` flavor must embed the Local-mode environment bundle, but $problem.
+        |
+        |Fix it with one of:
+        |  * ./gradlew :app:prepareFullBundle   — copies the newest dist/opencode-env-*-arm64.tar.gz
+        |  * cp server/dist/opencode-env-<ver>-arm64.tar.gz app/src/full/assets/local-env.tar.gz
+        |
+        |Use `:app:assembleLiteDebug` / `:app:assembleLiteRelease` for the thin client, which never
+        |needs the bundle. (task: $taskName)
+        """.trimMargin(),
+    )
+}
+
+/** Guards every task that packages Full assets (mergeFull*Assets → APK/resource processing). */
+tasks.matching { it.name.matches(Regex("mergeFull(Debug|Release)Assets")) }.configureEach {
+    doFirst { requireFullBundle(name) }
+}
+
+/**
+ * Copies the most recent bundle into `app/src/full/assets/` and regenerates `local-env.json`
+ * (version + SHA-256 + size) so the embedded environment is verified on installation.
+ */
+tasks.register("prepareFullBundle") {
+    group = "build"
+    description = "Copies dist/opencode-env-*-arm64.tar.gz into src/full/assets/ and writes local-env.json."
+
+    doLast {
+        val projectRoot = rootProject.projectDir
+        val distDirs = listOf(projectRoot.resolve("dist"), projectRoot.resolve("server/dist"))
+        val bundle = distDirs.asSequence()
+            .flatMap { dir -> dir.listFiles().orEmpty().asSequence() }
+            .filter { it.isFile && it.name.startsWith("opencode-env-") && it.name.endsWith(".tar.gz") }
+            .maxByOrNull { it.lastModified() }
+            ?: throw GradleException(
+                "No bundle found in ${distDirs.joinToString { it.path }}. " +
+                    "Build one with server/scripts/build-rootfs.sh --mode full … (or download " +
+                    "opencode-env-*.tar.gz from the latest GitHub release).",
+            )
+
+        fullBundleFile.parentFile.mkdirs()
+        bundle.copyTo(fullBundleFile, overwrite = true)
+
+        val manifestText = distDirs.asSequence()
+            .map { it.resolve("manifest.json") }
+            .firstOrNull { it.isFile }
+            ?.readText()
+            .orEmpty()
+        val version = Regex("\"version\"\s*:\s*\"([^\"]+)\"").find(manifestText)?.groupValues?.get(1)
+            ?: Regex("opencode-env-(.+)-arm64\\.tar\\.gz").find(bundle.name)?.groupValues?.get(1)
+            ?: "unset"
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        bundle.inputStream().use { input ->
+            val buffer = ByteArray(1 shl 16)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        val sha = digest.digest().joinToString("") { "%02x".format(it) }
+
+        fullBundleManifest.writeText(
+            """
+            {
+              "version": "$version",
+              "abi": "arm64-v8a",
+              "url": "",
+              "asset": "local-env.tar.gz",
+              "sha256": "$sha",
+              "sizeBytes": ${fullBundleFile.length()},
+              "notes": "Embedded into the Full APK by ./gradlew :app:prepareFullBundle."
+            }
+            """.trimIndent() + "\n",
+        )
+        logger.lifecycle(
+            "prepareFullBundle: ${bundle.name} -> ${fullBundleFile.path} " +
+                "(${fullBundleFile.length() / 1024 / 1024} MB, version=$version, sha256=$sha)",
+        )
     }
 }
 

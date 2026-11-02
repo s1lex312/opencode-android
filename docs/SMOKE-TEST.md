@@ -78,6 +78,17 @@
 - [ ] Бинарный файл помечен «binary».
 - [ ] Пустой diff → понятное пустое состояние.
 
+## 6a. Full vs Lite (packaging)
+
+- [ ] Lite APK (`assembleLiteDebug`): размер ~19 МБ, в Setup надпись «not embedded — Lite build,
+      download or import required», Install без URL не стартует (пояснение в snackbar).
+- [ ] Lite: «Import file…» выбирает `opencode-env-*.tar.gz` → установка идёт с проверкой SHA-256,
+      без интернета.
+- [ ] Full APK (`assembleFullDebug`, bundle внутри): размер > 120 МБ, в Setup «embedded in this APK
+      (offline)», при первом запуске прогресс «Environment is built into this APK. Unpacking…».
+- [ ] Full на устройстве **в авиарежиме**: распаковка проходит, сервер стартует, сессия создаётся.
+- [ ] Full → Lite (и обратно) ставятся как обновление, настройки и окружение не теряются.
+
 ## 7. Local mode: провижининг и встроенный сервер (arm64)
 
 Подготовка: соберите bundle (`server/scripts/build-rootfs.sh --mode full …`), проверьте его

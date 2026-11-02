@@ -79,7 +79,10 @@ class EnvProvisioner(
      * On failure the previous installation is left untouched: extraction happens in a staging
      * directory that is swapped in only after every step succeeded.
      */
-    suspend fun provision(manifest: EnvManifest): ProvisionResult = withContext(Dispatchers.IO) {
+    suspend fun provision(
+        manifest: EnvManifest,
+        sourceOverride: ArtifactSource? = null,
+    ): ProvisionResult = withContext(Dispatchers.IO) {
         if (_state.value.busy) return@withContext ProvisionResult.Err("Installation already running")
         paths.prepare()
 
@@ -88,7 +91,7 @@ class EnvProvisioner(
             return@withContext fail("No SHA-256 published for this bundle; refusing to install it.")
         }
 
-        val source = runCatching { sourceFactory(manifest) }.getOrNull()
+        val source = sourceOverride ?: runCatching { sourceFactory(manifest) }.getOrNull()
             ?: return@withContext fail(
                 if (manifest.isDownload) {
                     "Cannot download the environment bundle from ${manifest.url}"
@@ -104,7 +107,11 @@ class EnvProvisioner(
         try {
             _state.value = ProvisionState(
                 phase = ProvisionState.Phase.DOWNLOADING,
-                message = if (manifest.isDownload) "Downloading ${manifest.version}" else "Unpacking bundled ${manifest.version}",
+                message = if (manifest.isDownload) {
+                    "Downloading ${manifest.version}"
+                } else {
+                    "Unpacking ${source.label} (${manifest.version})"
+                },
                 bytesTotal = source.sizeBytes ?: manifest.sizeBytes,
                 version = manifest.version,
             )

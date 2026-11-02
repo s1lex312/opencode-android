@@ -5,19 +5,25 @@ import ai.opencode.android.server.LocalRuntimeState
 import ai.opencode.android.server.LocalServerState
 import ai.opencode.android.server.provision.EnvConfig
 import ai.opencode.android.server.provision.EnvManifest
+import ai.opencode.android.server.provision.FileArtifactSource
 import ai.opencode.android.server.provision.ProvisionResult
 import ai.opencode.android.server.provision.ProvisionState
 import ai.opencode.android.settings.ConnectionMode
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import android.net.Uri
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.security.MessageDigest
 
 /** Human readable byte size used by the setup screen. */
 internal fun formatBytes(bytes: Long): String {
@@ -34,6 +40,10 @@ internal fun formatBytes(bytes: Long): String {
 
 data class SetupUiState(
     val loading: Boolean = true,
+    /** `full` or `lite` (Gradle product flavor). */
+    val flavor: String = "",
+    /** True when the APK ships the bundle and Local mode can be installed without network. */
+    val embeddedBundle: Boolean = false,
     val mode: ConnectionMode = ConnectionMode.LOCAL,
     val provision: ProvisionState = ProvisionState(),
     val installedVersion: String? = null,
@@ -58,6 +68,12 @@ data class SetupUiState(
     val sizeLabel: String get() = formatBytes(envSizeBytes)
     val freeSpaceLabel: String get() = formatBytes(freeSpaceBytes)
     val bundleSizeLabel: String get() = formatBytes(effectiveManifest.sizeBytes)
+
+    /** `full`: the environment ships inside the APK; `lite`: nothing embedded. */
+    val isFullBuild: Boolean get() = embeddedBundle || flavor == "full"
+
+    /** Can the Install button start without the user providing a URL or a file? */
+    val canInstallFromEmbeddedOrUrl: Boolean get() = embeddedBundle || effectiveManifest.isDownload
 }
 
 /**
@@ -66,7 +82,12 @@ data class SetupUiState(
  */
 class SetupViewModel(private val container: AppContainer) : ViewModel() {
 
-    private val _state = MutableStateFlow(SetupUiState())
+    private val _state = MutableStateFlow(
+        SetupUiState(
+            flavor = container.flavor,
+            embeddedBundle = container.hasEmbeddedBundle,
+        ),
+    )
     val state: StateFlow<SetupUiState> = _state.asStateFlow()
 
     private var draftsInitialised = false
@@ -132,6 +153,12 @@ class SetupViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch {
             val settings = runCatching { container.settingsRepository.current() }.getOrNull() ?: return@launch
             val manifest = EnvConfig.effective(assetManifest, settings.localServer)
+            if (!container.hasEmbeddedBundle && !manifest.isDownload) {
+                _state.update {
+                    it.copy(message = "No environment in this APK — enter a bundle URL or import a .tar.gz file")
+                }
+                return@launch
+            }
             val result = container.provisioner.provision(manifest)
             when (result) {
                 is ProvisionResult.Ok -> {
@@ -144,6 +171,64 @@ class SetupViewModel(private val container: AppContainer) : ViewModel() {
             }
             refreshDiskUsage()
         }
+    }
+
+    /** Installs a bundle the user picked with the system file picker (works offline, no URL). */
+    fun installFromFile(uri: Uri) {
+        if (_state.value.provision.busy) return
+        viewModelScope.launch {
+            _state.update { it.copy(message = "Importing the selected bundle…") }
+            val imported = runCatching { copyToPrivateStorage(uri) }.getOrNull()
+            if (imported == null) {
+                _state.update { it.copy(message = "Cannot read the selected file") }
+                return@launch
+            }
+            val hash = runCatching { sha256(imported) }.getOrNull()
+            if (hash == null) {
+                _state.update { it.copy(message = "Cannot compute the SHA-256 of the selected file") }
+                return@launch
+            }
+            val manifest = EnvManifest(
+                version = "imported",
+                asset = "",
+                sha256 = hash,
+                sizeBytes = imported.length(),
+            )
+            when (val result = container.provisioner.provision(manifest, FileArtifactSource(imported))) {
+                is ProvisionResult.Ok -> {
+                    _state.update { it.copy(message = "Environment ${result.version} installed") }
+                    container.restartLocalServerService()
+                }
+
+                is ProvisionResult.Err -> _state.update { it.copy(message = result.message) }
+            }
+            refreshDiskUsage()
+        }
+    }
+
+    private suspend fun copyToPrivateStorage(uri: Uri): File = withContext(Dispatchers.IO) {
+        val target = File(container.envPaths.downloadDir, "imported-bundle.tar.gz")
+        target.parentFile?.mkdirs()
+        val input = container.context.contentResolver.openInputStream(uri)
+            ?: error("The picked file cannot be opened")
+        input.use { source ->
+            target.outputStream().use { sink -> source.copyTo(sink, 64 * 1024) }
+        }
+        if (target.length() < 1_000_000L) error("The picked file is too small to be a bundle")
+        target
+    }
+
+    private suspend fun sha256(file: File): String = withContext(Dispatchers.IO) {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        digest.digest().joinToString("") { "%02x".format(it) }
     }
 
     fun clearEnvironment() {

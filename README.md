@@ -5,14 +5,27 @@
 
 ## ⬇️ Download
 
-### **[Скачать последний APK → Releases](https://github.com/s1lex312/opencode-android/releases/latest)**
+### **[Скачать последний релиз → Releases](https://github.com/s1lex312/opencode-android/releases/latest)**
 
-1. Откройте страницу **Releases** и скачайте `opencode-android-*.apk` (плюс `SHA256SUMS.txt`,
-   если хотите проверить целостность: `sha256sum -c SHA256SUMS.txt`).
-2. Разрешите установку из неизвестных источников и установите APK — **Android 8.0+**, для Local
-   mode нужен **arm64** (Remote mode работает на любой ABI).
-3. Запустите приложение: Local mode предложит поставить окружение (bundle `opencode-env-*.tar.gz`
-   лежит в том же релизе), либо переключитесь в Remote mode и подключитесь к своему серверу.
+В каждом релизе два APK — выбирайте по задаче:
+
+| Вариант | Размер | Что внутри | Кому |
+| --- | --- | --- | --- |
+| **Full**<br>`opencode-android-full-<версия>.apk` | ~125 МБ | Клиент + окружение Local mode (proot, rootfs, `opencode`) прямо в APK | **Local mode без интернета**: скачал, установил — работает |
+| **Lite**<br>`opencode-android-lite-<версия>.apk` | ~19 МБ | Только клиент | Remote mode, либо Local mode со скачиванием окружения при первом запуске |
+
+**Установка:** откройте Releases → скачайте нужный APK → разрешите установку из неизвестных
+источников → установите. Требования: **Android 8.0+**; для Local mode — **arm64**-устройство.
+Проверить целостность: `sha256sum -c SHA256SUMS.txt` (файл лежит в том же релизе).
+
+Обе версии имеют одинаковый `applicationId`, поэтому ставятся друг поверх друга как обычное
+обновление: настройки, пароль сервера и уже распакованное окружение сохраняются.
+
+- **Full** при первом запуске сам распаковывает встроенный bundle (никакой сети не нужно) и
+  поднимает сервер.
+- **Lite** при первом запуске попросит окружение: вставить `https://` URL + SHA-256, импортировать
+  файл `opencode-env-*.tar.gz` (кнопка «Import file…») или просто переключиться в Remote mode.
+  Тот же bundle лежит в разделе Assets релиза.
 
 Вкладка **Actions** нужна только разработчикам — для установки и работы приложения она не
 требуется.
@@ -53,11 +66,19 @@ Compose Material 3, шифрованное хранилище секретов, 
 
 ## Быстрый старт (Local mode)
 
-1. Соберите и установите APK:
+1. Соберите и установите APK (Lite — быстрый вариант без окружения):
 
    ```bash
-   ./gradlew assembleDebug
-   adb install -r app/build/outputs/apk/debug/app-debug.apk
+   ./gradlew assembleLiteDebug
+   adb install -r app/build/outputs/apk/lite/debug/app-lite-debug.apk
+   ```
+
+   Full-вариант с встроенным окружением:
+
+   ```bash
+   ./gradlew :app:prepareFullBundle   # берёт dist/opencode-env-*-arm64.tar.gz
+   ./gradlew assembleFullDebug
+   adb install -r app/build/outputs/apk/full/debug/app-full-debug.apk
    ```
 
 2. При первом запуске откроется **Setup**. Нажмите **Install**: приложение скачает (или возьмёт из
@@ -172,8 +193,9 @@ docs/             SMOKE-TEST.md — чек-лист проверки на уст
 ## Тесты и CI
 
 ```bash
-./gradlew testDebugUnitTest     # ~90 JVM-тестов
-./gradlew assembleDebug
+./gradlew testLiteDebugUnitTest   # ~90 JVM-тестов
+./gradlew assembleLiteDebug       # ~19 МБ
+./gradlew assembleFullDebug       # ~125 МБ, требует bundle в app/src/full/assets/
 ```
 
 CI (`.github/workflows/android.yml`) — для разработчиков; готовые сборки публикуются в Releases

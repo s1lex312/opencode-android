@@ -152,6 +152,23 @@ Room не используется. Причины:
   ~350–450 МБ. Приложение требует ~1 ГБ свободного места с запасом (проверка перед установкой).
 * **Shizuku** не требуется и не используется; интеграция — опция на будущее (TODO).
 
+## 11a. Два варианта сборки: Full и Lite
+
+* Один `applicationId` (`ai.opencode.android`, debug — `.debug`) для обоих flavor'ов: Full и Lite
+  ставятся друг поверх друга как обновление, настройки/пароль/распакованное окружение сохраняются.
+  Различаются только `versionNameSuffix` (`-full`, `-lite`) и содержимое ассетов.
+* **Lite** — без bundle: ~19 МБ. Local mode требует URL/SHA-256 или импорт файла; Remote mode
+  работает сразу.
+* **Full** — `src/full/assets/local-env.tar.gz` (генерируется `:app:prepareFullBundle` или CI):
+  ~125 МБ, Local mode ставится офлайн. Если бандла нет, сборка падает с понятной ошибкой — «пустой
+  Full» выпустить нельзя.
+* Bundle хранится в APK без сжатия (`androidResources { noCompress += "tar.gz" }`): он уже
+  gzip, повторное сжатие только замедляет сборку и не уменьшает размер.
+* **Full APK не предназначен для Google Play**: лимит APK в Play — 100 МБ (наши ~125 МБ), плюс
+  сборка подписана debug-ключом. Распространение — GitHub Releases / прямая ссылка.
+* Full-вариант не проверяется в обычном CI (сборка + 105 МБ бандла): он собирается в
+  release-workflow, а `assembleLiteDebug`/`testLiteDebugUnitTest` — на каждый push.
+
 ## 12. Платформа и сборка
 
 * `minSdk = 26` (Android 8.0): нужен `EncryptedSharedPreferences`, `Process` API и

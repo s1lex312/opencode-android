@@ -184,6 +184,14 @@ private fun EnvironmentSection(state: SetupUiState, viewModel: SetupViewModel) {
     ) {
         InfoRow("Installed", state.installedVersion ?: "not installed")
         InfoRow("Bundle", "${state.effectiveManifest.version} · ${state.bundleSizeLabel}")
+        InfoRow(
+            "Bundle source",
+            when {
+                state.embeddedBundle -> "${state.flavor.ifBlank { "full" }} build · embedded in this APK (offline)"
+                state.effectiveManifest.isDownload -> "downloaded from ${state.effectiveManifest.url}"
+                else -> "not embedded — Lite build, download or import required"
+            },
+        )
         InfoRow("On disk", state.sizeLabel)
         InfoRow("Free space", state.freeSpaceLabel)
         Text(
@@ -195,16 +203,33 @@ private fun EnvironmentSection(state: SetupUiState, viewModel: SetupViewModel) {
 
         if (state.provision.busy) {
             val phase = when (state.provision.phase) {
-                ProvisionState.Phase.DOWNLOADING -> "Downloading"
+                ProvisionState.Phase.DOWNLOADING ->
+                    if (state.effectiveManifest.isDownload) "Downloading" else "Embedded environment — unpacking"
                 ProvisionState.Phase.VERIFYING -> "Verifying SHA-256"
                 ProvisionState.Phase.EXTRACTING -> "Unpacking"
                 ProvisionState.Phase.INSTALLING -> "Installing"
                 else -> "Preparing"
             }
-            Text("$phase… ${state.progressPercent}%", style = MaterialTheme.typography.labelMedium)
+            Text(
+                text = if (state.isFullBuild && !state.effectiveManifest.isDownload) {
+                    "Environment is built into this APK. Unpacking… $phase (${state.progressPercent}%)"
+                } else {
+                    "$phase… ${state.progressPercent}%"
+                },
+                style = MaterialTheme.typography.labelMedium,
+            )
             LinearProgressIndicator(
                 progress = { state.provision.progress },
                 modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        if (!state.embeddedBundle && !state.effectiveManifest.isDownload) {
+            Text(
+                text = "Environment not found in this APK. Enter a bundle URL below or import a .tar.gz " +
+                    "file — or switch to Remote mode and connect to your own server.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
             )
         }
 
@@ -237,10 +262,19 @@ private fun EnvironmentSection(state: SetupUiState, viewModel: SetupViewModel) {
 
 @Composable
 private fun SourceSection(state: SetupUiState, viewModel: SetupViewModel) {
+    val pickBundle = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { viewModel.installFromFile(it) }
+    }
+
     SectionCard(
         title = "Artifact source",
-        description = "Leave blank to use the bundle packaged inside the APK. To use a published " +
-            "bundle, paste its https:// URL and the SHA-256 printed by build-rootfs.sh.",
+        description = if (state.embeddedBundle) {
+            "This build already contains the environment — nothing to download. You can still point " +
+                "it at a newer bundle published as https:// URL + SHA-256."
+        } else {
+            "No environment in this APK (Lite build). Paste the https:// URL and the SHA-256 printed " +
+                "by build-rootfs.sh, or import a bundle file."
+        },
     ) {
         OutlinedTextField(
             value = state.draftUrl,
@@ -258,6 +292,14 @@ private fun SourceSection(state: SetupUiState, viewModel: SetupViewModel) {
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = { viewModel.saveArtifactSource() }) { Text("Save source") }
+            OutlinedButton(
+                onClick = {
+                    pickBundle.launch(
+                        arrayOf("application/gzip", "application/x-gzip", "application/octet-stream"),
+                    )
+                },
+                enabled = !state.provision.busy,
+            ) { Text("Import file…") }
             Text(
                 text = if (state.effectiveManifest.isDownload) "Download mode" else "APK asset mode",
                 style = MaterialTheme.typography.labelSmall,
