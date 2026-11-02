@@ -185,16 +185,19 @@ jobs:
           cd proot-src/src
           # CFLAGS/LDFLAGS are exported (not passed on the command line) so that the
           # makefile can still append the talloc flags it discovers via pkg-config.
-          export CC=aarch64-linux-gnu-gcc
+          # WITHOUT_PYTHON drops the swig extension (it links the host libpython and
+          # breaks cross/static builds); CROSS_COMPILE picks the aarch64 toolchain.
           export CFLAGS="-O2"
           export LDFLAGS="-static"
           if ! PKG_CONFIG_PATH="$GITHUB_WORKSPACE/talloc-arm64/lib/pkgconfig" \
-                 make -j"$(nproc)" > /tmp/proot.log 2>&1; then
+                 make -j"$(nproc)" CROSS_COMPILE=aarch64-linux-gnu- WITHOUT_PYTHON=1 \
+                 > /tmp/proot.log 2>&1; then
             echo "::error title=proot build failed::$(tail -c 3000 /tmp/proot.log | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
             exit 1
           fi
           BIN="$(find .. -maxdepth 3 -type f -name proot -perm -u+x | head -n 1)"
           file "$BIN"
+          file "$BIN" | grep -qi 'aarch64' || { echo "::error title=wrong ABI::proot was not built for arm64"; exit 1; }
           cp "$BIN" "$GITHUB_WORKSPACE/proot-aarch64"
 
       - name: Build arm64 bundle
