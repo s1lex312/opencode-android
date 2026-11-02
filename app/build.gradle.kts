@@ -18,8 +18,8 @@ android {
         applicationId = "ai.opencode.android"
         minSdk = 26
         targetSdk = 34
-        versionCode = 13
-        versionName = "1.1.10"
+        versionCode = 14
+        versionName = "1.1.11"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
@@ -228,6 +228,17 @@ tasks.matching { it.name.matches(Regex("assembleFull(Debug|Release)")) }.configu
             val nativeLibs = Collections.list(zip.entries())
                 .map { it.name }
                 .filter { it.startsWith("lib/") }
+            // Whatever the build script prepared in src/full/jniLibs must actually be packaged:
+            // a silently dropped library means a linker failure on the device.
+            val prepared = layout.projectDirectory.dir("src/full/jniLibs/arm64-v8a").asFile
+                .listFiles().orEmpty().filter { it.isFile }.map { "lib/arm64-v8a/${it.name}" }
+            val dropped = prepared.filterNot { it in nativeLibs }
+            if (dropped.isNotEmpty()) {
+                throw GradleException(
+                    "Full APK ${apk.name} is missing prepared native libraries: $dropped. " +
+                        "Native libs inside: $nativeLibs",
+                )
+            }
             if ("lib/arm64-v8a/libproot.so" !in nativeLibs) {
                 throw GradleException(
                     "Full APK ${apk.name} has no lib/arm64-v8a/libproot.so, so Local mode could not " +
