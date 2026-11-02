@@ -163,25 +163,35 @@ jobs:
       - name: Build arm64 talloc
         run: |
           set -euo pipefail
+          PREFIX="$GITHUB_WORKSPACE/talloc-arm64"
+          CONF="--host=aarch64-linux-gnu --disable-python --without-gettext --prefix=$PREFIX"
           curl -fsSL https://www.samba.org/ftp/talloc/talloc-2.4.2.tar.gz -o talloc.tar.gz
           tar xf talloc.tar.gz
           cd talloc-2.4.2
-          if ! ./configure --host=aarch64-linux-gnu --disable-python --without-gettext \
-                 --prefix="$GITHUB_WORKSPACE/talloc-arm64" > /tmp/talloc.log 2>&1; then
-            echo "::error title=talloc configure failed::$(tail -c 3000 /tmp/talloc.log | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
-            exit 1
+          # Ask for a static library explicitly; if this waf build does not know those
+          # switches, fall back to the default (shared-only) configuration.
+          if ! ./configure $CONF --enable-static --disable-shared > /tmp/talloc.log 2>&1; then
+            echo "static switches rejected, retrying with the default configuration"
+            ./configure $CONF > /tmp/talloc.log 2>&1 || {
+              echo "::error title=talloc configure failed::$(tail -c 2500 /tmp/talloc.log | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+              exit 1
+            }
           fi
           if ! make -j"$(nproc)" >> /tmp/talloc.log 2>&1 || ! make install >> /tmp/talloc.log 2>&1; then
-            echo "::error title=talloc build failed::$(tail -c 3000 /tmp/talloc.log | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+            echo "::error title=talloc build failed::$(tail -c 2500 /tmp/talloc.log | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
             exit 1
           fi
           # proot is linked with -static, so a static libtalloc is required. waf may leave it
           # in its build tree instead of installing it - copy it over if that is the case.
-          STATIC_LIB="$(find . "$GITHUB_WORKSPACE/talloc-arm64" -name 'libtalloc.a' 2>/dev/null | head -n 1 || true)"
+          STATIC_LIB="$(find . "$PREFIX" -name 'libtalloc.a' 2>/dev/null | head -n 1 || true)"
           if [ -n "$STATIC_LIB" ]; then
-            cp "$STATIC_LIB" "$GITHUB_WORKSPACE/talloc-arm64/lib/" || true
+            cp "$STATIC_LIB" "$PREFIX/lib/" || true
           fi
-          ls -la "$GITHUB_WORKSPACE/talloc-arm64/lib"
+          ls -la "$PREFIX/lib"
+          if [ ! -f "$PREFIX/lib/libtalloc.a" ]; then
+            echo "::error title=no static talloc::$(find . "$PREFIX" \( -name '*.a' -o -name 'libtalloc*' \) 2>/dev/null | head -n 30 | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+            exit 1
+          fi
 
       - name: Build static arm64 proot
         run: |
