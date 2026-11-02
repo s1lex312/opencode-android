@@ -19,6 +19,19 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+/** Human readable byte size used by the setup screen. */
+internal fun formatBytes(bytes: Long): String {
+    if (bytes <= 0) return "—"
+    val units = listOf("B", "KB", "MB", "GB")
+    var value = bytes.toDouble()
+    var unit = 0
+    while (value >= 1024 && unit < units.lastIndex) {
+        value /= 1024
+        unit += 1
+    }
+    return if (unit == 0) "$bytes ${units[0]}" else String.format(java.util.Locale.US, "%.1f %s", value, units[unit])
+}
+
 data class SetupUiState(
     val loading: Boolean = true,
     val mode: ConnectionMode = ConnectionMode.LOCAL,
@@ -213,18 +226,6 @@ class SetupViewModel(private val container: AppContainer) : ViewModel() {
 
         fun factory(container: AppContainer): ViewModelProvider.Factory = viewModelFactory {
             initializer { SetupViewModel(container) }
-        }
-
-        fun formatBytes(bytes: Long): String {
-            if (bytes <= 0) return "—"
-            val units = listOf("B", "KB", "MB", "GB")
-            var value = bytes.toDouble()
-            var unit = 0
-            while (value >= 1024 && unit < units.lastIndex) {
-                value /= 1024
-                unit += 1
-            }
-            return if (unit == 0) "${bytes} ${units[0]}" else String.format(java.util.Locale.US, "%.1f %s", value, units[unit])
         }
 
     }
