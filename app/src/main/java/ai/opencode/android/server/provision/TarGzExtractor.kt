@@ -1,5 +1,6 @@
 package ai.opencode.android.server.provision
 
+import java.io.BufferedInputStream
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -9,7 +10,11 @@ import java.nio.file.Files
 import java.util.zip.GZIPInputStream
 
 /**
- * Minimal, dependency-free reader for `.tar.gz` archives.
+ * Minimal, dependency-free reader for `.tar` / `.tar.gz` archives.
+ *
+ * The container is sniffed from the first two bytes instead of being taken from the file name:
+ * aapt2 repackages APK assets and turns the embedded `local-env.tar.gz` into a *raw* tar
+ * (`assets/local-env.tar`), so a hard `GZIPInputStream` would fail with "Not in GZIP format".
  *
  * The provisioning bundle is produced by GNU tar, so the reader supports the formats that
  * actually appear in a Debian/Ubuntu rootfs:
@@ -43,7 +48,18 @@ object TarGzExtractor {
         var pendingName: String? = null
         var pendingLink: String? = null
 
-        GZIPInputStream(stream, 64 * 1024).use { gz ->
+        val buffered = if (stream is BufferedInputStream) stream else BufferedInputStream(stream, 64 * 1024)
+        buffered.mark(2)
+        val first = buffered.read()
+        val second = buffered.read()
+        buffered.reset()
+        val body: InputStream = if (looksGzipped(first, second)) {
+            GZIPInputStream(buffered, 64 * 1024)
+        } else {
+            buffered
+        }
+
+        body.use { gz ->
             val header = ByteArray(BLOCK)
             while (true) {
                 if (!readFully(gz, header, BLOCK)) break
@@ -143,6 +159,9 @@ object TarGzExtractor {
     }
 
     // ------------------------------------------------------------------ helpers
+
+    /** gzip files start with `1F 8B`; everything else is read as a plain tar. */
+    fun looksGzipped(first: Int, second: Int): Boolean = first == 0x1F && second == 0x8B
 
     private fun safeTarget(root: File, name: String): File {
         val cleaned = name.removePrefix("./").trimStart('/')

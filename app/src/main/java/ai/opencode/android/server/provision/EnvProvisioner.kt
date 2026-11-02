@@ -168,6 +168,16 @@ class EnvProvisioner(
                 )
             }
 
+            // The archive on disk is the real thing (aapt2 may hand us an uncompressed tar), so
+            // size the free-space requirement from it rather than from the manifest.
+            if (!hasFreeSpace(copied * 2)) {
+                archive.delete()
+                return@withContext fail(
+                    "Not enough free space to unpack the environment: about " +
+                        "${copied * 2 / 1_000_000} MB is needed (archive plus root filesystem).",
+                )
+            }
+
             _state.value = _state.value.copy(
                 phase = ProvisionState.Phase.EXTRACTING,
                 progress = 0f,
