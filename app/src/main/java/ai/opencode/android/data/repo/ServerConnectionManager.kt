@@ -109,11 +109,20 @@ class ServerConnectionManager(
 
     private suspend fun observe(connection: ConnectedServer) {
         var attempt = 0
+        var openedBefore = false
         connection.api.eventStream().collect { signal ->
             when (signal) {
                 is StreamSignal.Opened -> {
+                    val wasReconnect = openedBefore || attempt > 0
                     attempt = 0
+                    openedBefore = true
                     _state.value = ConnectionState.Connected(connection.info, connection.api.baseUrl)
+                    if (wasReconnect) {
+                        // Events emitted while the stream was down are gone for good: ask the
+                        // ViewModels to re-read the server projection instead of trusting stale UI.
+                        _events.tryEmit(OpencodeEvent.SessionsChanged)
+                        _events.tryEmit(OpencodeEvent.MessagesInvalidated(null))
+                    }
                 }
 
                 is StreamSignal.Frame -> {

@@ -45,13 +45,14 @@ class AppContainer(context: Context) {
         LocalServerManager(appContext, appScope)
     }
 
-    /** Starts the optional embedded server if the user asked for it. Best effort. */
+    /**
+     * Warms the DataStore-backed settings so the first frame is not racing the disk read.
+     *
+     * Deliberately free of side effects: the optional embedded server is started by
+     * [LocalServerService] (foreground), never directly from [android.app.Application], because a
+     * background service start outside a foreground service is not permitted on Android 12+.
+     */
     fun bootstrap() {
-        appScope.launch {
-            val settings = runCatching { settingsRepository.current() }.getOrNull() ?: return@launch
-            if (settings.localServer.enabled) {
-                localServerManager.start(settings.localServer)
-            }
-        }
+        appScope.launch { runCatching { settingsRepository.current() } }
     }
 }

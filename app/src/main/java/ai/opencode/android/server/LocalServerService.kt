@@ -29,6 +29,7 @@ class LocalServerService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var container: ai.opencode.android.di.AppContainer
+    private var observing = false
 
     override fun onCreate() {
         super.onCreate()
@@ -43,6 +44,12 @@ class LocalServerService : Service() {
             return START_NOT_STICKY
         }
 
+        if (observing) {
+            // The service is already supervising a server; nothing else to do on a repeated start.
+            return START_NOT_STICKY
+        }
+        observing = true
+
         startForeground(NOTIFICATION_ID, buildNotification("Starting opencode server…", indeterminate = true))
 
         scope.launch {
@@ -51,22 +58,29 @@ class LocalServerService : Service() {
         }
 
         scope.launch {
+            // The state flow replays its current value (STOPPED before the launch completes), so
+            // only react to STOPPED once the supervisor actually made progress.
+            var sawProgress = false
             container.localServerManager.state.collect { state ->
                 when (state.phase) {
-                    LocalServerState.Phase.STARTING -> updateNotification(
-                        buildNotification("Starting opencode server…", indeterminate = true),
-                    )
+                    LocalServerState.Phase.STARTING -> {
+                        sawProgress = true
+                        updateNotification(buildNotification("Starting opencode server…", indeterminate = true))
+                    }
 
-                    LocalServerState.Phase.READY -> updateNotification(
-                        buildNotification(state.message ?: "opencode server is running", indeterminate = false),
-                    )
+                    LocalServerState.Phase.READY -> {
+                        sawProgress = true
+                        updateNotification(
+                            buildNotification(state.message ?: "opencode server is running", indeterminate = false),
+                        )
+                    }
 
                     LocalServerState.Phase.FAILED -> {
                         updateNotification(buildNotification(state.message ?: "opencode server failed", indeterminate = false))
                         stopSelf()
                     }
 
-                    LocalServerState.Phase.STOPPED -> stopSelf()
+                    LocalServerState.Phase.STOPPED -> if (sawProgress) stopSelf()
                     LocalServerState.Phase.STOPPING -> updateNotification(
                         buildNotification("Stopping opencode server…", indeterminate = true),
                     )
@@ -144,10 +158,9 @@ class LocalServerService : Service() {
             )
         }
 
+        /** Stops the server and the service without going through onStartCommand. */
         fun stop(context: Context) {
-            context.startService(
-                Intent(context, LocalServerService::class.java).setAction(ACTION_STOP),
-            )
+            runCatching { context.stopService(Intent(context, LocalServerService::class.java)) }
         }
     }
 }
