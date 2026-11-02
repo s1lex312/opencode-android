@@ -68,7 +68,12 @@ class SessionsViewModel(
         viewModelScope.launch {
             val settings = runCatching { settingsRepository.current() }.getOrNull() ?: return@launch
             _state.update { it.copy(serverLabel = settings.serverUrl) }
-            if (settings.autoConnect) connection.connect()
+            if (settings.autoConnect) {
+                connection.connect()
+            } else if (!connection.isConnected) {
+                // Nothing is going to load: show the empty "Not connected" state, not a spinner.
+                _state.update { it.copy(loading = false) }
+            }
         }
     }
 
@@ -157,7 +162,12 @@ class SessionsViewModel(
                         error = (state as? ConnectionState.Failed)?.message ?: it.error,
                     )
                 }
-                if (state is ConnectionState.Connected) load(showSpinner = _state.value.sessions.isEmpty())
+                when (state) {
+                    is ConnectionState.Connected -> load(showSpinner = _state.value.sessions.isEmpty())
+                    is ConnectionState.Idle, is ConnectionState.Failed ->
+                        _state.update { it.copy(loading = false, refreshing = false) }
+                    else -> Unit
+                }
             }
         }
     }
