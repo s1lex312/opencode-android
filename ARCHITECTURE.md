@@ -230,7 +230,8 @@ git-преамбулы, несколько файлов, несколько ху
 | Пароль/токен Remote, пароль локального сервера | `EncryptedSharedPreferences` + Keystore | требование «только шифрованное хранилище» |
 | Кэш списка сессий | JSON-файл в `cacheDir` | переживает перезапуск, не является вторым источником истины |
 | Сообщения | только в памяти + перезапрос с сервера | избегаем рассинхронизации и роста БД |
-| proot + rootfs + opencode | `noBackupFilesDir/opencode-env` | сотни мегабайт, не должны попадать в бэкап |
+| rootfs + opencode | `noBackupFilesDir/opencode-env` | сотни мегабайт, не должны попадать в бэкап |
+| `proot` (исполняемый файл) | `applicationInfo.nativeLibraryDir` (`libproot.so`) | с Android 10 SELinux запрещает `execve()` из приватной папки приложения: бинарь обязан лежать там, куда его распаковывает установщик пакета (`jniLibs`, `extractNativeLibs=true`) |
 | Лог сервера | `opencode-env/logs/server.log` | выживает при смерти процесса, ротация ≤512 КБ |
 
 Room сознательно не используется: клиент — тонкое представление удалённого состояния, и одна
@@ -292,7 +293,8 @@ proot — это user-space `chroot`, всё живёт в песочнице п
 │   • staging → atomic swap                                                                      │
 │                        │                                                ▲                    │
 │                        ▼                                                │                    │
-│  noBackupFilesDir/opencode-env/{proot,rootfs/,installed.json,logs/}     │                    │
+│  noBackupFilesDir/opencode-env/{rootfs/,installed.json,logs/,tmp/}      │
+│  nativeLibraryDir/libproot.so (+ proot-libs, loader) — единственный exec│                    │
 │                        │                                                │                    │
 │  LocalServerService (foreground, specialUse, wake lock, START_STICKY) ──┘                     │
 └───────────────────────────────────┬───────────────────────────────────────────────────────────┘

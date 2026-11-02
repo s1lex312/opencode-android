@@ -18,8 +18,8 @@ android {
         applicationId = "ai.opencode.android"
         minSdk = 26
         targetSdk = 34
-        versionCode = 11
-        versionName = "1.1.8"
+        versionCode = 12
+        versionName = "1.1.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
@@ -101,6 +101,10 @@ android {
         // Be explicit: the Full flavour packages the environment from this directory. Implicit
         // flavour source sets are easy to break with a rename, and a silent miss costs a release.
         getByName("full").assets.srcDir("src/full/assets")
+        // Android 10+ forbids exec from the app data dir, so the proot runtime ships as native
+        // libraries: they land in `applicationInfo.nativeLibraryDir`, which is executable.
+        // Filled by `:app:prepareFullBundle` / the release workflow, not committed.
+        getByName("full").jniLibs.srcDir("src/full/jniLibs")
     }
 
     androidResources {
@@ -110,6 +114,13 @@ android {
     }
 
     packaging {
+        jniLibs {
+            // `useLegacyPackaging = true` => android:extractNativeLibs="true": the installer unpacks
+            // lib/arm64-v8a/*.so into nativeLibraryDir, which is where we exec proot from.
+            useLegacyPackaging = true
+            // These are prebuilt binaries, not build outputs: stripping them corrupts the runtime.
+            keepDebugSymbols += "**/libproot*.so"
+        }
         resources {
             excludes += setOf(
                 "/META-INF/{AL2.0,LGPL2.1}",
@@ -212,9 +223,20 @@ tasks.matching { it.name.matches(Regex("assembleFull(Debug|Release)")) }.configu
                         "(expected ~105 MB). Assets inside: $assets",
                 )
             }
+            // The runtime must be packaged as a native library: that is the only place Android
+            // lets an app exec a binary from.
+            val nativeLibs = Collections.list(zip.entries())
+                .map { it.name }
+                .filter { it.startsWith("lib/") }
+            if ("lib/arm64-v8a/libproot.so" !in nativeLibs) {
+                throw GradleException(
+                    "Full APK ${apk.name} has no lib/arm64-v8a/libproot.so, so Local mode could not " +
+                        "start proot (Android 10+ forbids exec from app data). Native libs inside: $nativeLibs",
+                )
+            }
             logger.lifecycle(
-                "Full APK verified: ${apk.name} ships $bundleName (${bundle.size} bytes, " +
-                    "${apk.length() / 1024 / 1024} MB total)",
+                "Full APK verified: ${apk.name} ships $bundleName (${bundle.size} bytes), " +
+                    "libproot.so and ${nativeLibs.size} native files, ${apk.length() / 1024 / 1024} MB total",
             )
         }
     }
@@ -290,6 +312,58 @@ tasks.register("prepareFullBundle") {
                 "(${fullBundleFile.length() / 1024 / 1024} MB, version=$version, sha256=$sha)",
         )
     }
+}
+
+/**
+ * Keeps the Full flavour's executable runtime in `src/full/jniLibs/arm64-v8a`.
+ *
+ * Android 10+ refuses `execve()` on files in the app data dir, so `proot` has to be packaged as a
+ * native library and executed from `nativeLibraryDir`. See
+ * `.github/scripts/extract-proot-jnilibs.sh` for the extraction/`patchelf` details.
+ */
+tasks.register("prepareProotJniLibs") {
+    group = "build"
+    description = "Extracts proot (+ its libs and loader) from the bundle into src/full/jniLibs/arm64-v8a."
+
+    doLast {
+        val script = rootProject.file(".github/scripts/extract-proot-jnilibs.sh")
+        val outDir = layout.projectDirectory.dir("src/full/jniLibs/arm64-v8a").asFile
+        if (!fullBundleFile.isFile) {
+            logger.lifecycle("prepareProotJniLibs: no bundle at ${fullBundleFile.path}, skipping")
+            return@doLast
+        }
+        if (!script.isFile) {
+            logger.warn("prepareProotJniLibs: ${script.path} is missing, skipping")
+            return@doLast
+        }
+        val exit = runCatching {
+            // Plain ProcessBuilder: no Gradle API surface, works the same in CI and locally.
+            val process = ProcessBuilder(
+                "bash",
+                script.absolutePath,
+                fullBundleFile.absolutePath,
+                outDir.absolutePath,
+            )
+                .directory(rootProject.projectDir)
+                .redirectErrorStream(true)
+                .redirectOutput(ProcessBuilder.Redirect.INHERIT)
+                .start()
+            process.waitFor()
+        }.getOrElse { error ->
+            logger.warn("prepareProotJniLibs: cannot run ${script.name} (${error.message})")
+            -1
+        }
+        if (exit != 0) {
+            logger.warn(
+                "prepareProotJniLibs: extraction failed (exit=$exit). Local mode will fall back to " +
+                    "the copy extracted into app storage, which Android 10+ cannot execute.",
+            )
+        }
+    }
+}
+
+tasks.matching { it.name == "prepareFullBundle" }.configureEach {
+    finalizedBy("prepareProotJniLibs")
 }
 
 dependencies {

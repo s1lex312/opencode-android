@@ -58,7 +58,7 @@ class EnvProvisioner(
         val marker = paths.manifestFile
         if (!marker.isFile) return null
         val parsed = runCatching { EnvManifest.parse(marker.readText()) }.getOrNull() ?: return null
-        val usable = paths.prootFile.isFile &&
+        val usable = paths.prootBinary != null &&
             paths.rootfsDir.isDirectory &&
             File(paths.rootfsDir, "bin/sh").isFile
         return if (usable) parsed else null
@@ -251,21 +251,32 @@ class EnvProvisioner(
         val stagedRootfs = File(staging, "rootfs")
         if (!stagedRootfs.isDirectory) throw IOException("Archive has no rootfs/ directory")
         val stagedProot = File(staging, "proot")
-        if (!stagedProot.isFile) throw IOException("Archive has no proot binary")
+        // A Full APK carries proot in jniLibs (exec is forbidden in app data since Android 10), so
+        // the archive does not have to contain it any more.
+        if (!stagedProot.isFile && paths.nativeProot == null) throw IOException("Archive has no proot binary")
         if (!File(stagedRootfs, "bin/sh").isFile) throw IOException("Root filesystem has no /bin/sh")
+
+        // Never write into nativeLibraryDir: those files belong to the installer and are read-only.
+        listOf(paths.rootfsDir, paths.prootFile, paths.prootFile.parentFile ?: paths.root).forEach { target ->
+            if (paths.isNativeLibraryPath(target)) {
+                throw IOException("Refusing to modify the native library directory: ${target.path}")
+            }
+        }
 
         paths.rootfsDir.deleteRecursively()
         paths.prootFile.parentFile?.deleteRecursively()
-        paths.prootFile.parentFile?.mkdirs()
-        if (!stagedProot.renameTo(paths.prootFile)) {
-            stagedProot.copyTo(paths.prootFile, overwrite = true)
-            stagedProot.delete()
+        if (stagedProot.isFile) {
+            paths.prootFile.parentFile?.mkdirs()
+            if (!stagedProot.renameTo(paths.prootFile)) {
+                stagedProot.copyTo(paths.prootFile, overwrite = true)
+                stagedProot.delete()
+            }
+            paths.prootFile.setExecutable(true, false)
+            paths.prootFile.setReadable(true, false)
         }
         if (!stagedRootfs.renameTo(paths.rootfsDir)) {
             copyDirectory(stagedRootfs, paths.rootfsDir)
         }
-        paths.prootFile.setExecutable(true, false)
-        paths.prootFile.setReadable(true, false)
         // Bundles may ship a dynamically linked proot (e.g. the Termux build); its shared
         // libraries are kept next to the binary and picked up through LD_LIBRARY_PATH.
         val stagedLibs = File(staging, "proot-libs")

@@ -70,16 +70,46 @@ data class EnvManifest(
     }
 }
 
-/** Absolute locations inside the app's private storage. Nothing here needs root. */
-data class EnvPaths(val root: File) {
+/**
+ * Absolute locations inside the app's private storage. Nothing here needs root.
+ *
+ * [nativeLibDir] is `applicationInfo.nativeLibraryDir` — the only directory Android (10+) lets an
+ * app execute a binary from. Anything *written* here must be refused: the directory belongs to the
+ * package installer and is mounted read-only at runtime.
+ */
+data class EnvPaths(val root: File, val nativeLibDir: File? = null) {
 
     val rootfsDir: File get() = File(root, "rootfs")
     val prootFile: File get() = File(root, "proot/proot")
+    /** Scratch space proot needs for its loader (`PROOT_TMP_DIR`). */
+    val tmpDir: File get() = File(root, "tmp")
     val manifestFile: File get() = File(root, "installed.json")
     val logDir: File get() = File(root, "logs")
     val logFile: File get() = File(logDir, "server.log")
     val stagingDir: File get() = File(root, ".staging")
     val downloadDir: File get() = File(root, ".download")
+
+    /** `libproot.so` shipped in the APK — the only copy we are allowed to exec. */
+    val nativeProot: File? get() = nativeLibDir?.let { File(it, "libproot.so") }?.takeIf { it.isFile }
+
+    /** Optional `libproot_loader.so`; proot execs its loader, so it must be executable too. */
+    val nativeProotLoader: File? get() = nativeLibDir?.let { File(it, "libproot_loader.so") }?.takeIf { it.isFile }
+
+    /** Executable proot: the packaged one first (Android 10+), the extracted copy as a fallback. */
+    val prootBinary: File? get() = nativeProot ?: prootFile.takeIf { it.isFile }
+
+    /** Where proot may find shared libraries (bionic builds are dynamically linked). */
+    fun prootLibraryDirs(): List<File> = listOfNotNull(
+        nativeLibDir?.takeIf { nativeProot != null },
+        File(root, "proot/lib").takeIf { it.isDirectory },
+    )
+
+    /** True when [target] would land in the installer-managed native library directory. */
+    fun isNativeLibraryPath(target: File): Boolean {
+        val dir = nativeLibDir?.canonicalPath ?: return false
+        val path = runCatching { target.canonicalPath }.getOrDefault(target.absolutePath)
+        return path == dir || path.startsWith(dir + File.separator)
+    }
 
     fun prepare() {
         root.mkdirs()

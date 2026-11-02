@@ -220,9 +220,13 @@ class LocalServerManager(
     }
 
     private fun launchProcess(settings: LocalServerSettings, port: Int): Process? {
-        val rootfs = provisioner.paths().rootfsDir
-        val proot = provisioner.paths().prootFile.let { if (it.isFile) it else File(settings.prootPath) }
-        if (!proot.isFile) {
+        val paths = provisioner.paths()
+        val rootfs = paths.rootfsDir
+        // Android 10+ forbids executing files from the app's data dir, so a Full install runs
+        // `libproot.so` from nativeLibraryDir; the extracted copy stays as a fallback.
+        val proot = paths.prootBinary
+            ?: File(settings.prootPath).takeIf { settings.prootPath.isNotBlank() && it.isFile }
+        if (proot == null || !proot.isFile) {
             fail("proot binary is missing from the environment. Reinstall it from Setup.")
             return null
         }
@@ -267,12 +271,23 @@ class LocalServerManager(
                 builder.environment()["OPENCODE_PASSWORD"] = password
                 builder.environment()["OPENCODE_SERVER_PASSWORD"] = password
             }
-            // Bundles may ship a dynamically linked proot (e.g. built for Android/bionic); keep its
-            // shared libraries next to the binary and point the loader at them.
-            val prootLibs = File(proot.parentFile, "lib")
-            if (prootLibs.isDirectory) {
-                builder.environment()["LD_LIBRARY_PATH"] = prootLibs.absolutePath
+            // proot extracts (and execs) its loader at runtime, so give it a writable scratch dir.
+            val prootTmp = paths.tmpDir.apply { mkdirs() }
+            builder.environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
+            // Android kernels commonly refuse proot's seccomp acceleration; the syscall path is fine.
+            builder.environment()["PROOT_NO_SECCOMP"] = "1"
+            // The loader is a binary too: if the build shipped one, it sits next to libproot.so.
+            paths.nativeProotLoader?.let { loader ->
+                builder.environment()["PROOT_LOADER"] = loader.absolutePath
             }
+            // Dynamically linked proot (Termux/bionic build) needs its libs: nativeLibraryDir first,
+            // then the copy extracted from the bundle.
+            val libDirs = paths.prootLibraryDirs().map { it.absolutePath }
+            if (libDirs.isNotEmpty()) {
+                builder.environment()["LD_LIBRARY_PATH"] = libDirs.joinToString(":")
+            }
+            val origin = if (proot == paths.nativeProot) "packaged in the APK" else "app storage"
+            appendLog("Runtime: proot=${proot.absolutePath} ($origin)")
             val started = builder.start()
             process = started
             appendLog("Started proot (pid ${runCatching { pidOf(started) }.getOrNull() ?: -1}), port $port")

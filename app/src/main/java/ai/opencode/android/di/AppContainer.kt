@@ -46,7 +46,13 @@ class AppContainer(context: Context) {
     val settingsRepository: SettingsRepository by lazy { SettingsRepository(appContext) }
 
     /** Location of the rootfs/proot bundle; `noBackupFilesDir` keeps ~300 MB out of cloud backups. */
-    val envPaths: EnvPaths by lazy { EnvPaths(File(appContext.noBackupFilesDir, "opencode-env")) }
+    val envPaths: EnvPaths by lazy {
+        EnvPaths(
+            root = File(appContext.noBackupFilesDir, "opencode-env"),
+            // Exec is forbidden in the app data dir since Android 10; proot ships in jniLibs.
+            nativeLibDir = File(appContext.applicationInfo.nativeLibraryDir),
+        )
+    }
 
     /** Gradle product flavor: `full` embeds the bundle, `lite` downloads/imports it. */
     val flavor: String get() = BuildConfig.FLAVOR
