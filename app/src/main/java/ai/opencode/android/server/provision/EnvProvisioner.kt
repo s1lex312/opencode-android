@@ -236,6 +236,15 @@ class EnvProvisioner(
         }
         paths.prootFile.setExecutable(true, false)
         paths.prootFile.setReadable(true, false)
+        // Bundles may ship a dynamically linked proot (e.g. the Termux build); its shared
+        // libraries are kept next to the binary and picked up through LD_LIBRARY_PATH.
+        val stagedLibs = File(staging, "proot-libs")
+        if (stagedLibs.isDirectory) {
+            val libs = File(paths.prootFile.parentFile, "lib")
+            libs.deleteRecursively()
+            copyDirectory(stagedLibs, libs)
+            libs.listFiles()?.forEach { it.setReadable(true, false) }
+        }
         paths.manifestFile.writeText(EnvManifest.encode(manifest))
     }
 

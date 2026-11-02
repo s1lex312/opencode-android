@@ -33,6 +33,7 @@ OUTPUT="dist"
 VERSION="$(date -u +%Y%m%d)"
 ABI="arm64-v8a"
 PROOT=""
+PROOT_LIBS=""
 ROOTFS=""
 OPENCODE=""
 BASE_URL=""
@@ -54,6 +55,7 @@ while [[ $# -gt 0 ]]; do
     --version) VERSION="$2"; shift 2 ;;
     --abi) ABI="$2"; shift 2 ;;
     --proot) PROOT="$2"; shift 2 ;;
+    --proot-libs) PROOT_LIBS="$2"; shift 2 ;;
     --rootfs) ROOTFS="$2"; shift 2 ;;
     --opencode) OPENCODE="$2"; shift 2 ;;
     --base-url) BASE_URL="$2"; shift 2 ;;
@@ -110,6 +112,11 @@ else
 
   echo "==> installing proot and opencode"
   install -m 755 "$PROOT" "$BUNDLE/proot"
+  if [[ -n "$PROOT_LIBS" && -d "$PROOT_LIBS" ]]; then
+    echo "==> bundling proot shared libraries"
+    mkdir -p "$BUNDLE/proot-libs"
+    cp -a "$PROOT_LIBS"/. "$BUNDLE/proot-libs/"
+  fi
   mkdir -p "$ROOTFS_DIR/usr/local/bin"
   install -m 755 "$OPENCODE" "$ROOTFS_DIR/usr/local/bin/opencode"
 

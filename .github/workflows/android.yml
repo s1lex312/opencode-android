@@ -160,80 +160,36 @@ jobs:
           sudo apt-get install -y build-essential gcc-aarch64-linux-gnu libc6-dev-arm64-cross \
             curl file pkg-config libpython3-dev
 
-      - name: Build arm64 talloc
+      - name: Fetch arm64 proot (Termux build) and its libraries
         run: |
           set -euo pipefail
-
-          trap 'echo "::error title=talloc step failed::line $LINENO"' ERR
-          PREFIX="$GITHUB_WORKSPACE/talloc-arm64"
-          CONF="--host=aarch64-linux-gnu --disable-python --without-gettext --prefix=$PREFIX"
-          curl -fsSL https://www.samba.org/ftp/talloc/talloc-2.4.2.tar.gz -o talloc.tar.gz
-          tar xf talloc.tar.gz
-          cd talloc-2.4.2
-          # Ask for a static library explicitly; if this waf build does not know those
-          # switches, fall back to the default (shared-only) configuration.
-          if ! ./configure $CONF --enable-static --disable-shared > /tmp/talloc.log 2>&1; then
-            echo "static switches rejected, retrying with the default configuration"
-            ./configure $CONF > /tmp/talloc.log 2>&1 || {
-              echo "::error title=talloc configure failed::$(tail -c 2500 /tmp/talloc.log | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
-              exit 1
-            }
-          fi
-          if ! make -j"$(nproc)" >> /tmp/talloc.log 2>&1 || ! make install >> /tmp/talloc.log 2>&1; then
-            echo "::error title=talloc build failed::$(tail -c 2500 /tmp/talloc.log | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
-            exit 1
-          fi
-          # proot is linked with -static, so a static libtalloc is required. waf may leave it
-          # in its build tree instead of installing it - copy it over if that is the case.
-          STATIC_LIB="$(find . "$PREFIX" -name 'libtalloc.a' 2>/dev/null | head -n 1 || true)"
-          if [ -n "$STATIC_LIB" ]; then
-            cp "$STATIC_LIB" "$PREFIX/lib/" || true
-          fi
-          # Standalone talloc builds only a shared object, so archive its own object files
-          # (talloc + the bundled replace/ util helpers) into a static library by hand.
-          if [ ! -f "$PREFIX/lib/libtalloc.a" ]; then
-            OBJS="$(find bin/default/lib/talloc bin/default/lib/replace -name '*.o' 2>/dev/null | tr '\n' ' ' || true)"
-            echo "archiving talloc objects: $OBJS"
-            if [ -z "$OBJS" ]; then
-              echo "::error title=no talloc objects::no .o files found under bin/default/lib"
-              exit 1
-            fi
-            # shellcheck disable=SC2086
-            aarch64-linux-gnu-ar rcs "$PREFIX/lib/libtalloc.a" $OBJS
-          fi
-          ls -la "$PREFIX/lib"
-          if [ ! -f "$PREFIX/lib/libtalloc.a" ]; then
-            echo "::error title=no static talloc::$(find . "$PREFIX" \( -name '*.a' -o -name 'libtalloc*' \) 2>/dev/null | head -n 30 | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
-            exit 1
-          fi
-
-      - name: Build static arm64 proot
-        run: |
-          set -euo pipefail
-          # proot needs libtalloc for the *target* architecture, hence the step above.
-          git clone --depth 1 https://github.com/proot-me/proot.git proot-src
-          cd proot-src/src
-          # CFLAGS/LDFLAGS are exported (not passed on the command line) so that the
-          # makefile can still append the talloc flags it discovers via pkg-config.
-          # WITHOUT_PYTHON drops the swig extension (it links the host libpython and
-          # breaks cross/static builds); CROSS_COMPILE picks the aarch64 toolchain.
-          export CFLAGS="-O2"
-          export LDFLAGS="-static -L$GITHUB_WORKSPACE/talloc-arm64/lib"
-          if [ ! -f "$GITHUB_WORKSPACE/talloc-arm64/lib/libtalloc.a" ]; then
-            echo "::error title=no static talloc::libtalloc.a was not produced by the talloc build"
-            exit 1
-          fi
-          if ! PKG_CONFIG_PATH="$GITHUB_WORKSPACE/talloc-arm64/lib/pkgconfig" \
-                 make -j"$(nproc)" CROSS_COMPILE=aarch64-linux-gnu- WITHOUT_PYTHON=1 \
-                 PKG_CONFIG=pkg-config \
-                 > /tmp/proot.log 2>&1; then
-            echo "::error title=proot build failed::$(tail -c 3000 /tmp/proot.log | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
-            exit 1
-          fi
-          BIN="$(find .. -maxdepth 3 -type f -name proot -perm -u+x | head -n 1)"
-          file "$BIN"
-          file "$BIN" | grep -qi 'aarch64' || { echo "::error title=wrong ABI::proot was not built for arm64"; exit 1; }
-          cp "$BIN" "$GITHUB_WORKSPACE/proot-aarch64"
+          # Cross-building proot from source needs a static libtalloc for aarch64, which Ubuntu
+          # does not ship and talloc's waf does not build here. The Termux package is an arm64
+          # Android (bionic) build with the same user-space semantics, so use it and ship its
+          # shared libraries alongside the binary (the app sets LD_LIBRARY_PATH to proot/lib).
+          BASE=https://packages.termux.dev/apt/termux-main
+          curl -fsSL "$BASE/dists/stable/main/binary-aarch64/Packages" -o Packages
+          pick() {
+            awk -v pkg="$1" 'BEGIN{RS="";FS="\n"} $1=="Package: "pkg {for(i=1;i<=NF;i++) if($i ~ /^Filename: /){sub("^Filename: ","",$i); print $i; exit}}' Packages | head -n1
+          }
+          mkdir -p debs termux
+          for pkg in proot libtalloc libandroid-support; do
+            f="$(pick "$pkg")"
+            [ -n "$f" ] || { echo "::error title=termux package missing::no Filename for $pkg"; exit 1; }
+            echo "$pkg -> $f"
+            curl -fsSL "$BASE/$f" -o "debs/$pkg.deb"
+            mkdir -p "termux/$pkg"
+            ( cd "termux/$pkg" && ar x "../../debs/$pkg.deb" && tar xf data.tar.* )
+          done
+          PROOT_BIN="$(find termux -type f -path '*bin/proot' | head -n1)"
+          echo "proot: $PROOT_BIN"
+          file "$PROOT_BIN"
+          file "$PROOT_BIN" | grep -qi 'aarch64' || { echo "::error title=wrong ABI::packaged proot is not arm64"; exit 1; }
+          cp "$PROOT_BIN" proot-aarch64
+          chmod 755 proot-aarch64
+          mkdir -p proot-libs
+          find termux -type f -path '*usr/lib/*' -name '*.so*' -exec cp -a {} proot-libs/ \;
+          ls -la proot-libs
 
       - name: Build arm64 bundle
         run: |
@@ -242,6 +198,7 @@ jobs:
             --output dist \
             --version "ci-${GITHUB_RUN_NUMBER}" \
             --proot ./proot-aarch64 \
+            --proot-libs ./proot-libs \
             --download-base \
             --download-opencode
 
