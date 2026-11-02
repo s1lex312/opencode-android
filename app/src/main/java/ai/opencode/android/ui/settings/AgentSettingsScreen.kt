@@ -8,6 +8,12 @@ import ai.opencode.android.ui.components.SettingsDivider
 import ai.opencode.android.ui.components.SettingsGroup
 import ai.opencode.android.ui.components.SettingsItem
 import ai.opencode.android.ui.components.SettingsRadioItem
+import ai.opencode.android.ui.components.SettingsSwitchItem
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import ai.opencode.android.ui.models.ModelPickerSheet
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -32,6 +38,7 @@ fun AgentSettingsScreen(
     container: AppContainer,
     onBack: () -> Unit,
     onOpenProviders: () -> Unit,
+    onOpenSystemPrompts: () -> Unit,
 ) {
     val viewModel: AgentSettingsViewModel = viewModel(factory = AgentSettingsViewModel.factory(container))
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -94,6 +101,31 @@ fun AgentSettingsScreen(
                     onClick = {},
                 )
             }
+        }
+
+        val appSettings by container.settingsRepository.settings.collectAsState(initial = ai.opencode.android.settings.AppSettings())
+        val settingsScope = rememberCoroutineScope()
+        SettingsGroup(title = stringResource(R.string.system_prompts_title)) {
+            SettingsItem(
+                title = appSettings.activeSystemPrompt?.name?.ifBlank { null }
+                    ?: stringResource(R.string.chat_system_prompt_none),
+                subtitle = stringResource(R.string.system_prompts_summary, appSettings.systemPrompts.size),
+                icon = Icons.Default.Description,
+                showChevron = true,
+                onClick = onOpenSystemPrompts,
+            )
+        }
+
+        SettingsGroup(title = stringResource(R.string.notify_group)) {
+            SettingsSwitchItem(
+                title = stringResource(R.string.notify_toggle),
+                subtitle = stringResource(R.string.notify_toggle_hint),
+                checked = appSettings.notifications,
+                onCheckedChange = { enabled ->
+                    settingsScope.launch { container.settingsRepository.update { it.copy(notifications = enabled) } }
+                },
+                icon = Icons.Default.Notifications,
+            )
         }
 
         SettingsGroup(title = stringResource(R.string.settings_permission_group)) {

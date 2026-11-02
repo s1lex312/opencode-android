@@ -159,3 +159,21 @@ object PrettyJson {
         for (i in 0 until depth) out.append("  ")
     }
 }
+
+fun JsonObject.double(vararg path: String): Double? = str(*path)?.toDoubleOrNull()
+
+/** Integer-valued numbers that the server may serialise as `12.0`. */
+fun JsonObject.number(vararg path: String): Long? = double(*path)?.toLong()
+
+/** `{input, output, reasoning, cache: {read, write}}`, shared by both API flavours. */
+fun JsonObject?.toTokenUsage(): ai.opencode.android.data.model.TokenUsage? {
+    this ?: return null
+    val usage = ai.opencode.android.data.model.TokenUsage(
+        input = number("input") ?: 0,
+        output = number("output") ?: 0,
+        reasoning = number("reasoning") ?: 0,
+        cacheRead = number("cache", "read") ?: 0,
+        cacheWrite = number("cache", "write") ?: 0,
+    )
+    return usage.takeUnless { it.isEmpty }
+}

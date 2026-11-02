@@ -17,8 +17,6 @@
     <string name="chat_collapse">Свернуть</string>
     <string name="chat_scroll_bottom">К последнему сообщению</string>
     <string name="chat_model_default">Модель по умолчанию</string>
-    <string name="chat_agent_default">Агент по умолчанию</string>
-    <string name="chat_choose_agent">Агент</string>
 
     <string name="chat_empty_title">Что будем делать?</string>
     <string name="chat_empty_body">opencode умеет читать проект, запускать команды и править файлы. Попробуйте:</string>

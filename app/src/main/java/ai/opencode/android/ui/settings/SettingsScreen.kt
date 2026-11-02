@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -67,6 +68,7 @@ fun SettingsScreen(
     container: AppContainer,
     onBack: () -> Unit,
     onOpenConnection: () -> Unit,
+    onOpenServers: () -> Unit,
     onOpenProviders: () -> Unit,
     onOpenAgent: () -> Unit,
     onOpenAppearance: () -> Unit,
@@ -87,6 +89,15 @@ fun SettingsScreen(
                 icon = Icons.Default.Dns,
                 showChevron = true,
                 onClick = onOpenConnection,
+            )
+            SettingsDivider()
+            SettingsItem(
+                title = stringResource(R.string.servers_title),
+                subtitle = state.settings.activeServerProfile?.name
+                    ?: stringResource(R.string.servers_hub_subtitle, state.settings.serverProfiles.size),
+                icon = Icons.Default.SwapHoriz,
+                showChevron = true,
+                onClick = onOpenServers,
             )
             SettingsDivider()
             SettingsItem(

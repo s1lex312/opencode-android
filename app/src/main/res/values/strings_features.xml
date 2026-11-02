@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="action_edit">Edit</string>
+    <string name="action_remove">Remove</string>
+
+    <!-- Chat: message actions, revert, fork, share -->
+    <string name="chat_action_copy">Copy text</string>
+    <string name="chat_action_revert">Undo from here</string>
+    <string name="chat_action_revert_user">Edit and resend</string>
+    <string name="chat_action_revert_hint">Hides this and later messages and restores the files they changed</string>
+    <string name="chat_action_fork">Fork from here</string>
+    <string name="chat_action_fork_hint">New chat with the history up to this message</string>
+    <plurals name="chat_reverted">
+        <item quantity="one">%d message undone</item>
+        <item quantity="other">%d messages undone</item>
+    </plurals>
+    <string name="chat_revert_restore">Restore</string>
+    <string name="chat_fork">Fork chat</string>
+    <string name="chat_share">Share link</string>
+    <string name="chat_share_again">Copy share link</string>
+    <string name="chat_unshare">Stop sharing</string>
+    <string name="chat_share_chooser">Share chat</string>
+    <string name="chat_share_revoked">The link no longer works</string>
+    <string name="chat_model_unavailable">%1$s is no longer available, switched to the server default model</string>
+    <string name="chat_empty_tips">Type @ to mention a file, / for commands, or tap the mic to dictate.</string>
+
+    <!-- Composer -->
+    <string name="chat_attach">Attach</string>
+    <string name="chat_attach_image">Photo or screenshot</string>
+    <string name="chat_attach_file">File</string>
+    <string name="chat_attach_failed">Could not read the file</string>
+    <string name="chat_attach_too_large">File is larger than %1$d MB</string>
+    <string name="chat_attachment_only">Attachment</string>
+    <string name="chat_queue_send">Queue for after the current turn</string>
+    <string name="chat_queue_title">Queued (%1$d), sent when opencode is free</string>
+    <string name="chat_voice">Voice input</string>
+    <string name="chat_voice_prompt">Speak your prompt</string>
+    <string name="chat_voice_unavailable">No speech recognition app on this device</string>
+    <string name="chat_system_prompt_none">No system prompt</string>
+    <string name="chat_system_prompt_manage">Manage system prompts…</string>
+
+    <string name="cmd_compact">Summarise to free the context</string>
+    <string name="cmd_undo">Undo the last prompt</string>
+    <string name="cmd_redo">Restore undone messages</string>
+    <string name="cmd_fork">Copy this chat into a new one</string>
+    <string name="cmd_share">Create a public link</string>
+
+    <!-- Context usage -->
+    <string name="usage_title">Context</string>
+    <string name="usage_empty">Token usage appears after the first answer.</string>
+    <string name="usage_limit_unknown">The model\'s context window is unknown.</string>
+    <string name="usage_last_turn">Last turn</string>
+    <string name="usage_input">Input</string>
+    <string name="usage_cache_read">Cache read</string>
+    <string name="usage_cache_write">Cache write</string>
+    <string name="usage_output">Output</string>
+    <string name="usage_reasoning">Reasoning</string>
+    <string name="usage_session">Whole chat</string>
+    <string name="usage_total_in">Input tokens</string>
+    <string name="usage_total_out">Output tokens</string>
+    <string name="usage_cache_hit">Cache hit rate</string>
+    <string name="usage_cost">Cost</string>
+    <string name="usage_compact">Compact context</string>
+    <string name="usage_compacting">Compacting…</string>
+    <string name="usage_compact_hint">opencode summarises the conversation and continues from the summary; the chat keeps working with far fewer tokens.</string>
+
+    <!-- System prompts -->
+    <string name="system_prompts_title">System prompts</string>
+    <string name="system_prompts_intro">Your own instructions sent with every message on top of the agent\'s prompt. Keep several and switch like configs.</string>
+    <string name="system_prompts_active">Active</string>
+    <string name="system_prompts_none_hint">Only the agent\'s built-in instructions</string>
+    <string name="system_prompts_add">New system prompt</string>
+    <string name="system_prompts_new">New system prompt</string>
+    <string name="system_prompts_edit">Edit system prompt</string>
+    <string name="system_prompts_name">Name</string>
+    <string name="system_prompts_text">Instructions</string>
+    <string name="system_prompts_templates">Start from a template</string>
+    <string name="system_prompts_summary">%1$d saved</string>
+    <string name="system_prompt_untitled">Untitled</string>
+    <string name="system_template_concise">Concise</string>
+    <string name="system_template_concise_text">Be brief. Answer with the change or the command first, explanations only when asked. No filler, no repetition of the question.</string>
+    <string name="system_template_reviewer">Strict reviewer</string>
+    <string name="system_template_reviewer_text">Act as a senior reviewer. Before changing code, point out bugs, race conditions, security issues and missing tests. Prefer small, verifiable changes and run the tests after each one.</string>
+    <string name="system_template_teacher">Explain as you go</string>
+    <string name="system_template_teacher_text">Explain each step and why it is needed, as to a developer new to this codebase. Name the files and functions you touch.</string>
+    <string name="system_template_russian">Reply in Russian</string>
+    <string name="system_template_russian_text">Always answer in Russian. Keep code, identifiers and commands in their original form.</string>
+
+    <!-- Server profiles -->
+    <string name="servers_title">Servers</string>
+    <string name="servers_intro">Saved connections: this phone, a laptop, a VPS. Tap one to switch.</string>
+    <string name="servers_saved">Saved</string>
+    <string name="servers_save_current">Save current connection</string>
+    <string name="servers_add">Add server</string>
+    <string name="servers_edit">Edit server</string>
+    <string name="servers_name">Name</string>
+    <string name="servers_local">On this phone</string>
+    <string name="servers_remote">Remote</string>
+    <string name="servers_url">Address</string>
+    <string name="servers_auth_none">No auth</string>
+    <string name="servers_auth_basic">Password</string>
+    <string name="servers_auth_bearer">Token</string>
+    <string name="servers_username">Username</string>
+    <string name="servers_password">Password</string>
+    <string name="servers_token">Token</string>
+    <string name="servers_secret_kept">Saved, leave blank to keep</string>
+    <string name="servers_switched">Switched to %1$s</string>
+    <string name="servers_hub_subtitle">%1$d saved</string>
+
+    <!-- Terminal -->
+    <string name="terminal_title">Terminal</string>
+    <string name="terminal_connecting">Connecting…</string>
+    <string name="terminal_connected">Connected</string>
+    <string name="terminal_closed">Session ended</string>
+    <string name="terminal_failed">Could not open a terminal</string>
+    <string name="terminal_input_hint">command</string>
+    <string name="terminal_enter">Enter</string>
+    <string name="terminal_copy">Copy output</string>
+    <string name="terminal_reconnect">New session</string>
+
+    <!-- Notifications -->
+    <string name="notify_group">Notifications</string>
+    <string name="notify_toggle">Agent notifications</string>
+    <string name="notify_toggle_hint">Permission requests with Allow / Deny buttons and \"done\" when a task finishes while the app is in the background</string>
+    <string name="notify_channel_permission">Permission requests</string>
+    <string name="notify_channel_done">Finished tasks</string>
+    <string name="notify_permission_title">opencode needs permission</string>
+    <string name="notify_done_title">opencode finished</string>
+    <string name="notify_done_body">The task is done</string>
+    <string name="notify_error_title">opencode hit an error</string>
+    <string name="notify_reply_failed">Could not reach opencode, open the app to answer</string>
+
+    <!-- opencode updates -->
+    <string name="update_group">opencode on this phone</string>
+    <string name="update_installed">opencode %1$s</string>
+    <string name="update_idle">Updates come straight from opencode releases, no new APK needed</string>
+    <string name="update_checking">Checking for updates…</string>
+    <string name="update_up_to_date">Up to date</string>
+    <string name="update_available">Version %1$s is available</string>
+    <string name="update_downloading">Downloading… %1$d%%</string>
+    <string name="update_installing">Installing…</string>
+    <string name="update_restarting">Restarting the server…</string>
+    <string name="update_done">Updated to %1$s</string>
+    <string name="update_failed">Update failed: %1$s</string>
+    <string name="update_check">Check</string>
+    <string name="update_install">Update</string>
+    <string name="update_auto">Update automatically</string>
+    <string name="update_auto_hint">Checks once a day and installs when no task is running; rolls back if the new version does not start</string>
+</resources>

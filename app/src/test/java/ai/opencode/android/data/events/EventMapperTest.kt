@@ -203,4 +203,38 @@ class EventMapperTest {
         assertEquals("always", PermissionDecision.ALWAYS.wire)
         assertEquals("reject", PermissionDecision.REJECT.wire)
     }
+
+    @Test
+    fun `maps 1x permission asked and replied`() {
+        val asked = legacy(
+            """
+            {"id":"evt_1","type":"permission.asked","properties":{"id":"per_1","sessionID":"ses_1",
+             "permission":"bash","patterns":["git push"],"metadata":{},"always":["git *"]}}
+            """.trimIndent(),
+        )
+        assertTrue(asked is OpencodeEvent.PermissionAsked)
+        asked as OpencodeEvent.PermissionAsked
+        assertEquals("per_1", asked.request.id)
+        assertEquals("bash", asked.request.action)
+        assertEquals("bash: git push", asked.request.title)
+
+        val replied = legacy(
+            """{"id":"evt_2","type":"permission.replied","properties":{"sessionID":"ses_1","requestID":"per_1","reply":"once"}}""",
+        )
+        assertEquals(OpencodeEvent.PermissionResolved("ses_1", "per_1"), replied)
+    }
+
+    @Test
+    fun `legacy message carries tokens and cost`() {
+        val event = legacy(
+            """
+            {"type":"message.updated","properties":{"info":{"id":"msg_1","sessionID":"ses_1","role":"assistant",
+             "time":{"created":1},"modelID":"m","providerID":"p","cost":0.5,
+             "tokens":{"input":10,"output":20,"reasoning":0,"cache":{"read":30,"write":0}}}}}
+            """.trimIndent(),
+        ) as OpencodeEvent.MessageUpserted
+        assertEquals(60L, event.message.tokens?.contextTokens)
+        assertEquals("p", event.message.providerId)
+        assertEquals(0.5, event.message.cost!!, 1e-9)
+    }
 }

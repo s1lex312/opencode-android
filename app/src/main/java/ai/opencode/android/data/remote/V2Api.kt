@@ -8,9 +8,13 @@ import ai.opencode.android.data.model.MessagePart
 import ai.opencode.android.data.model.ModelOption
 import ai.opencode.android.data.model.ModelRef
 import ai.opencode.android.data.model.PermissionDecision
+import ai.opencode.android.data.model.PromptRequest
+import ai.opencode.android.data.model.PtyInfo
 import ai.opencode.android.data.model.Role
 import ai.opencode.android.data.model.ServerInfo
 import ai.opencode.android.data.model.ServerSession
+import ai.opencode.android.data.model.SlashCommand
+import kotlinx.serialization.json.buildJsonArray
 import ai.opencode.android.data.model.ToolCall
 import ai.opencode.android.data.model.ToolStatus
 import kotlinx.serialization.json.JsonArray
@@ -74,7 +78,26 @@ class V2Api(override val http: ServerHttp) : OpencodeApi {
         return array.objects().mapNotNull(::toMessage)
     }
 
-    override suspend fun sendPrompt(sessionId: String, text: String, model: ModelRef?, agent: String?) {
+    override suspend fun session(sessionId: String): ServerSession {
+        val response = http.getJson("/api/session/${enc(sessionId)}") as? JsonObject
+            ?: throw ApiException(null, "Malformed session response")
+        return toSession(response.obj("data") ?: response) ?: throw ApiException(null, "Session response has no id")
+    }
+
+    override suspend fun sendPrompt(sessionId: String, prompt: PromptRequest) {
+        selectModelAndAgent(sessionId, prompt.model, prompt.agent)
+        applySystemPrompt(sessionId, prompt.system)
+        http.postJson(
+            "/api/session/${enc(sessionId)}/prompt",
+            buildJsonObject {
+                put("text", prompt.text)
+                val files = filesJson(prompt)
+                if (files.isNotEmpty()) put("files", files)
+            },
+        )
+    }
+
+    private suspend fun selectModelAndAgent(sessionId: String, model: ModelRef?, agent: String?) {
         // v2 keeps model/agent on the session, so select them before admitting the prompt.
         if (model != null && model.providerID.isNotBlank() && model.modelID.isNotBlank()) {
             runCatching {
@@ -97,11 +120,124 @@ class V2Api(override val http: ServerHttp) : OpencodeApi {
                 http.postJson("/api/session/${enc(sessionId)}/agent", buildJsonObject { put("agent", agent) })
             }
         }
+    }
+
+    /**
+     * 2.x has no per-prompt `system` field; durable session instruction entries are the
+     * equivalent. Experimental on the server, hence best effort.
+     */
+    private suspend fun applySystemPrompt(sessionId: String, system: String?) {
+        val path = "/api/experimental/session/${enc(sessionId)}/instructions/entries/$SYSTEM_ENTRY"
+        runCatching {
+            if (system.isNullOrBlank()) {
+                http.deleteJson(path)
+            } else {
+                http.putJson(path, buildJsonObject { put("value", system) })
+            }
+        }
+    }
+
+    private fun filesJson(prompt: PromptRequest) = buildJsonArray {
+        prompt.mentionedFiles.forEach { path ->
+            add(
+                buildJsonObject {
+                    put("uri", "file://$path")
+                    put("name", path.substringAfterLast('/'))
+                },
+            )
+        }
+        prompt.attachments.forEach { attachment ->
+            add(
+                buildJsonObject {
+                    put("uri", attachment.dataUrl)
+                    put("name", attachment.name)
+                    put("source", buildJsonObject { put("type", "inline") })
+                },
+            )
+        }
+    }
+
+    override suspend fun runCommand(sessionId: String, command: String, arguments: String, model: ModelRef?, agent: String?) {
+        selectModelAndAgent(sessionId, model, agent)
         http.postJson(
-            "/api/session/${enc(sessionId)}/prompt",
-            buildJsonObject { put("text", text) },
+            "/api/session/${enc(sessionId)}/command",
+            buildJsonObject {
+                put("name", command)
+                put("text", arguments)
+            },
         )
     }
+
+    override suspend fun commands(): List<SlashCommand> {
+        val response = http.getJson("/api/command")
+        val array = (response as? JsonObject)?.obj("data") as? JsonArray ?: response as? JsonArray ?: return emptyList()
+        return array.objects().mapNotNull { obj ->
+            val name = obj.str("name") ?: return@mapNotNull null
+            SlashCommand(name = name, description = obj.str("description"), source = obj.str("source"))
+        }
+    }
+
+    override suspend fun findFiles(query: String): List<String> {
+        val response = http.getJson(
+            "/api/fs/find",
+            mapOf("query" to query, "type" to "file", "limit" to FIND_LIMIT.toString()),
+        ) as? JsonObject ?: return emptyList()
+        val array = response.obj("data") as? JsonArray ?: return emptyList()
+        return array.objects().mapNotNull { it.str("path") }
+    }
+
+    override suspend fun revert(sessionId: String, messageId: String) {
+        http.postJson("/api/session/${enc(sessionId)}/revert/stage", buildJsonObject { put("messageID", messageId) })
+    }
+
+    override suspend fun unrevert(sessionId: String) {
+        http.deleteJson("/api/session/${enc(sessionId)}/revert")
+    }
+
+    override suspend fun fork(sessionId: String, beforeMessageId: String?): ServerSession {
+        val response = http.postJson(
+            "/api/session/${enc(sessionId)}/fork",
+            buildJsonObject { if (beforeMessageId != null) put("before", beforeMessageId) },
+        ) as? JsonObject ?: throw ApiException(null, "Malformed fork response")
+        return toSession(response.obj("data") ?: response) ?: throw ApiException(null, "Fork response has no id")
+    }
+
+    override suspend fun share(sessionId: String): String =
+        throw ApiException(null, "Share links are not available on opencode 2.x servers")
+
+    override suspend fun unshare(sessionId: String) = Unit
+
+    override suspend fun compact(sessionId: String, model: ModelRef?) {
+        http.postJson("/api/session/${enc(sessionId)}/compact", buildJsonObject { })
+    }
+
+    override suspend fun createPty(cwd: String?): PtyInfo {
+        val response = http.postJson("/api/pty", buildJsonObject { if (!cwd.isNullOrBlank()) put("cwd", cwd) }) as? JsonObject
+            ?: throw ApiException(null, "Malformed PTY response")
+        val obj = response.obj("data") ?: response
+        return PtyInfo(id = obj.str("id") ?: throw ApiException(null, "PTY response has no id"), cwd = obj.str("cwd"))
+    }
+
+    override suspend fun resizePty(ptyId: String, rows: Int, cols: Int) {
+        http.putJson(
+            "/api/pty/${enc(ptyId)}",
+            buildJsonObject {
+                put(
+                    "size",
+                    buildJsonObject {
+                        put("rows", rows)
+                        put("cols", cols)
+                    },
+                )
+            },
+        )
+    }
+
+    override suspend fun removePty(ptyId: String) {
+        http.deleteJson("/api/pty/${enc(ptyId)}")
+    }
+
+    override fun ptyConnectPath(ptyId: String): String = "/api/pty/${enc(ptyId)}/connect"
 
     override suspend fun abort(sessionId: String) {
         http.postJson("/api/session/${enc(sessionId)}/interrupt")
@@ -136,6 +272,7 @@ class V2Api(override val http: ServerHttp) : OpencodeApi {
                 modelID = modelID,
                 name = obj.str("name") ?: modelID,
                 disabled = obj.bool("enabled") == false,
+                contextLimit = obj.number("limit", "context")?.takeIf { it > 0 },
             )
         }
     }
@@ -173,6 +310,7 @@ class V2Api(override val http: ServerHttp) : OpencodeApi {
             updated = obj.long("time", "updated") ?: obj.long("time", "created") ?: 0L,
             parentID = obj.str("parentID"),
             busy = busy != null && (idle == null || busy > idle),
+            revertMessageId = obj.str("revert", "messageID"),
         )
     }
 
@@ -186,7 +324,14 @@ class V2Api(override val http: ServerHttp) : OpencodeApi {
                 id = id,
                 role = Role.USER,
                 created = created,
-                parts = listOf(MessagePart.Text("$id:user", obj.str("text").orEmpty())),
+                parts = listOf(MessagePart.Text("$id:user", obj.str("text").orEmpty())) +
+                    obj.arr("files")?.objects().orEmpty().mapIndexed { index, file ->
+                        MessagePart.File(
+                            id = "$id:file-$index",
+                            name = file.str("name") ?: file.str("uri")?.substringAfterLast('/') ?: "file",
+                            mime = file.str("mime") ?: "application/octet-stream",
+                        )
+                    },
                 model = model,
             )
 
@@ -201,6 +346,9 @@ class V2Api(override val http: ServerHttp) : OpencodeApi {
                     parts = parts,
                     error = obj.obj("error")?.str("message"),
                     model = model,
+                    providerId = obj.obj("model")?.str("providerID"),
+                    tokens = obj.obj("tokens").toTokenUsage(),
+                    cost = obj.double("cost"),
                 )
             }
 
@@ -295,6 +443,10 @@ class V2Api(override val http: ServerHttp) : OpencodeApi {
     private companion object {
         const val SESSION_LIMIT = 100
         const val MESSAGE_LIMIT = 200
+        const val FIND_LIMIT = 30
+
+        /** Instruction entry carrying the user's system prompt profile. */
+        const val SYSTEM_ENTRY = "android-system-prompt"
 
         fun enc(pathSegment: String): String =
             java.net.URLEncoder.encode(pathSegment, "UTF-8").replace("+", "%20")

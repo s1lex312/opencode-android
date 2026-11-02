@@ -75,7 +75,22 @@ data class AppSettings(
     val lastSessionId: String? = null,
     val localServer: LocalServerSettings = LocalServerSettings(),
     val appearance: AppearanceSettings = AppearanceSettings(),
+    /** Notify about permission requests and finished turns while the app is in the background. */
+    val notifications: Boolean = true,
+    val systemPrompts: List<SystemPromptProfile> = emptyList(),
+    /** Id of the active [SystemPromptProfile]; `null` sends no extra system prompt. */
+    val activeSystemPromptId: String? = null,
+    val serverProfiles: List<ServerProfile> = emptyList(),
+    /** Keep the bundled opencode binary up to date from GitHub releases (Local mode). */
+    val opencodeAutoUpdate: Boolean = true,
+    val opencodeLastUpdateCheck: Long = 0L,
 ) {
+    val activeSystemPrompt: SystemPromptProfile?
+        get() = systemPrompts.firstOrNull { it.id == activeSystemPromptId }
+
+    val activeServerProfile: ServerProfile?
+        get() = serverProfiles.firstOrNull { it.matches(this) }
+
     /** True when the configured address passes the cleartext policy. */
     val serverUrlValid: Boolean
         get() = NetworkPolicy.normalize(serverUrl, allowPrivateNetworkCleartext) is NetworkPolicy.Result.Allowed

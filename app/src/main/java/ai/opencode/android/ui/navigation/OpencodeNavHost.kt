@@ -11,7 +11,11 @@ import ai.opencode.android.ui.settings.AboutScreen
 import ai.opencode.android.ui.settings.AgentSettingsScreen
 import ai.opencode.android.ui.settings.AppearanceSettingsScreen
 import ai.opencode.android.ui.settings.ConnectionSettingsScreen
+import ai.opencode.android.ui.settings.ServerProfilesScreen
 import ai.opencode.android.ui.settings.SettingsScreen
+import ai.opencode.android.ui.settings.SystemPromptsScreen
+import ai.opencode.android.ui.terminal.TerminalScreen
+import androidx.compose.runtime.LaunchedEffect
 import ai.opencode.android.ui.setup.SetupScreen
 import android.net.Uri
 import androidx.compose.animation.AnimatedContentTransitionScope
@@ -39,8 +43,15 @@ object Routes {
     const val SETTINGS_APPEARANCE = "settings/appearance"
     const val SETTINGS_ABOUT = "settings/about"
 
+    const val SETTINGS_SERVERS = "settings/servers"
+    const val SETTINGS_SYSTEM_PROMPTS = "settings/system-prompts"
+
     const val PROVIDERS = "providers"
     const val PROVIDERS_CUSTOM = "providers/custom"
+
+    const val TERMINAL = "terminal?cwd={cwd}"
+
+    fun terminal(cwd: String?): String = if (cwd.isNullOrBlank()) "terminal" else "terminal?cwd=${Uri.encode(cwd)}"
 
     fun chat(sessionId: String): String = "chat/${Uri.encode(sessionId)}"
 
@@ -53,9 +64,19 @@ private const val TRANSITION_MS = 260
 private fun NavHostController.open(route: String) = navigate(route) { launchSingleTop = true }
 
 @Composable
-fun OpencodeNavHost(container: AppContainer) {
+fun OpencodeNavHost(container: AppContainer, openSessionRequest: String? = null, onSessionRequestHandled: () -> Unit = {}) {
     val navController = rememberNavController()
     val back: () -> Unit = { navController.popBackStack() }
+
+    // Taps on "done" / permission notifications land on their chat.
+    LaunchedEffect(openSessionRequest) {
+        val sessionId = openSessionRequest ?: return@LaunchedEffect
+        navController.navigate(Routes.chat(sessionId)) {
+            popUpTo(Routes.SESSIONS)
+            launchSingleTop = true
+        }
+        onSessionRequestHandled()
+    }
 
     NavHost(
         navController = navController,
@@ -93,6 +114,14 @@ fun OpencodeNavHost(container: AppContainer) {
                 onOpenDiff = { navController.open(Routes.diff(sessionId)) },
                 onOpenSettings = { navController.open(Routes.SETTINGS) },
                 onOpenProviders = { navController.open(Routes.PROVIDERS) },
+                onOpenSession = { forked ->
+                    navController.navigate(Routes.chat(forked)) {
+                        popUpTo(Routes.SESSIONS)
+                        launchSingleTop = true
+                    }
+                },
+                onOpenTerminal = { cwd -> navController.open(Routes.terminal(cwd)) },
+                onOpenSystemPrompts = { navController.open(Routes.SETTINGS_SYSTEM_PROMPTS) },
             )
         }
 
@@ -120,6 +149,7 @@ fun OpencodeNavHost(container: AppContainer) {
                 container = container,
                 onBack = back,
                 onOpenConnection = { navController.open(Routes.SETTINGS_CONNECTION) },
+                onOpenServers = { navController.open(Routes.SETTINGS_SERVERS) },
                 onOpenProviders = { navController.open(Routes.PROVIDERS) },
                 onOpenAgent = { navController.open(Routes.SETTINGS_AGENT) },
                 onOpenAppearance = { navController.open(Routes.SETTINGS_APPEARANCE) },
@@ -141,7 +171,29 @@ fun OpencodeNavHost(container: AppContainer) {
                 container = container,
                 onBack = back,
                 onOpenProviders = { navController.open(Routes.PROVIDERS) },
+                onOpenSystemPrompts = { navController.open(Routes.SETTINGS_SYSTEM_PROMPTS) },
             )
+        }
+
+        composable(Routes.SETTINGS_SERVERS) {
+            ServerProfilesScreen(container = container, onBack = back)
+        }
+
+        composable(Routes.SETTINGS_SYSTEM_PROMPTS) {
+            SystemPromptsScreen(container = container, onBack = back)
+        }
+
+        composable(
+            route = Routes.TERMINAL,
+            arguments = listOf(
+                navArgument("cwd") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+            ),
+        ) { entry ->
+            TerminalScreen(container = container, cwd = entry.arguments?.getString("cwd"), onBack = back)
         }
 
         composable(Routes.SETTINGS_APPEARANCE) {

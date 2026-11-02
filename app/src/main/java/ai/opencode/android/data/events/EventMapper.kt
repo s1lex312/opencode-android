@@ -10,6 +10,8 @@ import ai.opencode.android.data.model.ToolCall
 import ai.opencode.android.data.model.ToolStatus
 import ai.opencode.android.data.remote.arr
 import ai.opencode.android.data.remote.bool
+import ai.opencode.android.data.remote.double
+import ai.opencode.android.data.remote.toTokenUsage
 import ai.opencode.android.data.remote.int
 import ai.opencode.android.data.remote.long
 import ai.opencode.android.data.remote.obj
@@ -226,6 +228,9 @@ object EventMapper {
                         created = info.long("time", "created") ?: 0L,
                         error = error,
                         model = info.str("modelID"),
+                        providerId = info.str("providerID"),
+                        tokens = info.obj("tokens").toTokenUsage(),
+                        cost = info.double("cost"),
                     ),
                 )
             }
@@ -271,6 +276,25 @@ object EventMapper {
                 OpencodeEvent.SessionFailed(props.str("sessionID"), error)
             }
 
+            "permission.asked" -> {
+                val id = props.str("id") ?: return OpencodeEvent.Ignored
+                val sessionId = props.str("sessionID") ?: return OpencodeEvent.Ignored
+                val permission = props.str("permission") ?: "permission"
+                val patterns = props.strList("patterns")
+                OpencodeEvent.PermissionAsked(
+                    PermissionRequest(
+                        id = id,
+                        sessionId = sessionId,
+                        title = props.obj("metadata")?.str("description")
+                            ?: patterns.firstOrNull()?.let { "$permission: $it" }
+                            ?: permission,
+                        action = permission,
+                        resources = patterns,
+                        metadataJson = props.obj("metadata").prettyOrEmpty(),
+                    ),
+                )
+            }
+
             "permission.updated" -> {
                 val id = props.str("id") ?: return OpencodeEvent.Ignored
                 val sessionId = props.str("sessionID") ?: return OpencodeEvent.Ignored
@@ -288,7 +312,7 @@ object EventMapper {
 
             "permission.replied" -> {
                 val sessionId = props.str("sessionID") ?: return OpencodeEvent.Ignored
-                val permissionId = props.str("permissionID") ?: return OpencodeEvent.Ignored
+                val permissionId = props.str("permissionID") ?: props.str("requestID") ?: return OpencodeEvent.Ignored
                 OpencodeEvent.PermissionResolved(sessionId, permissionId)
             }
 
@@ -331,6 +355,12 @@ object EventMapper {
                 )
                 MessagePart.Tool(id, call)
             }
+
+            "file" -> MessagePart.File(
+                id = id,
+                name = part.str("filename") ?: part.str("source", "path")?.substringAfterLast('/') ?: "file",
+                mime = part.str("mime") ?: "application/octet-stream",
+            )
 
             "retry", "subtask", "compaction" -> MessagePart.Notice(
                 id,

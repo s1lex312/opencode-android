@@ -7,8 +7,11 @@ import ai.opencode.android.data.model.FileDiffPayload
 import ai.opencode.android.data.model.ModelOption
 import ai.opencode.android.data.model.ModelRef
 import ai.opencode.android.data.model.PermissionDecision
+import ai.opencode.android.data.model.PromptRequest
+import ai.opencode.android.data.model.PtyInfo
 import ai.opencode.android.data.model.ServerInfo
 import ai.opencode.android.data.model.ServerSession
+import ai.opencode.android.data.model.SlashCommand
 import ai.opencode.android.security.NetworkPolicy
 import ai.opencode.android.settings.AppSettings
 import kotlinx.coroutines.flow.Flow
@@ -35,7 +38,42 @@ interface OpencodeApi {
 
     suspend fun messages(sessionId: String): List<ChatMessage>
 
-    suspend fun sendPrompt(sessionId: String, text: String, model: ModelRef?, agent: String?)
+    suspend fun session(sessionId: String): ServerSession
+
+    suspend fun sendPrompt(sessionId: String, prompt: PromptRequest)
+
+    /** Runs a server slash command (`/name arguments`) in the session. */
+    suspend fun runCommand(sessionId: String, command: String, arguments: String, model: ModelRef?, agent: String?)
+
+    suspend fun commands(): List<SlashCommand>
+
+    /** Project-relative paths matching [query], for `@` mentions. */
+    suspend fun findFiles(query: String): List<String>
+
+    /** Hides [messageId] and everything after it and restores the files it changed. */
+    suspend fun revert(sessionId: String, messageId: String)
+
+    suspend fun unrevert(sessionId: String)
+
+    /** New session with the history before [beforeMessageId] (everything when `null`). */
+    suspend fun fork(sessionId: String, beforeMessageId: String?): ServerSession
+
+    /** Returns the public URL. */
+    suspend fun share(sessionId: String): String
+
+    suspend fun unshare(sessionId: String)
+
+    /** Summarises the conversation to free the context window. */
+    suspend fun compact(sessionId: String, model: ModelRef?)
+
+    suspend fun createPty(cwd: String?): PtyInfo
+
+    suspend fun resizePty(ptyId: String, rows: Int, cols: Int)
+
+    suspend fun removePty(ptyId: String)
+
+    /** Path of the PTY WebSocket. */
+    fun ptyConnectPath(ptyId: String): String
 
     suspend fun abort(sessionId: String)
 

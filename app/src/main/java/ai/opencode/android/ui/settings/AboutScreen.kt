@@ -105,6 +105,8 @@ fun AboutScreen(container: AppContainer, onBack: () -> Unit) {
             )
         }
 
+        OpencodeUpdateGroup(container)
+
         SettingsGroup(title = stringResource(R.string.settings_about_links)) {
             SettingsItem(
                 title = stringResource(R.string.settings_about_github),

@@ -5,6 +5,11 @@ import ai.opencode.android.data.cache.SessionCache
 import ai.opencode.android.data.repo.ProviderRepository
 import ai.opencode.android.data.repo.ServerConnectionManager
 import ai.opencode.android.data.repo.SessionRepository
+import ai.opencode.android.data.repo.ApiResult
+import ai.opencode.android.notify.AgentNotifier
+import ai.opencode.android.server.LocalServerState
+import ai.opencode.android.server.update.OpencodeUpdater
+import ai.opencode.android.settings.ServerProfileManager
 import ai.opencode.android.security.EncryptedSecretStore
 import ai.opencode.android.security.SecretStore
 import ai.opencode.android.server.LocalRuntime
@@ -140,6 +145,28 @@ class AppContainer(context: Context) {
         }
     }
 
+    /** Background notifications for permission requests and finished turns. */
+    val agentNotifier: AgentNotifier by lazy {
+        AgentNotifier(appContext, connectionManager, sessionRepository, settingsRepository, appScope)
+    }
+
+    /** Keeps the Local-mode opencode binary current from GitHub releases. */
+    val opencodeUpdater: OpencodeUpdater by lazy {
+        OpencodeUpdater(
+            paths = envPaths,
+            client = downloadClient,
+            settings = settingsRepository,
+            connection = connectionManager,
+            localServer = localServerManager,
+            restartServer = { restartLocalServerService() },
+            scope = appScope,
+        )
+    }
+
+    val serverProfiles: ServerProfileManager by lazy {
+        ServerProfileManager(settingsRepository, secretStore, connectionManager) { localRuntime }
+    }
+
     /** Starts the foreground service that supervises the in-app server (LOCAL mode). */
     fun startLocalServerService() {
         runCatching { ai.opencode.android.server.LocalServerService.start(appContext) }
@@ -166,5 +193,18 @@ class AppContainer(context: Context) {
     fun bootstrap() {
         appScope.launch { runCatching { settingsRepository.current() } }
         appScope.launch { runCatching { provisioner.refresh() } }
+        agentNotifier.start()
+        // Once the in-app server is up, check (at most daily) for a newer opencode build.
+        appScope.launch {
+            localServerManager.state.collect { state ->
+                if (state.phase == LocalServerState.Phase.READY) {
+                    runCatching {
+                        opencodeUpdater.maybeAutoUpdate {
+                            (sessionRepository.loadSessions() as? ApiResult.Ok)?.value?.any { it.busy } ?: true
+                        }
+                    }
+                }
+            }
+        }
     }
 }

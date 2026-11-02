@@ -36,6 +36,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.ExpandLess
@@ -77,11 +79,11 @@ internal fun scaled(style: TextStyle): TextStyle {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun MessageItem(message: ChatMessage, modifier: Modifier = Modifier) {
+fun MessageItem(message: ChatMessage, modifier: Modifier = Modifier, onLongPress: (() -> Unit)? = null) {
     val isUser = message.role == Role.USER
     val context = LocalContext.current
     val copied = stringResource(R.string.copied_to_clipboard)
-    val copy: () -> Unit = {
+    val copy: () -> Unit = onLongPress ?: {
         val text = message.plainText
         if (text.isNotBlank()) {
             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
@@ -89,6 +91,7 @@ fun MessageItem(message: ChatMessage, modifier: Modifier = Modifier) {
             Toast.makeText(context, copied, Toast.LENGTH_SHORT).show()
         }
     }
+    val files = message.parts.filterIsInstance<MessagePart.File>()
 
     // Notices-only messages (turn finished, compaction) render as a centred chip.
     val notices = message.parts.filterIsInstance<MessagePart.Notice>()
@@ -117,12 +120,16 @@ fun MessageItem(message: ChatMessage, modifier: Modifier = Modifier) {
                 color = MaterialTheme.colorScheme.primaryContainer,
                 modifier = Modifier.widthIn(max = 640.dp).combinedClickable(onClick = {}, onLongClick = copy),
             ) {
-                Text(
-                    text = message.plainText,
-                    style = scaled(MaterialTheme.typography.bodyLarge),
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 11.dp),
-                )
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 11.dp)) {
+                    if (message.plainText.isNotBlank()) {
+                        Text(
+                            text = message.plainText,
+                            style = scaled(MaterialTheme.typography.bodyLarge),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                    }
+                    if (files.isNotEmpty()) FileChips(files)
+                }
             }
             if (message.created > 0) {
                 Text(
@@ -192,14 +199,47 @@ fun MessageItem(message: ChatMessage, modifier: Modifier = Modifier) {
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                is MessagePart.File -> Unit
             }
         }
+        if (files.isNotEmpty()) FileChips(files)
         message.error?.let { error ->
             Surface(color = MaterialTheme.colorScheme.errorContainer, shape = MaterialTheme.shapes.small) {
                 Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                }
+            }
+        }
+    }
+}
+
+/** Attached files/images of a message, shown as small labelled chips. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun FileChips(files: List<MessagePart.File>) {
+    androidx.compose.foundation.layout.FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.padding(top = 6.dp),
+    ) {
+        files.forEach { file ->
+            Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surfaceContainerHighest) {
+                Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = if (file.mime.startsWith("image/")) Icons.Default.Image else Icons.Default.Description,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = file.name,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                    )
                 }
             }
         }

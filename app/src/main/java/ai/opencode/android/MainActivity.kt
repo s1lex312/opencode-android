@@ -6,8 +6,15 @@ import ai.opencode.android.settings.AppearanceSettings
 import ai.opencode.android.ui.navigation.OpencodeNavHost
 import ai.opencode.android.ui.theme.OpencodeTheme
 import ai.opencode.android.ui.theme.isDark
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.mutableStateOf
+import androidx.core.content.ContextCompat
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -27,8 +34,14 @@ import kotlinx.coroutines.runBlocking
  */
 class MainActivity : AppCompatActivity() {
 
+    /** Chat to open, set by notification taps (cold start or [onNewIntent]). */
+    private val openSessionRequest = mutableStateOf<String?>(null)
+
+    private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) openSessionRequest.value = intent?.getStringExtra(EXTRA_SESSION_ID)
         val container: AppContainer = (application as OpencodeApp).container
         // One synchronous DataStore read so the first frame already has the chosen theme instead
         // of flashing the system one.
@@ -46,11 +59,41 @@ class MainActivity : AppCompatActivity() {
                 onDispose {}
             }
             OpencodeTheme(appearance = appearance) {
-                OpencodeNavHost(container = container)
+                OpencodeNavHost(
+                    container = container,
+                    openSessionRequest = openSessionRequest.value,
+                    onSessionRequestHandled = { openSessionRequest.value = null },
+                )
             }
         }
 
         maybeStartLocalServer(container)
+        maybeAskNotificationPermission(container)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        intent.getStringExtra(EXTRA_SESSION_ID)?.let { openSessionRequest.value = it }
+    }
+
+    /** Agent notifications are on by default; ask once on Android 13+ so they can be shown. */
+    private fun maybeAskNotificationPermission(container: AppContainer) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return
+        val prefs = getSharedPreferences(UI_PREFS, MODE_PRIVATE)
+        if (prefs.getBoolean(KEY_ASKED_NOTIFICATIONS, false)) return
+        lifecycleScope.launch {
+            val enabled = runCatching { container.settingsRepository.current().notifications }.getOrDefault(true)
+            if (!enabled) return@launch
+            prefs.edit().putBoolean(KEY_ASKED_NOTIFICATIONS, true).apply()
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    companion object {
+        const val EXTRA_SESSION_ID = "ai.opencode.android.extra.SESSION_ID"
+        private const val UI_PREFS = "ui_state"
+        private const val KEY_ASKED_NOTIFICATIONS = "asked_notifications"
     }
 
     /**

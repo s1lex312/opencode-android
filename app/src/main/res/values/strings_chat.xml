@@ -17,8 +17,6 @@
     <string name="chat_collapse">Collapse</string>
     <string name="chat_scroll_bottom">Jump to latest</string>
     <string name="chat_model_default">Default model</string>
-    <string name="chat_agent_default">Default agent</string>
-    <string name="chat_choose_agent">Agent</string>
 
     <string name="chat_empty_title">What are we building?</string>
     <string name="chat_empty_body">opencode can read the project, run commands and edit files. Try one of these:</string>

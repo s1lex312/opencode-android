@@ -66,6 +66,12 @@ class SettingsRepository(context: Context) {
                 pureBlack = this[KEY_PURE_BLACK] ?: false,
                 chatTextScale = this[KEY_CHAT_TEXT_SCALE]?.toEnum<TextScale>() ?: TextScale.DEFAULT,
             ),
+            notifications = this[KEY_NOTIFICATIONS] ?: true,
+            systemPrompts = ProfileCodec.decodePrompts(this[KEY_SYSTEM_PROMPTS]),
+            activeSystemPromptId = this[KEY_ACTIVE_SYSTEM_PROMPT]?.takeIf { it.isNotBlank() },
+            serverProfiles = ProfileCodec.decodeServers(this[KEY_SERVER_PROFILES]),
+            opencodeAutoUpdate = this[KEY_OPENCODE_AUTO_UPDATE] ?: true,
+            opencodeLastUpdateCheck = this[KEY_OPENCODE_LAST_CHECK] ?: 0L,
         )
     }
 
@@ -89,6 +95,12 @@ class SettingsRepository(context: Context) {
         this[KEY_THEME_PALETTE] = value.appearance.palette.name
         this[KEY_PURE_BLACK] = value.appearance.pureBlack
         this[KEY_CHAT_TEXT_SCALE] = value.appearance.chatTextScale.name
+        this[KEY_NOTIFICATIONS] = value.notifications
+        this[KEY_SYSTEM_PROMPTS] = ProfileCodec.encodePrompts(value.systemPrompts)
+        this[KEY_ACTIVE_SYSTEM_PROMPT] = value.activeSystemPromptId.orEmpty()
+        this[KEY_SERVER_PROFILES] = ProfileCodec.encodeServers(value.serverProfiles)
+        this[KEY_OPENCODE_AUTO_UPDATE] = value.opencodeAutoUpdate
+        this[KEY_OPENCODE_LAST_CHECK] = value.opencodeLastUpdateCheck
         // Settings that no longer exist: drop them so old installs do not carry stale overrides.
         OBSOLETE_KEYS.forEach { remove(it) }
     }
@@ -116,6 +128,12 @@ class SettingsRepository(context: Context) {
         val KEY_THEME_PALETTE = stringPreferencesKey("theme_palette")
         val KEY_PURE_BLACK = booleanPreferencesKey("theme_pure_black")
         val KEY_CHAT_TEXT_SCALE = stringPreferencesKey("chat_text_scale")
+        val KEY_NOTIFICATIONS = booleanPreferencesKey("notifications")
+        val KEY_SYSTEM_PROMPTS = stringPreferencesKey("system_prompts")
+        val KEY_ACTIVE_SYSTEM_PROMPT = stringPreferencesKey("active_system_prompt")
+        val KEY_SERVER_PROFILES = stringPreferencesKey("server_profiles")
+        val KEY_OPENCODE_AUTO_UPDATE = booleanPreferencesKey("opencode_auto_update")
+        val KEY_OPENCODE_LAST_CHECK = androidx.datastore.preferences.core.longPreferencesKey("opencode_last_update_check")
 
         val OBSOLETE_KEYS = listOf(
             booleanPreferencesKey("auto_connect"),

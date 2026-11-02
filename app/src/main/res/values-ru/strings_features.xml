@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="action_edit">Изменить</string>
+    <string name="action_remove">Убрать</string>
+
+    <!-- Чат: действия, откат, форк, ссылка -->
+    <string name="chat_action_copy">Копировать текст</string>
+    <string name="chat_action_revert">Откатить до этого места</string>
+    <string name="chat_action_revert_user">Изменить и отправить заново</string>
+    <string name="chat_action_revert_hint">Скрывает это и следующие сообщения и возвращает файлы, которые они изменили</string>
+    <string name="chat_action_fork">Форк отсюда</string>
+    <string name="chat_action_fork_hint">Новый чат с историей до этого сообщения</string>
+    <plurals name="chat_reverted">
+        <item quantity="one">Откачено %d сообщение</item>
+        <item quantity="few">Откачено %d сообщения</item>
+        <item quantity="many">Откачено %d сообщений</item>
+        <item quantity="other">Откачено %d сообщения</item>
+    </plurals>
+    <string name="chat_revert_restore">Вернуть</string>
+    <string name="chat_fork">Форк чата</string>
+    <string name="chat_share">Поделиться ссылкой</string>
+    <string name="chat_share_again">Ссылка на чат</string>
+    <string name="chat_unshare">Закрыть доступ по ссылке</string>
+    <string name="chat_share_chooser">Поделиться чатом</string>
+    <string name="chat_share_revoked">Ссылка больше не работает</string>
+    <string name="chat_model_unavailable">%1$s больше недоступна, включена модель сервера по умолчанию</string>
+    <string name="chat_empty_tips">@ — упомянуть файл, / — команды, микрофон — надиктовать.</string>
+
+    <!-- Поле ввода -->
+    <string name="chat_attach">Прикрепить</string>
+    <string name="chat_attach_image">Фото или скриншот</string>
+    <string name="chat_attach_file">Файл</string>
+    <string name="chat_attach_failed">Не удалось прочитать файл</string>
+    <string name="chat_attach_too_large">Файл больше %1$d МБ</string>
+    <string name="chat_attachment_only">Вложение</string>
+    <string name="chat_queue_send">В очередь после текущего ответа</string>
+    <string name="chat_queue_title">В очереди: %1$d, отправятся, когда opencode освободится</string>
+    <string name="chat_voice">Голосовой ввод</string>
+    <string name="chat_voice_prompt">Скажите, что сделать</string>
+    <string name="chat_voice_unavailable">На устройстве нет приложения распознавания речи</string>
+    <string name="chat_system_prompt_none">Без системного промпта</string>
+    <string name="chat_system_prompt_manage">Системные промпты…</string>
+
+    <string name="cmd_compact">Сжать историю, чтобы освободить контекст</string>
+    <string name="cmd_undo">Откатить последний запрос</string>
+    <string name="cmd_redo">Вернуть откаченные сообщения</string>
+    <string name="cmd_fork">Скопировать чат в новый</string>
+    <string name="cmd_share">Создать публичную ссылку</string>
+
+    <!-- Контекст -->
+    <string name="usage_title">Контекст</string>
+    <string name="usage_empty">Расход токенов появится после первого ответа.</string>
+    <string name="usage_limit_unknown">Размер контекстного окна модели неизвестен.</string>
+    <string name="usage_last_turn">Последний ответ</string>
+    <string name="usage_input">Вход</string>
+    <string name="usage_cache_read">Из кэша</string>
+    <string name="usage_cache_write">Запись в кэш</string>
+    <string name="usage_output">Выход</string>
+    <string name="usage_reasoning">Рассуждения</string>
+    <string name="usage_session">Весь чат</string>
+    <string name="usage_total_in">Входные токены</string>
+    <string name="usage_total_out">Выходные токены</string>
+    <string name="usage_cache_hit">Попадания в кэш</string>
+    <string name="usage_cost">Стоимость</string>
+    <string name="usage_compact">Сжать контекст</string>
+    <string name="usage_compacting">Сжатие…</string>
+    <string name="usage_compact_hint">opencode делает конспект разговора и продолжает с него: чат работает дальше, а токенов уходит намного меньше.</string>
+
+    <!-- Системные промпты -->
+    <string name="system_prompts_title">Системные промпты</string>
+    <string name="system_prompts_intro">Ваши инструкции, которые уходят с каждым сообщением поверх промпта агента. Держите несколько и переключайте, как конфиги.</string>
+    <string name="system_prompts_active">Активный</string>
+    <string name="system_prompts_none_hint">Только встроенные инструкции агента</string>
+    <string name="system_prompts_add">Новый системный промпт</string>
+    <string name="system_prompts_new">Новый системный промпт</string>
+    <string name="system_prompts_edit">Изменить системный промпт</string>
+    <string name="system_prompts_name">Название</string>
+    <string name="system_prompts_text">Инструкции</string>
+    <string name="system_prompts_templates">Начать с шаблона</string>
+    <string name="system_prompts_summary">Сохранено: %1$d</string>
+    <string name="system_prompt_untitled">Без названия</string>
+    <string name="system_template_concise">Кратко</string>
+    <string name="system_template_concise_text">Отвечай кратко. Сначала правка или команда, объяснения только по запросу. Без воды и без пересказа вопроса.</string>
+    <string name="system_template_reviewer">Строгий ревьюер</string>
+    <string name="system_template_reviewer_text">Работай как senior-ревьюер. Прежде чем менять код, укажи баги, гонки, проблемы безопасности и недостающие тесты. Делай маленькие проверяемые изменения и запускай тесты после каждого.</string>
+    <string name="system_template_teacher">С объяснениями</string>
+    <string name="system_template_teacher_text">Объясняй каждый шаг и зачем он нужен, как разработчику, который впервые видит этот код. Называй файлы и функции, которые трогаешь.</string>
+    <string name="system_template_russian">Отвечать по-русски</string>
+    <string name="system_template_russian_text">Всегда отвечай на русском. Код, идентификаторы и команды оставляй как есть.</string>
+
+    <!-- Профили серверов -->
+    <string name="servers_title">Серверы</string>
+    <string name="servers_intro">Сохранённые подключения: этот телефон, ноутбук, VPS. Нажмите, чтобы переключиться.</string>
+    <string name="servers_saved">Сохранённые</string>
+    <string name="servers_save_current">Сохранить текущее подключение</string>
+    <string name="servers_add">Добавить сервер</string>
+    <string name="servers_edit">Изменить сервер</string>
+    <string name="servers_name">Название</string>
+    <string name="servers_local">На этом телефоне</string>
+    <string name="servers_remote">Удалённый</string>
+    <string name="servers_url">Адрес</string>
+    <string name="servers_auth_none">Без входа</string>
+    <string name="servers_auth_basic">Пароль</string>
+    <string name="servers_auth_bearer">Токен</string>
+    <string name="servers_username">Имя пользователя</string>
+    <string name="servers_password">Пароль</string>
+    <string name="servers_token">Токен</string>
+    <string name="servers_secret_kept">Сохранён, оставьте пустым</string>
+    <string name="servers_switched">Переключено на %1$s</string>
+    <string name="servers_hub_subtitle">Сохранено: %1$d</string>
+
+    <!-- Терминал -->
+    <string name="terminal_title">Терминал</string>
+    <string name="terminal_connecting">Подключение…</string>
+    <string name="terminal_connected">Подключено</string>
+    <string name="terminal_closed">Сеанс завершён</string>
+    <string name="terminal_failed">Не удалось открыть терминал</string>
+    <string name="terminal_input_hint">команда</string>
+    <string name="terminal_enter">Ввод</string>
+    <string name="terminal_copy">Копировать вывод</string>
+    <string name="terminal_reconnect">Новый сеанс</string>
+
+    <!-- Уведомления -->
+    <string name="notify_group">Уведомления</string>
+    <string name="notify_toggle">Уведомления агента</string>
+    <string name="notify_toggle_hint">Запросы разрешений с кнопками «Разрешить / Запретить» и «готово», когда задача закончилась в фоне</string>
+    <string name="notify_channel_permission">Запросы разрешений</string>
+    <string name="notify_channel_done">Завершённые задачи</string>
+    <string name="notify_permission_title">opencode просит разрешение</string>
+    <string name="notify_done_title">opencode закончил</string>
+    <string name="notify_done_body">Задача выполнена</string>
+    <string name="notify_error_title">opencode столкнулся с ошибкой</string>
+    <string name="notify_reply_failed">Нет связи с opencode, ответьте в приложении</string>
+
+    <!-- Обновления opencode -->
+    <string name="update_group">opencode на телефоне</string>
+    <string name="update_installed">opencode %1$s</string>
+    <string name="update_idle">Обновления берутся прямо из релизов opencode, новый APK не нужен</string>
+    <string name="update_checking">Проверка обновлений…</string>
+    <string name="update_up_to_date">Последняя версия</string>
+    <string name="update_available">Доступна версия %1$s</string>
+    <string name="update_downloading">Загрузка… %1$d%%</string>
+    <string name="update_installing">Установка…</string>
+    <string name="update_restarting">Перезапуск сервера…</string>
+    <string name="update_done">Обновлено до %1$s</string>
+    <string name="update_failed">Не удалось обновить: %1$s</string>
+    <string name="update_check">Проверить</string>
+    <string name="update_install">Обновить</string>
+    <string name="update_auto">Обновлять автоматически</string>
+    <string name="update_auto_hint">Раз в день проверяет релизы и ставит, когда задача не выполняется; если новая версия не запустилась, возвращает старую</string>
+</resources>

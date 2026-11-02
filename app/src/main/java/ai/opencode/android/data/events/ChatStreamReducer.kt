@@ -177,6 +177,9 @@ object ChatStreamReducer {
                 created = incoming.created.takeIf { it > 0 } ?: existing.created,
                 error = incoming.error ?: existing.error,
                 model = incoming.model ?: existing.model,
+                providerId = incoming.providerId ?: existing.providerId,
+                tokens = incoming.tokens ?: existing.tokens,
+                cost = incoming.cost ?: existing.cost,
                 parts = if (existing.parts.isEmpty()) incoming.parts else existing.parts,
             )
         }

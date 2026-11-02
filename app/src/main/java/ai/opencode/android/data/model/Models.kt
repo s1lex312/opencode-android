@@ -12,6 +12,10 @@ data class ServerSession(
     val updated: Long = 0L,
     val parentID: String? = null,
     val busy: Boolean = false,
+    /** Public link when the session is shared (`/session/{id}/share`). */
+    val shareUrl: String? = null,
+    /** Messages from this id on are reverted (hidden until the next prompt or an unrevert). */
+    val revertMessageId: String? = null,
 )
 
 enum class Role { USER, ASSISTANT }
@@ -45,6 +49,23 @@ sealed interface MessagePart {
     data class Tool(override val id: String, val call: ToolCall) : MessagePart
 
     data class Notice(override val id: String, val text: String, val kind: NoticeKind = NoticeKind.INFO) : MessagePart
+
+    /** A file or image attached to a prompt. */
+    data class File(override val id: String, val name: String, val mime: String) : MessagePart
+}
+
+/** Token accounting of one assistant turn, as reported by the server. */
+data class TokenUsage(
+    val input: Long = 0,
+    val output: Long = 0,
+    val reasoning: Long = 0,
+    val cacheRead: Long = 0,
+    val cacheWrite: Long = 0,
+) {
+    /** Tokens the turn occupied in the context window (what the next turn starts from). */
+    val contextTokens: Long get() = input + output + reasoning + cacheRead + cacheWrite
+
+    val isEmpty: Boolean get() = contextTokens == 0L
 }
 
 data class ChatMessage(
@@ -54,6 +75,10 @@ data class ChatMessage(
     val parts: List<MessagePart> = emptyList(),
     val error: String? = null,
     val model: String? = null,
+    val providerId: String? = null,
+    val tokens: TokenUsage? = null,
+    /** USD spent on this turn. */
+    val cost: Double? = null,
 ) {
     val plainText: String
         get() = parts.filterIsInstance<MessagePart.Text>().joinToString("\n") { it.text }
@@ -99,6 +124,8 @@ data class ModelOption(
     val modelID: String,
     val name: String,
     val disabled: Boolean = false,
+    /** Context window in tokens, when the catalogue knows it. */
+    val contextLimit: Long? = null,
 ) {
     val key: String get() = "$providerID/$modelID"
     val label: String get() = if (name.isBlank() || name == modelID) modelID else "$name · $modelID"
@@ -145,3 +172,36 @@ sealed interface ConnectionState {
     data class Reconnecting(val attempt: Int, val reason: String) : ConnectionState
     data class Failed(val message: String, val hint: String? = null) : ConnectionState
 }
+
+/** A server-side slash command (`/command`, custom commands, MCP prompts, skills). */
+data class SlashCommand(
+    val name: String,
+    val description: String? = null,
+    val source: String? = null,
+)
+
+/** A file or image the user attached to the next prompt, already encoded as a `data:` URL. */
+data class PromptAttachment(
+    val id: String,
+    val name: String,
+    val mime: String,
+    val dataUrl: String,
+    val sizeBytes: Long,
+) {
+    val isImage: Boolean get() = mime.startsWith("image/")
+}
+
+/** Everything one prompt carries besides the session. */
+data class PromptRequest(
+    val text: String,
+    val model: ModelRef? = null,
+    val agent: String? = null,
+    /** Extra system prompt (user-defined profile); `null` keeps the agent's own prompt only. */
+    val system: String? = null,
+    val attachments: List<PromptAttachment> = emptyList(),
+    /** Absolute paths of `@`-mentioned project files. */
+    val mentionedFiles: List<String> = emptyList(),
+)
+
+/** A pseudo-terminal opened on the server. */
+data class PtyInfo(val id: String, val cwd: String? = null)

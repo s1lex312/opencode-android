@@ -9,9 +9,14 @@ import ai.opencode.android.data.model.MessagePart
 import ai.opencode.android.data.model.ModelOption
 import ai.opencode.android.data.model.ModelRef
 import ai.opencode.android.data.model.PermissionDecision
+import ai.opencode.android.data.model.PromptRequest
+import ai.opencode.android.data.model.PtyInfo
 import ai.opencode.android.data.model.Role
 import ai.opencode.android.data.model.ServerInfo
 import ai.opencode.android.data.model.ServerSession
+import ai.opencode.android.data.model.SlashCommand
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -30,9 +35,8 @@ class LegacyApi(override val http: ServerHttp) : OpencodeApi {
     override suspend fun probe(): ServerInfo {
         val config = http.getJson("/config") as? JsonObject
             ?: throw ApiException(null, "Unexpected response from /config")
-        val version = runCatching {
-            (http.getJson("/app") as? JsonObject)?.str("version")
-        }.getOrNull()
+        val version = runCatching { (http.getJson("/global/health") as? JsonObject)?.str("version") }.getOrNull()
+            ?: runCatching { (http.getJson("/app") as? JsonObject)?.str("version") }.getOrNull()
         return ServerInfo(
             flavor = ApiFlavor.LEGACY,
             version = version,
@@ -44,18 +48,27 @@ class LegacyApi(override val http: ServerHttp) : OpencodeApi {
         val response = http.getJson("/session")
         val array = response as? JsonArray ?: return emptyList()
         val busyIds = runCatching { busySessions() }.getOrDefault(emptySet())
-        return array.objects().mapNotNull { obj ->
-            val id = obj.str("id") ?: return@mapNotNull null
-            ServerSession(
-                id = id,
-                title = obj.str("title") ?: "Untitled session",
-                directory = obj.str("directory"),
-                created = obj.long("time", "created") ?: 0L,
-                updated = obj.long("time", "updated") ?: obj.long("time", "created") ?: 0L,
-                parentID = obj.str("parentID"),
-                busy = id in busyIds,
-            )
-        }
+        return array.objects().mapNotNull { obj -> toSession(obj)?.let { it.copy(busy = it.id in busyIds) } }
+    }
+
+    override suspend fun session(sessionId: String): ServerSession {
+        val obj = http.getJson("/session/${enc(sessionId)}") as? JsonObject
+            ?: throw ApiException(null, "Malformed session response")
+        return toSession(obj) ?: throw ApiException(null, "Session response has no id")
+    }
+
+    private fun toSession(obj: JsonObject): ServerSession? {
+        val id = obj.str("id") ?: return null
+        return ServerSession(
+            id = id,
+            title = obj.str("title") ?: "Untitled session",
+            directory = obj.str("directory"),
+            created = obj.long("time", "created") ?: 0L,
+            updated = obj.long("time", "updated") ?: obj.long("time", "created") ?: 0L,
+            parentID = obj.str("parentID"),
+            shareUrl = obj.str("share", "url"),
+            revertMessageId = obj.str("revert", "messageID"),
+        )
     }
 
     private suspend fun busySessions(): Set<String> {
@@ -70,13 +83,7 @@ class LegacyApi(override val http: ServerHttp) : OpencodeApi {
         val body = buildJsonObject { if (!title.isNullOrBlank()) put("title", title) }
         val obj = http.postJson("/session", body) as? JsonObject
             ?: throw ApiException(null, "Malformed session response")
-        return ServerSession(
-            id = obj.str("id") ?: throw ApiException(null, "Session response has no id"),
-            title = obj.str("title") ?: "New session",
-            directory = obj.str("directory"),
-            created = obj.long("time", "created") ?: 0L,
-            updated = obj.long("time", "updated") ?: 0L,
-        )
+        return toSession(obj) ?: throw ApiException(null, "Session response has no id")
     }
 
     override suspend fun deleteSession(sessionId: String) {
@@ -92,26 +99,39 @@ class LegacyApi(override val http: ServerHttp) : OpencodeApi {
         return array.objects().mapNotNull(::toMessage)
     }
 
-    override suspend fun sendPrompt(sessionId: String, text: String, model: ModelRef?, agent: String?) {
+    override suspend fun sendPrompt(sessionId: String, prompt: PromptRequest) {
         val body = buildJsonObject {
-            put("parts", kotlinx.serialization.json.buildJsonArray {
+            put("parts", buildJsonArray {
                 add(
                     buildJsonObject {
                         put("type", "text")
-                        put("text", text)
+                        put("text", prompt.text)
                     },
                 )
+                prompt.mentionedFiles.forEach { path ->
+                    add(
+                        buildJsonObject {
+                            put("type", "file")
+                            put("mime", "text/plain")
+                            put("filename", path.substringAfterLast('/'))
+                            put("url", "file://$path")
+                        },
+                    )
+                }
+                prompt.attachments.forEach { attachment ->
+                    add(
+                        buildJsonObject {
+                            put("type", "file")
+                            put("mime", attachment.mime)
+                            put("filename", attachment.name)
+                            put("url", attachment.dataUrl)
+                        },
+                    )
+                }
             })
-            if (model != null && model.providerID.isNotBlank() && model.modelID.isNotBlank()) {
-                put(
-                    "model",
-                    buildJsonObject {
-                        put("providerID", model.providerID)
-                        put("modelID", model.modelID)
-                    },
-                )
-            }
-            if (!agent.isNullOrBlank()) put("agent", agent)
+            modelJson(prompt.model)?.let { put("model", it) }
+            if (!prompt.agent.isNullOrBlank()) put("agent", prompt.agent)
+            if (!prompt.system.isNullOrBlank()) put("system", prompt.system)
         }
         // Prefer the fire-and-forget endpoint (1.x). Older servers only have the blocking one;
         // SSE still streams the answer, so the blocking call just runs inside our IO coroutine.
@@ -127,6 +147,105 @@ class LegacyApi(override val http: ServerHttp) : OpencodeApi {
             }
         }
     }
+
+    override suspend fun runCommand(sessionId: String, command: String, arguments: String, model: ModelRef?, agent: String?) {
+        http.postJson(
+            "/session/${enc(sessionId)}/command",
+            buildJsonObject {
+                put("command", command)
+                put("arguments", arguments)
+                if (model != null && model.providerID.isNotBlank() && model.modelID.isNotBlank()) put("model", model.key)
+                if (!agent.isNullOrBlank()) put("agent", agent)
+            },
+        )
+    }
+
+    override suspend fun commands(): List<SlashCommand> {
+        val array = http.getJson("/command") as? JsonArray ?: return emptyList()
+        return array.objects().mapNotNull { obj ->
+            val name = obj.str("name") ?: return@mapNotNull null
+            SlashCommand(name = name, description = obj.str("description"), source = obj.str("source"))
+        }
+    }
+
+    override suspend fun findFiles(query: String): List<String> {
+        val array = http.getJson(
+            "/find/file",
+            mapOf("query" to query, "dirs" to "false", "limit" to FIND_LIMIT.toString()),
+        ) as? JsonArray ?: return emptyList()
+        return array.mapNotNull { (it as? JsonPrimitive)?.content }
+    }
+
+    override suspend fun revert(sessionId: String, messageId: String) {
+        http.postJson("/session/${enc(sessionId)}/revert", buildJsonObject { put("messageID", messageId) })
+    }
+
+    override suspend fun unrevert(sessionId: String) {
+        http.postJson("/session/${enc(sessionId)}/unrevert")
+    }
+
+    override suspend fun fork(sessionId: String, beforeMessageId: String?): ServerSession {
+        val obj = http.postJson(
+            "/session/${enc(sessionId)}/fork",
+            buildJsonObject { if (beforeMessageId != null) put("messageID", beforeMessageId) },
+        ) as? JsonObject ?: throw ApiException(null, "Malformed fork response")
+        return toSession(obj) ?: throw ApiException(null, "Fork response has no id")
+    }
+
+    override suspend fun share(sessionId: String): String {
+        val obj = http.postJson("/session/${enc(sessionId)}/share") as? JsonObject
+        return obj?.str("share", "url") ?: throw ApiException(null, "The server did not return a share link")
+    }
+
+    override suspend fun unshare(sessionId: String) {
+        http.deleteJson("/session/${enc(sessionId)}/share")
+    }
+
+    override suspend fun compact(sessionId: String, model: ModelRef?) {
+        val target = model ?: lastModel(sessionId)
+            ?: throw ApiException(null, "Pick a model first: compaction needs one")
+        http.postJson(
+            "/session/${enc(sessionId)}/summarize",
+            buildJsonObject {
+                put("providerID", target.providerID)
+                put("modelID", target.modelID)
+            },
+        )
+    }
+
+    /** Model of the latest assistant turn, used when the user relies on the server default. */
+    private suspend fun lastModel(sessionId: String): ModelRef? {
+        val last = messages(sessionId).lastOrNull { it.role == Role.ASSISTANT && it.providerId != null && it.model != null }
+            ?: return null
+        return ModelRef(last.providerId.orEmpty(), last.model.orEmpty())
+    }
+
+    override suspend fun createPty(cwd: String?): PtyInfo {
+        val obj = http.postJson("/pty", buildJsonObject { if (!cwd.isNullOrBlank()) put("cwd", cwd) }) as? JsonObject
+            ?: throw ApiException(null, "Malformed PTY response")
+        return PtyInfo(id = obj.str("id") ?: throw ApiException(null, "PTY response has no id"), cwd = obj.str("cwd"))
+    }
+
+    override suspend fun resizePty(ptyId: String, rows: Int, cols: Int) {
+        http.putJson(
+            "/pty/${enc(ptyId)}",
+            buildJsonObject {
+                put(
+                    "size",
+                    buildJsonObject {
+                        put("rows", rows)
+                        put("cols", cols)
+                    },
+                )
+            },
+        )
+    }
+
+    override suspend fun removePty(ptyId: String) {
+        http.deleteJson("/pty/${enc(ptyId)}")
+    }
+
+    override fun ptyConnectPath(ptyId: String): String = "/pty/${enc(ptyId)}/connect"
 
     override suspend fun abort(sessionId: String) {
         http.postJson("/session/${enc(sessionId)}/abort")
@@ -156,7 +275,12 @@ class LegacyApi(override val http: ServerHttp) : OpencodeApi {
                 val model = value as? JsonObject
                 val modelID = model?.str("id") ?: modelKey
                 val name = model?.str("name") ?: modelID
-                list += ModelOption(providerID = providerID, modelID = modelID, name = "$providerName · $name")
+                list += ModelOption(
+                    providerID = providerID,
+                    modelID = modelID,
+                    name = "$providerName · $name",
+                    contextLimit = model?.number("limit", "context")?.takeIf { it > 0 },
+                )
             }
         }
         return list
@@ -175,10 +299,24 @@ class LegacyApi(override val http: ServerHttp) : OpencodeApi {
     }
 
     override suspend fun replyPermission(sessionId: String, permissionId: String, decision: PermissionDecision) {
-        http.postJson(
-            "/session/${enc(sessionId)}/permissions/${enc(permissionId)}",
-            buildJsonObject { put("response", decision.wire) },
-        )
+        // 1.x since the permission rework: POST /permission/{requestID}/reply. Older servers only
+        // know the per-session route.
+        try {
+            http.postJson("/permission/${enc(permissionId)}/reply", buildJsonObject { put("reply", decision.wire) })
+        } catch (notFound: NotFoundException) {
+            http.postJson(
+                "/session/${enc(sessionId)}/permissions/${enc(permissionId)}",
+                buildJsonObject { put("response", decision.wire) },
+            )
+        }
+    }
+
+    private fun modelJson(model: ModelRef?): JsonObject? {
+        if (model == null || model.providerID.isBlank() || model.modelID.isBlank()) return null
+        return buildJsonObject {
+            put("providerID", model.providerID)
+            put("modelID", model.modelID)
+        }
     }
 
     // ------------------------------------------------------------------ mapping
@@ -199,11 +337,15 @@ class LegacyApi(override val http: ServerHttp) : OpencodeApi {
                 error.str("data", "message") ?: error.str("message") ?: error.str("name")
             },
             model = info.str("modelID"),
+            providerId = info.str("providerID"),
+            tokens = info.obj("tokens").toTokenUsage(),
+            cost = info.double("cost"),
         )
     }
 
     private companion object {
         const val MESSAGE_LIMIT = 200
+        const val FIND_LIMIT = 30
 
         fun enc(pathSegment: String): String =
             java.net.URLEncoder.encode(pathSegment, "UTF-8").replace("+", "%20")

@@ -39,6 +39,11 @@ interface SecretStore {
 
     fun hasLocalPassword(): Boolean = !localPassword().isNullOrEmpty()
 
+    /** Secrets of saved server profiles, addressed by [ai.opencode.android.settings.ServerProfile.secretKey]. */
+    fun profileSecret(key: String): String? = null
+
+    fun setProfileSecret(key: String, value: String?) = Unit
+
     fun clear()
 }
 
@@ -118,7 +123,28 @@ class EncryptedSecretStore(context: Context) : SecretStore {
         }
     }
 
+    private val memoryProfiles = mutableMapOf<String, String>()
+
+    override fun profileSecret(key: String): String? = synchronized(lock) {
+        prefs?.getString(key, null) ?: memoryProfiles[key]
+    }
+
+    override fun setProfileSecret(key: String, value: String?) = synchronized(lock) {
+        val stored = value?.takeIf { it.isNotEmpty() }
+        val editor = prefs?.edit()
+        if (editor != null) {
+            if (stored == null) editor.remove(key) else editor.putString(key, stored)
+            editor.apply()
+        } else if (stored == null) {
+            memoryProfiles.remove(key)
+        } else {
+            memoryProfiles[key] = stored
+        }
+        Unit
+    }
+
     override fun clear() = synchronized(lock) {
+        memoryProfiles.clear()
         prefs?.edit()?.clear()?.apply()
         memoryPassword = null
         memoryToken = null
