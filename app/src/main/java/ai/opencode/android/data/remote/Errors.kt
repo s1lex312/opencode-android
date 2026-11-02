@@ -30,3 +30,6 @@ object NetworkErrors {
         else -> error.message ?: error.javaClass.simpleName
     }
 }
+
+/** The connected server version has no endpoint for this feature. */
+class UnsupportedFeatureException(message: String) : ApiException(null, message)

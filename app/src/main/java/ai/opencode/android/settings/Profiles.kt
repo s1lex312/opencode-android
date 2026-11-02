@@ -53,6 +53,17 @@ data class ServerProfile(
 /** Plain-JSON codecs; the lists are small and stored as one DataStore string each. */
 internal object ProfileCodec {
 
+    /** `{"key": 128000}`; garbage and non-positive values are dropped. */
+    fun encodeLimits(map: Map<String, Long>): String = buildJsonObject {
+        map.forEach { (key, value) -> if (value > 0) put(key, value) }
+    }.toString()
+
+    fun decodeLimits(raw: String?): Map<String, Long> {
+        if (raw.isNullOrBlank()) return emptyMap()
+        val obj = runCatching { OpencodeJson.parseToJsonElement(raw) as? JsonObject }.getOrNull() ?: return emptyMap()
+        return obj.mapNotNull { (key, _) -> obj.str(key)?.toLongOrNull()?.takeIf { it > 0 }?.let { key to it } }.toMap()
+    }
+
     fun encodePrompts(list: List<SystemPromptProfile>): String = buildJsonArray {
         list.forEach { prompt ->
             add(

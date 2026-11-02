@@ -126,6 +126,8 @@ data class ModelOption(
     val disabled: Boolean = false,
     /** Context window in tokens, when the catalogue knows it. */
     val contextLimit: Long? = null,
+    /** Maximum output tokens, when the catalogue knows it. */
+    val outputLimit: Long? = null,
 ) {
     val key: String get() = "$providerID/$modelID"
     val label: String get() = if (name.isBlank() || name == modelID) modelID else "$name · $modelID"
@@ -178,6 +180,8 @@ data class SlashCommand(
     val name: String,
     val description: String? = null,
     val source: String? = null,
+    /** Argument placeholders of the template (`$1`, `$ARGUMENTS`). */
+    val hints: List<String> = emptyList(),
 )
 
 /** A file or image the user attached to the next prompt, already encoded as a `data:` URL. */
@@ -201,7 +205,105 @@ data class PromptRequest(
     val attachments: List<PromptAttachment> = emptyList(),
     /** Absolute paths of `@`-mentioned project files. */
     val mentionedFiles: List<String> = emptyList(),
+    /** `@`-mentioned subagents the primary agent should delegate to. */
+    val mentionedAgents: List<String> = emptyList(),
 )
 
 /** A pseudo-terminal opened on the server. */
 data class PtyInfo(val id: String, val cwd: String? = null)
+
+/** An entry of the `@` popup: a project file/directory or a subagent. */
+data class MentionCandidate(
+    val value: String,
+    val kind: Kind,
+    val description: String? = null,
+) {
+    enum class Kind { FILE, DIRECTORY, AGENT }
+}
+
+/** How an MCP server is launched or reached; mirrors opencode's `mcp.<name>` config entry. */
+sealed interface McpConfig {
+    val enabled: Boolean
+    val timeoutMs: Int?
+
+    data class Local(
+        val command: List<String>,
+        val environment: Map<String, String> = emptyMap(),
+        val cwd: String? = null,
+        override val enabled: Boolean = true,
+        override val timeoutMs: Int? = null,
+    ) : McpConfig
+
+    data class Remote(
+        val url: String,
+        val headers: Map<String, String> = emptyMap(),
+        /** `false` turns off OAuth auto-detection; `true` lets opencode negotiate it. */
+        val oauth: Boolean = true,
+        override val enabled: Boolean = true,
+        override val timeoutMs: Int? = null,
+    ) : McpConfig
+}
+
+/** Live state of one MCP server as reported by `GET /mcp`. */
+data class McpServerInfo(
+    val name: String,
+    val status: Status,
+    val error: String? = null,
+    /** Config from the global opencode config, when this server is defined there. */
+    val config: McpConfig? = null,
+) {
+    enum class Status { CONNECTED, PENDING, DISABLED, FAILED, NEEDS_AUTH, NEEDS_REGISTRATION, UNKNOWN }
+}
+
+/** Permission answer configured in opencode (`ask` / `allow` / `deny`). */
+enum class PermissionAction(val wire: String) {
+    ASK("ask"),
+    ALLOW("allow"),
+    DENY("deny"),
+    ;
+
+    companion object {
+        fun of(wire: String?): PermissionAction? = entries.firstOrNull { it.wire == wire }
+    }
+}
+
+/**
+ * An agent with everything the editor can change. Values come from `GET /agent` (effective) and
+ * the user's overrides in the global config (`agent.<name>`).
+ */
+data class AgentDetail(
+    val name: String,
+    val description: String? = null,
+    val mode: String = "all",
+    val native: Boolean = false,
+    val hidden: Boolean = false,
+    val disabled: Boolean = false,
+    val model: ModelRef? = null,
+    val temperature: Double? = null,
+    val topP: Double? = null,
+    val steps: Int? = null,
+    val prompt: String? = null,
+    val color: String? = null,
+    /** Tool id → enabled; absent tools inherit. */
+    val tools: Map<String, Boolean> = emptyMap(),
+    /** Permission key (`edit`, `bash`, ...) → action; absent keys inherit. */
+    val permissions: Map<String, PermissionAction> = emptyMap(),
+) {
+    val isSubagent: Boolean get() = mode == "subagent"
+}
+
+/** The parts of the global opencode config the "Agent behaviour" screen edits. */
+data class BehaviourConfig(
+    val permissions: Map<String, PermissionAction> = emptyMap(),
+    val tools: Map<String, Boolean> = emptyMap(),
+    val smallModel: String? = null,
+    val defaultAgent: String? = null,
+    val autoCompact: Boolean? = null,
+    val prune: Boolean? = null,
+    val reservedTokens: Int? = null,
+    val snapshot: Boolean? = null,
+    val share: String? = null,
+    val instructions: List<String> = emptyList(),
+    val subagentDepth: Int? = null,
+    val username: String? = null,
+)

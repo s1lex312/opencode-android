@@ -115,6 +115,16 @@ sealed interface OpencodeEvent {
         val files: List<FileDiffPayload>? = null,
     ) : OpencodeEvent
 
+    /** The server could not open a browser for MCP OAuth; the client should open [url]. */
+    data class McpAuthUrl(val server: String, val url: String) : OpencodeEvent {
+        override val sessionId: String? get() = null
+    }
+
+    /** An MCP server connected, disconnected or changed its tool list. */
+    data object McpChanged : OpencodeEvent {
+        override val sessionId: String? get() = null
+    }
+
     data object Ignored : OpencodeEvent {
         override val sessionId: String? get() = null
     }

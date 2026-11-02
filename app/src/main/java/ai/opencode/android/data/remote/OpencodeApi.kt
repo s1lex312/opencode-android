@@ -1,9 +1,13 @@
 package ai.opencode.android.data.remote
 
+import ai.opencode.android.data.model.AgentDetail
 import ai.opencode.android.data.model.AgentOption
 import ai.opencode.android.data.model.ApiFlavor
 import ai.opencode.android.data.model.ChatMessage
 import ai.opencode.android.data.model.FileDiffPayload
+import ai.opencode.android.data.model.McpConfig
+import ai.opencode.android.data.model.McpServerInfo
+import ai.opencode.android.data.model.MentionCandidate
 import ai.opencode.android.data.model.ModelOption
 import ai.opencode.android.data.model.ModelRef
 import ai.opencode.android.data.model.PermissionDecision
@@ -15,6 +19,7 @@ import ai.opencode.android.data.model.SlashCommand
 import ai.opencode.android.security.NetworkPolicy
 import ai.opencode.android.settings.AppSettings
 import kotlinx.coroutines.flow.Flow
+import kotlinx.serialization.json.JsonObject
 
 /**
  * The subset of the opencode server API the mobile client needs. Implemented twice:
@@ -85,8 +90,62 @@ interface OpencodeApi {
 
     suspend fun replyPermission(sessionId: String, permissionId: String, decision: PermissionDecision)
 
+    /** Runs [command] in the project shell as part of the session (the TUI's `!command`). */
+    suspend fun runShell(sessionId: String, command: String, agent: String, model: ModelRef?): Unit = unsupported("Shell commands")
+
+    suspend fun renameSession(sessionId: String, title: String): Unit = unsupported("Renaming chats")
+
+    /** Entries of a project directory (`""` is the root), for the `@` popup before anything is typed. */
+    suspend fun listDirectory(path: String): List<MentionCandidate> = emptyList()
+
+    /** Files and directories matching [query]. */
+    suspend fun findPaths(query: String): List<MentionCandidate> =
+        findFiles(query).map { MentionCandidate(it, MentionCandidate.Kind.FILE) }
+
+    // ------------------------------------------------------------------ MCP
+
+    suspend fun mcpServers(): List<McpServerInfo> = unsupported("MCP")
+
+    /** Creates or replaces the server in the global config and (re)connects it. */
+    suspend fun mcpSave(name: String, config: McpConfig): Unit = unsupported("MCP")
+
+    /** Removes the server where the API can, otherwise disables it. Returns true when removed. */
+    suspend fun mcpRemove(name: String): Boolean = unsupported("MCP")
+
+    suspend fun mcpConnect(name: String): Unit = unsupported("MCP")
+
+    suspend fun mcpDisconnect(name: String): Unit = unsupported("MCP")
+
+    /** Starts OAuth; the server reports the URL to open via `mcp.browser.open.failed`. Blocks until done. */
+    suspend fun mcpAuthenticate(name: String): Unit = unsupported("MCP OAuth")
+
+    /** Finishes OAuth with a code pasted by the user (when the redirect cannot reach the server). */
+    suspend fun mcpAuthCode(name: String, code: String): Unit = unsupported("MCP OAuth")
+
+    suspend fun mcpLogout(name: String): Unit = unsupported("MCP OAuth")
+
+    // ------------------------------------------------------------------ server config
+
+    /** Whether [globalConfig]/[patchGlobalConfig] work on this server. */
+    val supportsConfig: Boolean get() = false
+
+    suspend fun globalConfig(): JsonObject = unsupported("Editing the opencode config")
+
+    /** Deep-merges [patch] into the global config (`~/.config/opencode/opencode.json`). */
+    suspend fun patchGlobalConfig(patch: JsonObject): Unit = unsupported("Editing the opencode config")
+
+    /** Effective agents including subagents and hidden ones. */
+    suspend fun agentDetails(): List<AgentDetail> =
+        agents().map { AgentDetail(name = it.name, description = it.description, mode = it.mode ?: "all") }
+
+    /** Ids of the tools agents can call (built-in and MCP). */
+    suspend fun toolIds(): List<String> = emptyList()
+
     fun eventStream(): Flow<StreamSignal> = SseStream(http.sseClient, http.sseRequest(eventPath)).signals()
 }
+
+private fun unsupported(feature: String): Nothing =
+    throw UnsupportedFeatureException("$feature: not supported by this opencode server version")
 
 /**
  * Creates an [OpencodeApi] for the configured server, detecting which API flavour it speaks.

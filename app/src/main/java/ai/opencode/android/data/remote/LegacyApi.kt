@@ -1,10 +1,14 @@
 package ai.opencode.android.data.remote
 
 import ai.opencode.android.data.events.EventMapper
+import ai.opencode.android.data.model.AgentDetail
 import ai.opencode.android.data.model.AgentOption
 import ai.opencode.android.data.model.ApiFlavor
 import ai.opencode.android.data.model.ChatMessage
 import ai.opencode.android.data.model.FileDiffPayload
+import ai.opencode.android.data.model.McpConfig
+import ai.opencode.android.data.model.McpServerInfo
+import ai.opencode.android.data.model.MentionCandidate
 import ai.opencode.android.data.model.MessagePart
 import ai.opencode.android.data.model.ModelOption
 import ai.opencode.android.data.model.ModelRef
@@ -128,6 +132,15 @@ class LegacyApi(override val http: ServerHttp) : OpencodeApi {
                         },
                     )
                 }
+                // `@agent` mentions: the primary agent delegates to that subagent via the task tool.
+                prompt.mentionedAgents.forEach { name ->
+                    add(
+                        buildJsonObject {
+                            put("type", "agent")
+                            put("name", name)
+                        },
+                    )
+                }
             })
             modelJson(prompt.model)?.let { put("model", it) }
             if (!prompt.agent.isNullOrBlank()) put("agent", prompt.agent)
@@ -149,7 +162,8 @@ class LegacyApi(override val http: ServerHttp) : OpencodeApi {
     }
 
     override suspend fun runCommand(sessionId: String, command: String, arguments: String, model: ModelRef?, agent: String?) {
-        http.postJson(
+        // Answers only after the whole turn, which can outlast any read timeout.
+        http.postJsonLong(
             "/session/${enc(sessionId)}/command",
             buildJsonObject {
                 put("command", command)
@@ -164,8 +178,133 @@ class LegacyApi(override val http: ServerHttp) : OpencodeApi {
         val array = http.getJson("/command") as? JsonArray ?: return emptyList()
         return array.objects().mapNotNull { obj ->
             val name = obj.str("name") ?: return@mapNotNull null
-            SlashCommand(name = name, description = obj.str("description"), source = obj.str("source"))
+            SlashCommand(name = name, description = obj.str("description"), source = obj.str("source"), hints = obj.strList("hints"))
         }
+    }
+
+    override suspend fun runShell(sessionId: String, command: String, agent: String, model: ModelRef?) {
+        http.postJsonLong(
+            "/session/${enc(sessionId)}/shell",
+            buildJsonObject {
+                put("agent", agent)
+                put("command", command)
+                modelJson(model)?.let { put("model", it) }
+            },
+        )
+    }
+
+    override suspend fun renameSession(sessionId: String, title: String) {
+        http.patchJson("/session/${enc(sessionId)}", buildJsonObject { put("title", title) })
+    }
+
+    override suspend fun listDirectory(path: String): List<MentionCandidate> {
+        val array = http.getJson("/file", mapOf("path" to path.ifBlank { "." })) as? JsonArray ?: return emptyList()
+        return array.objects()
+            .filter { it.bool("ignored") != true }
+            .mapNotNull { obj ->
+                val relative = obj.str("path") ?: return@mapNotNull null
+                val directory = obj.str("type") == "directory"
+                MentionCandidate(
+                    value = if (directory) relative.trimEnd('/') + "/" else relative,
+                    kind = if (directory) MentionCandidate.Kind.DIRECTORY else MentionCandidate.Kind.FILE,
+                )
+            }
+            .sortedWith(compareBy({ it.kind != MentionCandidate.Kind.DIRECTORY }, { it.value.lowercase() }))
+    }
+
+    override suspend fun findPaths(query: String): List<MentionCandidate> {
+        val array = http.getJson(
+            "/find/file",
+            mapOf("query" to query, "limit" to FIND_LIMIT.toString()),
+        ) as? JsonArray ?: return emptyList()
+        return array.mapNotNull { (it as? JsonPrimitive)?.content }.map { raw ->
+            val path = raw.replace('\\', '/')
+            MentionCandidate(
+                value = path,
+                kind = if (path.endsWith("/")) MentionCandidate.Kind.DIRECTORY else MentionCandidate.Kind.FILE,
+            )
+        }
+    }
+
+    // ------------------------------------------------------------------ MCP
+
+    override suspend fun mcpServers(): List<McpServerInfo> {
+        val status = http.getJson("/mcp") as? JsonObject ?: JsonObject(emptyMap())
+        // Effective (merged) config so servers from a project's opencode.json show their settings too.
+        val configured = runCatching { (http.getJson("/config") as? JsonObject)?.obj("mcp") }.getOrNull()
+            ?: JsonObject(emptyMap())
+        val names = (status.keys + configured.keys).toSortedSet()
+        return names.map { name ->
+            val state = status[name] as? JsonObject
+            McpServerInfo(
+                name = name,
+                status = ConfigJson.mcpStatus(state?.str("status")),
+                error = state?.str("error"),
+                config = ConfigJson.decodeMcp(configured[name] as? JsonObject),
+            )
+        }
+    }
+
+    override suspend fun mcpSave(name: String, config: McpConfig) {
+        // A changed global config disposes the instances; they reconnect MCP from it on next use.
+        patchGlobalConfig(buildJsonObject { put("mcp", buildJsonObject { put(name, ConfigJson.encodeMcp(config)) }) })
+        if (config.enabled) runCatching { mcpConnect(name) }
+    }
+
+    override suspend fun mcpRemove(name: String): Boolean {
+        // Patches are deep merges, so a key cannot be deleted over HTTP: disable it instead.
+        runCatching { mcpDisconnect(name) }
+        patchGlobalConfig(
+            buildJsonObject { put("mcp", buildJsonObject { put(name, buildJsonObject { put("enabled", false) }) }) },
+        )
+        return false
+    }
+
+    override suspend fun mcpConnect(name: String) {
+        http.postJsonLong("/mcp/${enc(name)}/connect")
+    }
+
+    override suspend fun mcpDisconnect(name: String) {
+        http.postJson("/mcp/${enc(name)}/disconnect")
+    }
+
+    override suspend fun mcpAuthenticate(name: String) {
+        http.postJsonLong("/mcp/${enc(name)}/auth/authenticate")
+    }
+
+    override suspend fun mcpAuthCode(name: String, code: String) {
+        http.postJsonLong("/mcp/${enc(name)}/auth/callback", buildJsonObject { put("code", code) })
+    }
+
+    override suspend fun mcpLogout(name: String) {
+        http.deleteJson("/mcp/${enc(name)}/auth")
+    }
+
+    // ------------------------------------------------------------------ config
+
+    override val supportsConfig: Boolean get() = true
+
+    override suspend fun globalConfig(): JsonObject =
+        http.getJson("/global/config") as? JsonObject ?: JsonObject(emptyMap())
+
+    override suspend fun patchGlobalConfig(patch: JsonObject) {
+        http.patchJson("/global/config", patch)
+    }
+
+    override suspend fun agentDetails(): List<AgentDetail> {
+        val response = http.getJson("/agent")
+        val effective = ((response as? JsonObject)?.arr("data") ?: response as? JsonArray)?.objects().orEmpty()
+        val overrides = runCatching { globalConfig().obj("agent") }.getOrNull() ?: JsonObject(emptyMap())
+        val byName = effective.mapNotNull { obj -> obj.str("name")?.let { it to obj } }.toMap()
+        // Disabled agents vanish from /agent but keep an override that can re-enable them.
+        val names = byName.keys + overrides.keys.filterNot { it in byName }
+        return names.map { name -> ConfigJson.decodeAgent(name, byName[name], overrides[name] as? JsonObject) }
+    }
+
+    override suspend fun toolIds(): List<String> {
+        val response = http.getJson("/experimental/tool/ids")
+        val array = response as? JsonArray ?: (response as? JsonObject)?.arr("data") ?: return emptyList()
+        return array.mapNotNull { (it as? JsonPrimitive)?.content }.sorted()
     }
 
     override suspend fun findFiles(query: String): List<String> {
@@ -204,7 +343,7 @@ class LegacyApi(override val http: ServerHttp) : OpencodeApi {
     override suspend fun compact(sessionId: String, model: ModelRef?) {
         val target = model ?: lastModel(sessionId)
             ?: throw ApiException(null, "Pick a model first: compaction needs one")
-        http.postJson(
+        http.postJsonLong(
             "/session/${enc(sessionId)}/summarize",
             buildJsonObject {
                 put("providerID", target.providerID)
@@ -280,6 +419,7 @@ class LegacyApi(override val http: ServerHttp) : OpencodeApi {
                     modelID = modelID,
                     name = "$providerName · $name",
                     contextLimit = model?.number("limit", "context")?.takeIf { it > 0 },
+                    outputLimit = model?.number("limit", "output")?.takeIf { it > 0 },
                 )
             }
         }
@@ -288,7 +428,7 @@ class LegacyApi(override val http: ServerHttp) : OpencodeApi {
 
     override suspend fun agents(): List<AgentOption> {
         val response = http.getJson("/agent")
-        val array = (response as? JsonObject)?.obj("data") as? JsonArray
+        val array = (response as? JsonObject)?.arr("data")
             ?: response as? JsonArray
             ?: return emptyList()
         return array.objects().mapNotNull { obj ->

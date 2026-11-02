@@ -46,6 +46,10 @@ class LocalServerManager(
     private val _state = MutableStateFlow(LocalServerState())
     val state: StateFlow<LocalServerState> = _state.asStateFlow()
 
+    /** Extra proot arguments (bind mounts) decided by the user's phone-access settings. */
+    @Volatile
+    var extraBinds: () -> List<String> = { emptyList() }
+
     private val logBuffer = ArrayDeque<String>()
     private val logStore = ServerLogStore(provisioner.paths().logFile)
 
@@ -245,6 +249,7 @@ class LocalServerManager(
             "-b", "/proc",
             "-b", "/sys",
             "-b", "${resolv.absolutePath}:/etc/resolv.conf",
+        ) + runCatching { extraBinds() }.getOrDefault(emptyList()) + listOf(
             "-w", "/root",
             "/usr/bin/env",
             "HOME=/root",

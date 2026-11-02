@@ -60,6 +60,14 @@ class ServerHttp(
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .build()
 
+    /**
+     * For endpoints that answer only when the agent's turn is over (`/command`, `/summarize`,
+     * `/shell`, MCP OAuth): a slow model or a long task must not be cut off by the read timeout.
+     */
+    private val longClient: OkHttpClient = client.newBuilder()
+        .readTimeout(0, TimeUnit.MILLISECONDS)
+        .build()
+
     fun url(path: String, query: Map<String, String> = emptyMap()): HttpUrl {
         val normalizedPath = if (path.startsWith("/")) path else "/$path"
         val parsed = ("$baseUrl$normalizedPath").toHttpUrlOrNull()
@@ -79,6 +87,16 @@ class ServerHttp(
     ): JsonElement? = withContext(Dispatchers.IO) {
         val requestBody = (body?.toString() ?: "{}").toRequestBody(jsonMediaType)
         execute(Request.Builder().url(url(path, query)).post(requestBody).build())
+    }
+
+    /** [postJson] without a read timeout, see [longClient]. */
+    suspend fun postJsonLong(
+        path: String,
+        body: JsonElement? = null,
+        query: Map<String, String> = emptyMap(),
+    ): JsonElement? = withContext(Dispatchers.IO) {
+        val requestBody = (body?.toString() ?: "{}").toRequestBody(jsonMediaType)
+        execute(Request.Builder().url(url(path, query)).post(requestBody).build(), longClient)
     }
 
     suspend fun patchJson(
@@ -110,10 +128,10 @@ class ServerHttp(
             .get()
             .build()
 
-    private fun execute(request: Request): JsonElement? {
+    private fun execute(request: Request, httpClient: OkHttpClient = client): JsonElement? {
         val started = System.currentTimeMillis()
         try {
-            client.newCall(request).execute().use { response ->
+            httpClient.newCall(request).execute().use { response ->
                 if (BuildConfig.DEBUG) {
                     Log.d(
                         LOG_TAG,

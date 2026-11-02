@@ -1,6 +1,9 @@
 package ai.opencode.android.di
 
 import ai.opencode.android.BuildConfig
+import ai.opencode.android.bridge.PhoneAccessManager
+import ai.opencode.android.bridge.StorageAccess
+import ai.opencode.android.server.LocalConfigFile
 import ai.opencode.android.data.cache.SessionCache
 import ai.opencode.android.data.repo.ProviderRepository
 import ai.opencode.android.data.repo.ServerConnectionManager
@@ -123,8 +126,22 @@ class AppContainer(context: Context) {
     /** AI providers configured on the connected opencode server (API keys, OAuth, custom endpoints). */
     val providerRepository: ProviderRepository by lazy { ProviderRepository(connectionManager) }
 
+    /** Mirrors Settings → Phone access → shared storage for the (non-suspending) proot launcher. */
+    @Volatile
+    private var storageBindEnabled = false
+
     val localServerManager: LocalServerManager by lazy {
-        LocalServerManager(appContext, appScope, provisioner, secretStore)
+        LocalServerManager(appContext, appScope, provisioner, secretStore).also { manager ->
+            manager.extraBinds = { if (storageBindEnabled) StorageAccess.binds(appContext) else emptyList() }
+        }
+    }
+
+    /** The in-app server's global opencode config, for edits the HTTP API cannot express. */
+    val localConfigFile: LocalConfigFile by lazy { LocalConfigFile(envPaths) }
+
+    /** Android tools MCP server and its registration in opencode. */
+    val phoneAccess: PhoneAccessManager by lazy {
+        PhoneAccessManager(appContext, settingsRepository, secretStore, connectionManager, sessionRepository, appScope)
     }
 
     /**
@@ -194,6 +211,10 @@ class AppContainer(context: Context) {
         appScope.launch { runCatching { settingsRepository.current() } }
         appScope.launch { runCatching { provisioner.refresh() } }
         agentNotifier.start()
+        phoneAccess.start()
+        appScope.launch {
+            settingsRepository.settings.collect { storageBindEnabled = it.phone.storage }
+        }
         // Once the in-app server is up, check (at most daily) for a newer opencode build.
         appScope.launch {
             localServerManager.state.collect { state ->

@@ -111,6 +111,7 @@
     <string name="settings_theme_light">Light</string>
     <string name="settings_theme_dark">Dark</string>
     <string name="settings_palette">Accent colour</string>
+    <string name="settings_palette_claude">Claude Code</string>
     <string name="settings_palette_opencode">opencode</string>
     <string name="settings_palette_dynamic">Wallpaper</string>
     <string name="settings_palette_emerald">Emerald</string>

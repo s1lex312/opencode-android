@@ -1,7 +1,13 @@
 package ai.opencode.android.ui.navigation
 
 import ai.opencode.android.di.AppContainer
+import ai.opencode.android.ui.chat.ChatDestination
 import ai.opencode.android.ui.chat.ChatScreen
+import ai.opencode.android.ui.config.AgentsScreen
+import ai.opencode.android.ui.config.BehaviourScreen
+import ai.opencode.android.ui.config.ChatSettingsScreen
+import ai.opencode.android.ui.config.McpScreen
+import ai.opencode.android.ui.config.PhoneAccessScreen
 import ai.opencode.android.ui.diff.DiffScreen
 import ai.opencode.android.ui.logs.LogsScreen
 import ai.opencode.android.ui.providers.CustomProviderScreen
@@ -45,6 +51,11 @@ object Routes {
 
     const val SETTINGS_SERVERS = "settings/servers"
     const val SETTINGS_SYSTEM_PROMPTS = "settings/system-prompts"
+    const val SETTINGS_CHAT = "settings/chat"
+    const val SETTINGS_AGENTS = "settings/agents"
+    const val SETTINGS_MCP = "settings/mcp"
+    const val SETTINGS_BEHAVIOUR = "settings/behaviour"
+    const val SETTINGS_PHONE = "settings/phone"
 
     const val PROVIDERS = "providers"
     const val PROVIDERS_CUSTOM = "providers/custom"
@@ -122,6 +133,45 @@ fun OpencodeNavHost(container: AppContainer, openSessionRequest: String? = null,
                 },
                 onOpenTerminal = { cwd -> navController.open(Routes.terminal(cwd)) },
                 onOpenSystemPrompts = { navController.open(Routes.SETTINGS_SYSTEM_PROMPTS) },
+                onNavigate = { destination ->
+                    when (destination) {
+                        ChatDestination.SESSIONS -> navController.popBackStack(Routes.SESSIONS, inclusive = false)
+                        ChatDestination.SETTINGS -> navController.open(Routes.SETTINGS)
+                        ChatDestination.CHAT_SETTINGS -> navController.open(Routes.SETTINGS_CHAT)
+                        ChatDestination.AGENTS -> navController.open(Routes.SETTINGS_AGENTS)
+                        ChatDestination.MCP -> navController.open(Routes.SETTINGS_MCP)
+                        ChatDestination.PERMISSIONS -> navController.open(Routes.SETTINGS_BEHAVIOUR)
+                        ChatDestination.TERMINAL -> navController.open(Routes.terminal(null))
+                        ChatDestination.DIFF -> navController.open(Routes.diff(sessionId))
+                        ChatDestination.SYSTEM_PROMPTS -> navController.open(Routes.SETTINGS_SYSTEM_PROMPTS)
+                        ChatDestination.PROVIDERS -> navController.open(Routes.PROVIDERS)
+                    }
+                },
+            )
+        }
+
+        composable(Routes.SETTINGS_CHAT) {
+            ChatSettingsScreen(container = container, onBack = back, onOpenAppearance = { navController.open(Routes.SETTINGS_APPEARANCE) })
+        }
+
+        composable(Routes.SETTINGS_AGENTS) {
+            AgentsScreen(container = container, onBack = back)
+        }
+
+        composable(Routes.SETTINGS_MCP) {
+            McpScreen(container = container, onBack = back, onOpenPhoneAccess = { navController.open(Routes.SETTINGS_PHONE) })
+        }
+
+        composable(Routes.SETTINGS_BEHAVIOUR) {
+            BehaviourScreen(container = container, onBack = back)
+        }
+
+        composable(Routes.SETTINGS_PHONE) {
+            PhoneAccessScreen(
+                container = container,
+                onBack = back,
+                onOpenPermissions = { navController.open(Routes.SETTINGS_BEHAVIOUR) },
+                onOpenMcp = { navController.open(Routes.SETTINGS_MCP) },
             )
         }
 
@@ -154,6 +204,11 @@ fun OpencodeNavHost(container: AppContainer, openSessionRequest: String? = null,
                 onOpenAgent = { navController.open(Routes.SETTINGS_AGENT) },
                 onOpenAppearance = { navController.open(Routes.SETTINGS_APPEARANCE) },
                 onOpenAbout = { navController.open(Routes.SETTINGS_ABOUT) },
+                onOpenChat = { navController.open(Routes.SETTINGS_CHAT) },
+                onOpenAgents = { navController.open(Routes.SETTINGS_AGENTS) },
+                onOpenMcp = { navController.open(Routes.SETTINGS_MCP) },
+                onOpenBehaviour = { navController.open(Routes.SETTINGS_BEHAVIOUR) },
+                onOpenPhone = { navController.open(Routes.SETTINGS_PHONE) },
             )
         }
 

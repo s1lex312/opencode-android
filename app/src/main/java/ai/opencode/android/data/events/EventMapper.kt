@@ -195,6 +195,10 @@ object EventMapper {
             "session.unarchived", "session.moved", "session.metadata.updated", "session.forked",
             -> OpencodeEvent.SessionsChanged
 
+            "mcp.browser.open.failed" -> mcpAuthUrl(data)
+
+            "mcp.tools.changed", "mcp.status.changed" -> OpencodeEvent.McpChanged
+
             "session.revert.staged", "session.revert.cleared", "session.revert.committed" -> {
                 if (sessionId == null) OpencodeEvent.Ignored else OpencodeEvent.MessagesInvalidated(sessionId)
             }
@@ -325,8 +329,17 @@ object EventMapper {
 
             "server.connected", "todo.updated", "file.edited", "vcs.branch.updated" -> OpencodeEvent.Ignored
 
+            "mcp.browser.open.failed" -> mcpAuthUrl(props)
+
+            "mcp.tools.changed" -> OpencodeEvent.McpChanged
+
             else -> OpencodeEvent.Ignored
         }
+    }
+
+    private fun mcpAuthUrl(data: JsonObject): OpencodeEvent {
+        val url = data.str("url") ?: return OpencodeEvent.Ignored
+        return OpencodeEvent.McpAuthUrl(data.str("mcpName") ?: data.str("name").orEmpty(), url)
     }
 
     /** Maps one legacy (0.x/1.x) `Part` object; shared with the REST message loader. */

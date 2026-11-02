@@ -6,6 +6,7 @@ import ai.opencode.android.data.events.OpencodeEvent
 import ai.opencode.android.data.model.AgentOption
 import ai.opencode.android.data.model.ChatMessage
 import ai.opencode.android.data.model.ConnectionState
+import ai.opencode.android.data.model.MentionCandidate
 import ai.opencode.android.data.model.MessagePart
 import ai.opencode.android.data.model.ModelOption
 import ai.opencode.android.data.model.ModelRef
@@ -18,10 +19,12 @@ import ai.opencode.android.data.model.Role
 import ai.opencode.android.data.model.ServerSession
 import ai.opencode.android.data.model.SlashCommand
 import ai.opencode.android.data.model.TokenUsage
+import ai.opencode.android.data.remote.ConfigJson
 import ai.opencode.android.data.repo.ApiResult
 import ai.opencode.android.data.repo.ServerConnectionManager
 import ai.opencode.android.data.repo.SessionRepository
 import ai.opencode.android.di.AppContainer
+import ai.opencode.android.settings.ChatSettings
 import ai.opencode.android.settings.SettingsRepository
 import ai.opencode.android.settings.SystemPromptProfile
 import ai.opencode.android.ui.text.UiText
@@ -47,38 +50,59 @@ data class QueuedPrompt(
     val text: String,
     val attachments: List<PromptAttachment> = emptyList(),
     val mentions: List<String> = emptyList(),
+    val agents: List<String> = emptyList(),
 )
 
-/** Context window accounting for the meter above the composer. */
+/** Where the context window size comes from. */
+enum class LimitSource { CATALOGUE, MODEL, CHAT }
+
+/** Context window accounting for the meter under the composer. */
 data class ContextUsage(
     /** Tokens of the latest turn, i.e. what the next turn starts with. */
     val last: TokenUsage,
-    /** Context window of the model, when the catalogue knows it. */
+    /** Context window, from the user's override or the model catalogue. */
     val limit: Long?,
     /** Sum over every assistant turn of this session. */
     val total: TokenUsage,
     val cost: Double,
     val model: String?,
+    val limitSource: LimitSource? = null,
+    /** `provider/model` the limit applies to, for the per-model editor. */
+    val modelKey: String? = null,
+    /** Window the catalogue reports, shown next to an override. */
+    val catalogueLimit: Long? = null,
 ) {
     val used: Long get() = last.contextTokens
 
     /** 0..1, or `null` when the limit is unknown. */
     val fraction: Float? get() = limit?.takeIf { it > 0 }?.let { (used.toFloat() / it).coerceIn(0f, 1f) }
+
+    /** Percentage still free, like Claude Code's "Context left until auto-compact". */
+    val percentLeft: Int? get() = fraction?.let { ((1f - it) * 100).toInt().coerceIn(0, 100) }
 }
 
-/** Entries of the `/` menu: server commands plus the client's own actions. */
+/** Entries of the `/` menu: server commands plus the client's own. */
 data class CommandSuggestion(
     val name: String,
     val description: String?,
     val local: Boolean,
+    val argHint: String? = null,
+    val source: String? = null,
 )
 
-/** One-shot effects the screen performs (navigation, system share sheet, text restore). */
+/** One-shot effects the screen performs (navigation, share sheet, text restore). */
 sealed interface ChatEffect {
     data class OpenSession(val sessionId: String) : ChatEffect
     data class ShareLink(val url: String) : ChatEffect
+    data class ShareText(val title: String, val text: String) : ChatEffect
+    data class Copy(val text: String) : ChatEffect
     data class RestoreInput(val text: String) : ChatEffect
     data class Toast(val text: UiText) : ChatEffect
+    data class Navigate(val destination: ChatDestination) : ChatEffect
+    data object OpenModelPicker : ChatEffect
+    data object OpenUsage : ChatEffect
+    data object OpenHelp : ChatEffect
+    data object Close : ChatEffect
 }
 
 data class ChatUiState(
@@ -90,10 +114,13 @@ data class ChatUiState(
     val loading: Boolean = true,
     val sending: Boolean = false,
     val busy: Boolean = false,
+    /** When the current turn started (epoch ms), for the spinner's elapsed time. */
+    val turnStartedAt: Long? = null,
     val retryMessage: String? = null,
     val error: String? = null,
     val connected: Boolean = false,
     val connectionError: String? = null,
+    val serverVersion: String? = null,
     val permissions: List<PermissionRequest> = emptyList(),
     /** Model/agent used for the next prompt (global defaults from Settings). */
     val model: ModelRef? = null,
@@ -101,6 +128,7 @@ data class ChatUiState(
     val models: List<ModelOption> = emptyList(),
     val modelsLoading: Boolean = false,
     val modelsError: String? = null,
+    /** Every agent the server reports (primary and subagents). */
     val agents: List<AgentOption> = emptyList(),
     val queue: List<QueuedPrompt> = emptyList(),
     val attachments: List<PromptAttachment> = emptyList(),
@@ -109,9 +137,14 @@ data class ChatUiState(
     val sharing: Boolean = false,
     val compacting: Boolean = false,
     val commands: List<SlashCommand> = emptyList(),
-    val fileSuggestions: List<String> = emptyList(),
+    val mentionSuggestions: List<MentionCandidate> = emptyList(),
     val systemPrompts: List<SystemPromptProfile> = emptyList(),
     val activeSystemPromptId: String? = null,
+    val chat: ChatSettings = ChatSettings(),
+    /** User override of the context window for this chat. */
+    val sessionContextLimit: Long? = null,
+    /** User overrides per model (`provider/model` → tokens). */
+    val modelContextLimits: Map<String, Long> = emptyMap(),
 ) {
     val canSend: Boolean get() = connected && !sending
 
@@ -128,13 +161,24 @@ data class ChatUiState(
     val activeSystemPrompt: SystemPromptProfile?
         get() = systemPrompts.firstOrNull { it.id == activeSystemPromptId }
 
+    /** Agent that runs the next prompt; blank `agent` means the server default (`build`). */
+    val effectiveAgent: String
+        get() = agent.ifBlank { primaryAgents.firstOrNull { it.name == "build" }?.name ?: primaryAgents.firstOrNull()?.name ?: "build" }
+
     val usage: ContextUsage?
         get() {
             val turns = visibleMessages.filter { it.role == Role.ASSISTANT && it.tokens != null }
-            val last = turns.lastOrNull() ?: return null
-            val lastTokens = last.tokens ?: return null
-            val catalogue = models.firstOrNull { it.providerID == last.providerId && it.modelID == last.model }
-                ?: model?.let { selected -> models.firstOrNull { it.key == selected.key } }
+            val last = turns.lastOrNull()
+            val lastKey = last?.let { message ->
+                val provider = message.providerId
+                val id = message.model
+                if (provider != null && id != null) "$provider/$id" else null
+            }
+            val modelKey = lastKey ?: model?.key
+            val catalogue = models.firstOrNull { it.key == modelKey }
+            val modelOverride = modelKey?.let { modelContextLimits[it] }
+            val limit = sessionContextLimit ?: modelOverride ?: catalogue?.contextLimit
+            if (last == null && limit == null) return null
             val total = turns.fold(TokenUsage()) { sum, message ->
                 val tokens = message.tokens ?: return@fold sum
                 TokenUsage(
@@ -146,27 +190,39 @@ data class ChatUiState(
                 )
             }
             return ContextUsage(
-                last = lastTokens,
-                limit = catalogue?.contextLimit,
+                last = last?.tokens ?: TokenUsage(),
+                limit = limit,
                 total = total,
                 cost = visibleMessages.sumOf { it.cost ?: 0.0 },
-                model = last.model,
+                model = last?.model ?: model?.modelID,
+                limitSource = when {
+                    sessionContextLimit != null -> LimitSource.CHAT
+                    modelOverride != null -> LimitSource.MODEL
+                    catalogue?.contextLimit != null -> LimitSource.CATALOGUE
+                    else -> null
+                },
+                modelKey = modelKey,
+                catalogueLimit = catalogue?.contextLimit,
             )
         }
 
-    /** Primary agents for the switcher above the composer, `build` and `plan` first. */
+    /** Primary agents for the mode switcher, `build` and `plan` first. */
     val primaryAgents: List<AgentOption>
         get() {
             val selectable = agents.filter { it.selectable }
             val order = listOf("build", "plan")
             return selectable.sortedWith(compareBy({ order.indexOf(it.name).let { i -> if (i < 0) order.size else i } }, { it.name }))
         }
+
+    /** Agents the primary agent can delegate to, offered as `@name` mentions. */
+    val subagents: List<AgentOption>
+        get() = agents.filter { it.mode == "subagent" || it.mode == "all" }.sortedBy { it.name }
 }
 
 /**
  * Drives one conversation: loads the message projection, folds live SSE events through
  * [ChatStreamReducer], refetches after each turn and applies the configured permission policy.
- * Also owns the composer's helpers: prompt queue, attachments, `@` file mentions, `/` commands.
+ * Also owns the composer's helpers: prompt queue, attachments, `@` mentions, `/` and `!` input.
  */
 class ChatViewModel(
     private val repository: SessionRepository,
@@ -186,10 +242,13 @@ class ChatViewModel(
     private var agent: String = ""
     private var systemPrompt: String? = null
     private var reloadJob: Job? = null
-    private var fileSearchJob: Job? = null
+    private var mentionSearchJob: Job? = null
     private var metaLoaded = false
     private var modelsValidated = false
     private var nextQueueId = 1L
+
+    /** Set after an automatic compaction until the next prompt, so it cannot loop. */
+    private var autoCompacted = false
 
     /** `@`-mentions the user picked from suggestions; sent as file parts when still in the text. */
     private val pickedMentions = linkedSetOf<String>()
@@ -207,6 +266,9 @@ class ChatViewModel(
                         agent = settings.agent,
                         systemPrompts = settings.systemPrompts,
                         activeSystemPromptId = settings.activeSystemPromptId,
+                        chat = settings.chat,
+                        sessionContextLimit = settings.sessionContextLimits[sessionId],
+                        modelContextLimits = settings.modelContextLimits,
                     )
                 }
             }
@@ -217,6 +279,7 @@ class ChatViewModel(
                     it.copy(
                         connected = state is ConnectionState.Connected,
                         connectionError = (state as? ConnectionState.Failed)?.message,
+                        serverVersion = (state as? ConnectionState.Connected)?.info?.version ?: it.serverVersion,
                     )
                 }
                 if (state is ConnectionState.Connected) {
@@ -237,39 +300,59 @@ class ChatViewModel(
 
     // ------------------------------------------------------------------ sending
 
-    /** Entry point of the send button: slash commands, queueing while busy, or a plain prompt. */
+    /**
+     * Entry point of the send button:
+     *  * `/name args` runs a client command, then a server command; unknown names are reported;
+     *  * `!command` runs in the project shell (the TUI's shell mode);
+     *  * everything else is a prompt, queued while the agent is busy.
+     */
     fun send(text: String) {
         val trimmed = text.trim()
         val attachments = _state.value.attachments
         if (trimmed.isEmpty() && attachments.isEmpty()) return
 
-        if (trimmed.startsWith("/") && attachments.isEmpty()) {
-            val name = trimmed.removePrefix("/").substringBefore(' ').trim()
-            val arguments = trimmed.substringAfter(' ', "").trim()
-            if (runLocalCommand(name)) return
-            if (_state.value.commands.any { it.name == name }) {
-                runServerCommand(name, arguments)
+        val command = parseCommand(trimmed)
+        if (command != null && attachments.isEmpty()) {
+            ClientCommand.find(command.name)?.let { client ->
+                runClientCommand(client, command.arguments)
+                return
+            }
+            if (_state.value.commands.any { it.name == command.name }) {
+                runServerCommand(command.name, command.arguments)
+                return
+            }
+            if (!looksLikePath(command.name)) {
+                _effects.trySend(ChatEffect.Toast(UiText.of(R.string.chat_unknown_command, command.name)))
+                _effects.trySend(ChatEffect.RestoreInput(text))
                 return
             }
         }
 
+        if (trimmed.startsWith("!") && trimmed.length > 1 && attachments.isEmpty()) {
+            runShell(trimmed.substring(1).trim())
+            return
+        }
+
         val mentions = currentMentions(trimmed)
+        val agents = mentionedAgents(trimmed)
         _state.update { it.copy(attachments = emptyList()) }
         pickedMentions.clear()
         val current = _state.value
         if (current.busy || current.sending) {
-            val queued = QueuedPrompt(nextQueueId++, trimmed, attachments, mentions)
+            val queued = QueuedPrompt(nextQueueId++, trimmed, attachments, mentions, agents)
             _state.update { it.copy(queue = it.queue + queued) }
             return
         }
-        dispatch(trimmed, attachments, mentions)
+        dispatch(trimmed, attachments, mentions, agents)
     }
 
-    private fun dispatch(text: String, attachments: List<PromptAttachment>, mentions: List<String>) {
+    private fun dispatch(text: String, attachments: List<PromptAttachment>, mentions: List<String>, agents: List<String>) {
+        autoCompacted = false
+        val now = System.currentTimeMillis()
         val optimistic = ChatMessage(
-            id = "local-${System.currentTimeMillis()}",
+            id = "local-$now",
             role = Role.USER,
-            created = System.currentTimeMillis(),
+            created = now,
             parts = listOf(MessagePart.Text("local", text)) +
                 attachments.map { MessagePart.File("local-${it.id}", it.name, it.mime) },
         )
@@ -277,6 +360,7 @@ class ChatViewModel(
             it.copy(
                 sending = true,
                 busy = true,
+                turnStartedAt = now,
                 error = null,
                 // A new prompt discards the reverted tail on the server, mirror that locally.
                 messages = it.visibleMessages + optimistic,
@@ -290,6 +374,7 @@ class ChatViewModel(
             system = systemPrompt,
             attachments = attachments,
             mentionedFiles = mentions,
+            mentionedAgents = agents,
         )
         viewModelScope.launch {
             when (val result = repository.sendPrompt(sessionId, request)) {
@@ -302,6 +387,7 @@ class ChatViewModel(
                     it.copy(
                         sending = false,
                         busy = false,
+                        turnStartedAt = null,
                         error = result.message,
                         messages = it.messages.filterNot { message -> message.id == optimistic.id },
                         attachments = attachments,
@@ -317,7 +403,7 @@ class ChatViewModel(
         if (current.busy || current.sending || !current.connected) return
         val next = current.queue.firstOrNull() ?: return
         _state.update { it.copy(queue = it.queue.drop(1)) }
-        dispatch(next.text, next.attachments, next.mentions)
+        dispatch(next.text, next.attachments, next.mentions, next.agents)
     }
 
     fun removeQueued(id: Long) = _state.update { it.copy(queue = it.queue.filterNot { q -> q.id == id }) }
@@ -339,6 +425,22 @@ class ChatViewModel(
         }
     }
 
+    /** `!command`: runs in the project shell and lands in the transcript like a tool call. */
+    private fun runShell(command: String) {
+        if (command.isBlank()) return
+        val current = _state.value
+        _state.update { it.copy(busy = true, turnStartedAt = System.currentTimeMillis(), error = null) }
+        viewModelScope.launch {
+            when (val result = repository.runShell(sessionId, command, current.effectiveAgent, model)) {
+                is ApiResult.Ok -> scheduleReload()
+                is ApiResult.Err -> {
+                    _state.update { it.copy(busy = false, turnStartedAt = null, error = result.message) }
+                    _effects.trySend(ChatEffect.RestoreInput("!$command"))
+                }
+            }
+        }
+    }
+
     // ------------------------------------------------------------------ attachments & mentions
 
     fun addAttachment(attachment: PromptAttachment) =
@@ -351,61 +453,117 @@ class ChatViewModel(
         _effects.trySend(ChatEffect.Toast(message))
     }
 
-    /** Debounced project file search for the `@` popup; blank clears the suggestions. */
-    fun searchFiles(query: String?) {
-        fileSearchJob?.cancel()
+    /**
+     * Debounced `@` popup. Empty query: subagents plus the project root; `dir/`: that directory;
+     * anything else: fuzzy file/directory search plus matching subagents. `null` closes the popup.
+     */
+    fun searchMentions(query: String?) {
+        mentionSearchJob?.cancel()
         if (query == null) {
-            _state.update { it.copy(fileSuggestions = emptyList()) }
+            _state.update { it.copy(mentionSuggestions = emptyList()) }
             return
         }
-        fileSearchJob = viewModelScope.launch {
-            delay(FILE_SEARCH_DEBOUNCE_MS)
-            val result = repository.findFiles(query)
-            _state.update { it.copy(fileSuggestions = (result as? ApiResult.Ok)?.value.orEmpty().take(MAX_FILE_SUGGESTIONS)) }
+        mentionSearchJob = viewModelScope.launch {
+            if (query.isNotEmpty()) delay(MENTION_DEBOUNCE_MS)
+            val agents = _state.value.subagents
+                .filter { query.isEmpty() || it.name.startsWith(query, ignoreCase = true) }
+                .map { MentionCandidate(it.name, MentionCandidate.Kind.AGENT, it.description) }
+            val paths = when {
+                query.isEmpty() -> repository.listDirectory("")
+                query.endsWith("/") -> repository.listDirectory(query.trimEnd('/'))
+                else -> repository.findPaths(query)
+            }
+            val files = (paths as? ApiResult.Ok)?.value.orEmpty()
+            _state.update { it.copy(mentionSuggestions = (agents + files).take(MAX_MENTION_SUGGESTIONS)) }
         }
     }
 
-    fun pickMention(path: String) {
-        pickedMentions += path
-        _state.update { it.copy(fileSuggestions = emptyList()) }
+    fun pickMention(candidate: MentionCandidate) {
+        if (candidate.kind != MentionCandidate.Kind.AGENT) pickedMentions += candidate.value.trimEnd('/')
+        // Picking a directory keeps the popup open on its contents (handled by the caret token).
+        if (candidate.kind != MentionCandidate.Kind.DIRECTORY) _state.update { it.copy(mentionSuggestions = emptyList()) }
     }
 
     private fun currentMentions(text: String): List<String> {
         val directory = _state.value.directory?.trimEnd('/') ?: return emptyList()
-        return pickedMentions.filter { "@$it" in text }.map { "$directory/${it.trimStart('/')}" }
+        return pickedMentions
+            .filter { path -> MENTION_TOKEN.findAll(text).any { it.groupValues[1].trimEnd('/') == path } }
+            .map { "$directory/${it.trimStart('/')}" }
+    }
+
+    private fun mentionedAgents(text: String): List<String> {
+        val names = _state.value.subagents.map { it.name }.toSet()
+        return MENTION_TOKEN.findAll(text).map { it.groupValues[1] }.filter { it in names }.distinct().toList()
     }
 
     // ------------------------------------------------------------------ slash commands
 
-    val localCommands: List<String> = listOf(CMD_COMPACT, CMD_UNDO, CMD_REDO, CMD_FORK, CMD_SHARE)
-
     fun commandSuggestions(prefix: String): List<CommandSuggestion> {
-        val local = localCommands.map { CommandSuggestion(it, null, local = true) }
-        val server = _state.value.commands.map { CommandSuggestion(it.name, it.description, local = false) }
-        return (server + local.filter { l -> server.none { it.name == l.name } })
-            .filter { it.name.startsWith(prefix, ignoreCase = true) }
-            .take(MAX_COMMAND_SUGGESTIONS)
+        val server = _state.value.commands
+            .filter { ClientCommand.find(it.name) == null }
+            .map { CommandSuggestion(it.name, it.description, local = false, argHint = it.hints.joinToString(" ").ifBlank { null }, source = it.source) }
+        val client = ClientCommand.entries.map { CommandSuggestion(it.id, null, local = true, argHint = it.argHint) }
+        val all = server + client
+        if (prefix.isEmpty()) return all
+        val lower = prefix.lowercase()
+        val aliasHits = ClientCommand.entries
+            .filter { command -> command.aliases.any { it.startsWith(lower) } && !command.id.startsWith(lower) }
+            .map { CommandSuggestion(it.id, null, local = true, argHint = it.argHint) }
+        return all.filter { it.name.startsWith(lower, ignoreCase = true) } +
+            aliasHits +
+            all.filter { !it.name.startsWith(lower, ignoreCase = true) && it.name.contains(lower, ignoreCase = true) }
     }
 
-    private fun runLocalCommand(name: String): Boolean {
-        if (_state.value.commands.any { it.name == name }) return false
-        when (name) {
-            CMD_COMPACT -> compact()
-            CMD_UNDO -> _state.value.visibleMessages.lastOrNull { it.role == Role.USER }?.let(::revertTo)
-            CMD_REDO -> unrevert()
-            CMD_FORK -> forkFrom(null)
-            CMD_SHARE -> share()
-            else -> return false
+    /** Every command for the `/help` sheet. */
+    fun allCommands(): List<CommandSuggestion> = commandSuggestions("")
+
+    private fun runClientCommand(command: ClientCommand, arguments: String) {
+        when (command) {
+            ClientCommand.NEW -> newSession()
+            ClientCommand.SESSIONS, ClientCommand.EXIT -> _effects.trySend(ChatEffect.Close)
+            ClientCommand.MODELS -> if (arguments.isBlank()) _effects.trySend(ChatEffect.OpenModelPicker) else selectModelByName(arguments)
+            ClientCommand.AGENT -> if (arguments.isBlank()) cycleAgent() else selectAgentByName(arguments)
+            ClientCommand.COMPACT -> compact()
+            ClientCommand.CONTEXT -> contextCommand(arguments)
+            ClientCommand.UNDO -> _state.value.visibleMessages.lastOrNull { it.role == Role.USER }?.let(::revertTo)
+                ?: toast(R.string.chat_nothing_to_undo)
+            ClientCommand.REDO -> if (_state.value.revertMessageId != null) unrevert() else toast(R.string.chat_nothing_to_redo)
+            ClientCommand.FORK -> forkFrom(null)
+            ClientCommand.RENAME -> if (arguments.isBlank()) toast(R.string.chat_rename_usage) else rename(arguments)
+            ClientCommand.SHARE -> share()
+            ClientCommand.UNSHARE -> unshare()
+            ClientCommand.EXPORT -> _effects.trySend(ChatEffect.ShareText(_state.value.title, exportMarkdown()))
+            ClientCommand.COPY -> {
+                val last = _state.value.visibleMessages.lastOrNull { it.role == Role.ASSISTANT && it.plainText.isNotBlank() }
+                if (last != null) _effects.trySend(ChatEffect.Copy(last.plainText)) else toast(R.string.chat_nothing_to_copy)
+            }
+            ClientCommand.DETAILS -> toggleChat { it.copy(expandTools = !it.expandTools) }
+            ClientCommand.THINKING -> toggleChat { it.copy(expandReasoning = !it.expandReasoning) }
+            ClientCommand.SYSTEM -> systemCommand(arguments)
+            ClientCommand.MCP -> _effects.trySend(ChatEffect.Navigate(ChatDestination.MCP))
+            ClientCommand.PERMISSIONS -> _effects.trySend(ChatEffect.Navigate(ChatDestination.PERMISSIONS))
+            ClientCommand.AGENTS_CONFIG -> _effects.trySend(ChatEffect.Navigate(ChatDestination.AGENTS))
+            ClientCommand.TERMINAL -> _effects.trySend(ChatEffect.Navigate(ChatDestination.TERMINAL))
+            ClientCommand.DIFF -> _effects.trySend(ChatEffect.Navigate(ChatDestination.DIFF))
+            ClientCommand.SETTINGS -> _effects.trySend(ChatEffect.Navigate(ChatDestination.SETTINGS))
+            ClientCommand.THEME -> _effects.trySend(ChatEffect.Navigate(ChatDestination.CHAT_SETTINGS))
+            ClientCommand.STATUS -> statusToast()
+            ClientCommand.HELP -> _effects.trySend(ChatEffect.OpenHelp)
         }
-        return true
+    }
+
+    private fun toast(res: Int, vararg args: Any) {
+        _effects.trySend(ChatEffect.Toast(UiText.of(res, *args)))
     }
 
     private fun runServerCommand(name: String, arguments: String) {
-        _state.update { it.copy(busy = true, error = null) }
+        autoCompacted = false
+        _state.update { it.copy(busy = true, turnStartedAt = System.currentTimeMillis(), error = null) }
         viewModelScope.launch {
+            // Answers when the turn is over; the transcript streams over SSE meanwhile.
             when (val result = repository.runCommand(sessionId, name, arguments, model, agent.ifBlank { null })) {
                 is ApiResult.Ok -> scheduleReload()
-                is ApiResult.Err -> _state.update { it.copy(busy = false, error = result.message) }
+                is ApiResult.Err -> _state.update { it.copy(busy = false, turnStartedAt = null, error = result.message) }
             }
         }
     }
@@ -414,6 +572,157 @@ class ChatViewModel(
         viewModelScope.launch {
             val result = repository.commands()
             if (result is ApiResult.Ok) _state.update { it.copy(commands = result.value.distinctBy { c -> c.name }) }
+        }
+    }
+
+    private fun newSession() {
+        viewModelScope.launch {
+            when (val result = repository.createSession()) {
+                is ApiResult.Ok -> _effects.trySend(ChatEffect.OpenSession(result.value.id))
+                is ApiResult.Err -> _state.update { it.copy(error = result.message) }
+            }
+        }
+    }
+
+    private fun selectModelByName(raw: String) {
+        val query = raw.trim()
+        val models = _state.value.models
+        val match = models.firstOrNull { it.key.equals(query, ignoreCase = true) }
+            ?: models.firstOrNull { it.modelID.equals(query, ignoreCase = true) }
+            ?: models.filter { it.key.contains(query, ignoreCase = true) || it.name.contains(query, ignoreCase = true) }.singleOrNull()
+            ?: ConfigJson.parseModel(query)?.let { ref -> ModelOption(ref.providerID, ref.modelID, ref.modelID) }
+        if (match == null) {
+            toast(R.string.chat_model_not_found, query)
+            _effects.trySend(ChatEffect.OpenModelPicker)
+            return
+        }
+        selectModel(match)
+        toast(R.string.chat_model_switched, match.key)
+    }
+
+    private fun selectAgentByName(raw: String) {
+        val name = raw.trim().removePrefix("@")
+        val agent = _state.value.primaryAgents.firstOrNull { it.name.equals(name, ignoreCase = true) }
+        if (agent == null) {
+            toast(R.string.chat_agent_not_found, name)
+            return
+        }
+        selectAgent(agent.name)
+    }
+
+    /** Next primary agent, like Claude Code's shift+tab mode cycle. */
+    fun cycleAgent() {
+        val agents = _state.value.primaryAgents
+        if (agents.isEmpty()) return
+        val current = _state.value.effectiveAgent
+        val index = agents.indexOfFirst { it.name == current }
+        selectAgent(agents[(index + 1).mod(agents.size)].name)
+    }
+
+    private fun contextCommand(arguments: String) {
+        val arg = arguments.trim().lowercase()
+        when {
+            arg.isEmpty() -> _effects.trySend(ChatEffect.OpenUsage)
+            arg == "reset" || arg == "auto" || arg == "default" -> setSessionContextLimit(null)
+            else -> {
+                val tokens = parseTokenCount(arg)
+                if (tokens == null) toast(R.string.chat_context_usage) else setSessionContextLimit(tokens)
+            }
+        }
+    }
+
+    private fun systemCommand(arguments: String) {
+        val arg = arguments.trim()
+        when {
+            arg.isEmpty() -> _effects.trySend(ChatEffect.Navigate(ChatDestination.SYSTEM_PROMPTS))
+            arg.equals("off", ignoreCase = true) || arg.equals("none", ignoreCase = true) -> selectSystemPrompt(null)
+            else -> {
+                val prompt = _state.value.systemPrompts.firstOrNull { it.name.equals(arg, ignoreCase = true) }
+                    ?: _state.value.systemPrompts.firstOrNull { it.name.contains(arg, ignoreCase = true) }
+                if (prompt == null) toast(R.string.chat_system_prompt_not_found, arg) else selectSystemPrompt(prompt.id)
+            }
+        }
+    }
+
+    private fun toggleChat(transform: (ChatSettings) -> ChatSettings) {
+        viewModelScope.launch { settingsRepository.update { it.copy(chat = transform(it.chat)) } }
+    }
+
+    private fun statusToast() {
+        val current = _state.value
+        val text = listOfNotNull(
+            current.serverVersion?.let { "opencode $it" },
+            current.effectiveAgent,
+            current.model?.key,
+            current.directory,
+        ).joinToString(" · ")
+        _effects.trySend(ChatEffect.Toast(UiText.raw(text.ifBlank { "opencode" })))
+    }
+
+    private fun rename(title: String) {
+        viewModelScope.launch {
+            when (val result = repository.renameSession(sessionId, title.trim())) {
+                is ApiResult.Ok -> _state.update { it.copy(title = title.trim()) }
+                is ApiResult.Err -> _state.update { it.copy(error = result.message) }
+            }
+        }
+    }
+
+    /** The visible conversation as Markdown, for `/export`. */
+    fun exportMarkdown(): String = buildString {
+        val current = _state.value
+        append("# ").append(current.title.ifBlank { "opencode" }).append("\n\n")
+        current.visibleMessages.forEach { message ->
+            append(if (message.role == Role.USER) "## You\n\n" else "## opencode" + (message.model?.let { " ($it)" } ?: "") + "\n\n")
+            message.parts.forEach { part ->
+                when (part) {
+                    is MessagePart.Text -> append(part.text.trim()).append("\n\n")
+                    is MessagePart.Tool -> {
+                        append("> **").append(part.call.name).append("**")
+                        part.call.title?.takeIf { it.isNotBlank() }?.let { append(" ").append(it) }
+                        append("\n\n")
+                    }
+                    is MessagePart.File -> append("> attachment: ").append(part.name).append("\n\n")
+                    is MessagePart.Notice -> append("_").append(part.text).append("_\n\n")
+                    is MessagePart.Reasoning -> Unit
+                }
+            }
+        }
+    }.trimEnd() + "\n"
+
+    // ------------------------------------------------------------------ context window
+
+    /** `null` resets the chat to the model's window. */
+    fun setSessionContextLimit(tokens: Long?) {
+        viewModelScope.launch {
+            settingsRepository.update { settings ->
+                val limits = settings.sessionContextLimits.toMutableMap()
+                if (tokens == null) limits.remove(sessionId) else limits[sessionId] = tokens
+                settings.copy(sessionContextLimits = limits)
+            }
+        }
+    }
+
+    /**
+     * Per-model window for every chat. With [applyToServer] it is also written to opencode's
+     * config (`provider.<p>.models.<m>.limit`) so the server's own auto-compaction agrees.
+     */
+    fun setModelContextLimit(modelKey: String, tokens: Long?, applyToServer: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.update { settings ->
+                val limits = settings.modelContextLimits.toMutableMap()
+                if (tokens == null) limits.remove(modelKey) else limits[modelKey] = tokens
+                settings.copy(modelContextLimits = limits)
+            }
+            if (applyToServer && tokens != null) {
+                val ref = ConfigJson.parseModel(modelKey) ?: return@launch
+                val output = _state.value.models.firstOrNull { it.key == modelKey }?.outputLimit
+                    ?: (tokens / 8).coerceIn(4_096, 64_000)
+                when (val result = repository.patchGlobalConfig(ConfigJson.encodeModelLimit(ref, tokens, output.coerceAtMost(tokens)))) {
+                    is ApiResult.Ok -> toast(R.string.usage_applied_server)
+                    is ApiResult.Err -> _state.update { it.copy(error = result.message) }
+                }
+            }
         }
     }
 
@@ -482,11 +791,15 @@ class ChatViewModel(
     }
 
     fun unshare() {
+        if (_state.value.shareUrl == null) {
+            toast(R.string.chat_not_shared)
+            return
+        }
         viewModelScope.launch {
             when (val result = repository.unshare(sessionId)) {
                 is ApiResult.Ok -> {
                     _state.update { it.copy(shareUrl = null) }
-                    _effects.trySend(ChatEffect.Toast(UiText.of(R.string.chat_share_revoked)))
+                    toast(R.string.chat_share_revoked)
                 }
 
                 is ApiResult.Err -> _state.update { it.copy(error = result.message) }
@@ -496,7 +809,7 @@ class ChatViewModel(
 
     fun compact() {
         if (_state.value.compacting) return
-        _state.update { it.copy(compacting = true, busy = true) }
+        _state.update { it.copy(compacting = true, busy = true, turnStartedAt = System.currentTimeMillis()) }
         viewModelScope.launch {
             when (val result = repository.compact(sessionId, model)) {
                 is ApiResult.Ok -> {
@@ -504,7 +817,7 @@ class ChatViewModel(
                     scheduleReload()
                 }
 
-                is ApiResult.Err -> _state.update { it.copy(compacting = false, busy = false, error = result.message) }
+                is ApiResult.Err -> _state.update { it.copy(compacting = false, busy = false, turnStartedAt = null, error = result.message) }
             }
         }
     }
@@ -559,9 +872,7 @@ class ChatViewModel(
     fun loadAgents() {
         viewModelScope.launch {
             val result = repository.agents()
-            if (result is ApiResult.Ok) {
-                _state.update { it.copy(agents = result.value.filter { agent -> agent.selectable }.distinctBy { agent -> agent.name }) }
-            }
+            if (result is ApiResult.Ok) _state.update { it.copy(agents = result.value.distinctBy { agent -> agent.name }) }
         }
     }
 
@@ -602,14 +913,20 @@ class ChatViewModel(
 
             is OpencodeEvent.Status -> {
                 if (event.sessionId == sessionId) {
-                    _state.update { it.copy(busy = event.busy, retryMessage = event.retryMessage) }
+                    _state.update {
+                        it.copy(
+                            busy = event.busy,
+                            retryMessage = event.retryMessage,
+                            turnStartedAt = if (event.busy) it.turnStartedAt ?: System.currentTimeMillis() else null,
+                        )
+                    }
                     if (!event.busy) onTurnFinished()
                 }
             }
 
             is OpencodeEvent.Idle -> {
                 if (event.sessionId == sessionId) {
-                    _state.update { it.copy(busy = false, retryMessage = null, compacting = false) }
+                    _state.update { it.copy(busy = false, retryMessage = null, compacting = false, turnStartedAt = null) }
                     onTurnFinished()
                 }
             }
@@ -620,16 +937,20 @@ class ChatViewModel(
 
             is OpencodeEvent.SessionFailed -> {
                 if (event.sessionId == null || event.sessionId == sessionId) {
-                    _state.update { it.copy(busy = false, error = event.message) }
+                    _state.update { it.copy(busy = false, turnStartedAt = null, error = event.message) }
                 }
             }
 
             is OpencodeEvent.SessionsChanged -> loadSessionMeta()
 
+            is OpencodeEvent.McpChanged -> loadCommands()
+
+            is OpencodeEvent.McpAuthUrl -> Unit
+
             else -> {
                 val updated = ChatStreamReducer.reduce(_state.value.messages, event, sessionId)
                 if (updated != null) {
-                    _state.update { it.copy(messages = updated, busy = true) }
+                    _state.update { it.copy(messages = updated, busy = true, turnStartedAt = it.turnStartedAt ?: System.currentTimeMillis()) }
                 }
             }
         }
@@ -640,8 +961,21 @@ class ChatViewModel(
         viewModelScope.launch {
             // Let the final reload land before the next queued prompt starts a new turn.
             delay(QUEUE_DRAIN_DELAY_MS)
-            drainQueue()
+            if (!maybeAutoCompact()) drainQueue()
         }
+    }
+
+    /** Client-side auto-compaction at the user's threshold (Settings → Chat). */
+    private fun maybeAutoCompact(): Boolean {
+        val current = _state.value
+        val threshold = current.chat.autoCompactPercent
+        if (threshold <= 0 || autoCompacted || current.busy || current.compacting) return false
+        val fraction = current.usage?.fraction ?: return false
+        if (fraction * 100 < threshold) return false
+        autoCompacted = true
+        toast(R.string.chat_auto_compacting, threshold)
+        compact()
+        return true
     }
 
     private fun onPermissionAsked(request: PermissionRequest) {
@@ -705,15 +1039,11 @@ class ChatViewModel(
     }
 
     companion object {
-        const val CMD_COMPACT = "compact"
-        const val CMD_UNDO = "undo"
-        const val CMD_REDO = "redo"
-        const val CMD_FORK = "fork"
-        const val CMD_SHARE = "share"
+        /** `@token` at the start or after whitespace. */
+        val MENTION_TOKEN = Regex("""(?:^|\s)@([^\s@]+)""")
 
-        private const val FILE_SEARCH_DEBOUNCE_MS = 180L
-        private const val MAX_FILE_SUGGESTIONS = 8
-        private const val MAX_COMMAND_SUGGESTIONS = 8
+        private const val MENTION_DEBOUNCE_MS = 160L
+        private const val MAX_MENTION_SUGGESTIONS = 40
         private const val QUEUE_DRAIN_DELAY_MS = 600L
 
         fun factory(container: AppContainer, sessionId: String): ViewModelProvider.Factory = viewModelFactory {

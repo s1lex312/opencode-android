@@ -1,9 +1,13 @@
 package ai.opencode.android.data.remote
 
+import ai.opencode.android.data.model.AgentDetail
 import ai.opencode.android.data.model.AgentOption
 import ai.opencode.android.data.model.ApiFlavor
 import ai.opencode.android.data.model.ChatMessage
 import ai.opencode.android.data.model.FileDiffPayload
+import ai.opencode.android.data.model.McpConfig
+import ai.opencode.android.data.model.McpServerInfo
+import ai.opencode.android.data.model.MentionCandidate
 import ai.opencode.android.data.model.MessagePart
 import ai.opencode.android.data.model.ModelOption
 import ai.opencode.android.data.model.ModelRef
@@ -51,7 +55,7 @@ class V2Api(override val http: ServerHttp) : OpencodeApi {
             mapOf("limit" to SESSION_LIMIT.toString(), "order" to "desc"),
         )
         val root = response as? JsonObject ?: return emptyList()
-        val array = (root.obj("data") as? JsonArray) ?: (response as? JsonArray) ?: return emptyList()
+        val array = root.arr("data") ?: (response as? JsonArray) ?: return emptyList()
         return array.objects().mapNotNull(::toSession)
     }
 
@@ -72,7 +76,7 @@ class V2Api(override val http: ServerHttp) : OpencodeApi {
             "/api/session/${enc(sessionId)}/message",
             mapOf("limit" to MESSAGE_LIMIT.toString(), "order" to "asc"),
         )
-        val array = (response as? JsonObject)?.obj("data") as? JsonArray
+        val array = (response as? JsonObject)?.arr("data")
             ?: response as? JsonArray
             ?: return emptyList()
         return array.objects().mapNotNull(::toMessage)
@@ -159,7 +163,7 @@ class V2Api(override val http: ServerHttp) : OpencodeApi {
 
     override suspend fun runCommand(sessionId: String, command: String, arguments: String, model: ModelRef?, agent: String?) {
         selectModelAndAgent(sessionId, model, agent)
-        http.postJson(
+        http.postJsonLong(
             "/api/session/${enc(sessionId)}/command",
             buildJsonObject {
                 put("name", command)
@@ -170,10 +174,81 @@ class V2Api(override val http: ServerHttp) : OpencodeApi {
 
     override suspend fun commands(): List<SlashCommand> {
         val response = http.getJson("/api/command")
-        val array = (response as? JsonObject)?.obj("data") as? JsonArray ?: response as? JsonArray ?: return emptyList()
+        val array = (response as? JsonObject)?.arr("data") ?: response as? JsonArray ?: return emptyList()
         return array.objects().mapNotNull { obj ->
             val name = obj.str("name") ?: return@mapNotNull null
-            SlashCommand(name = name, description = obj.str("description"), source = obj.str("source"))
+            SlashCommand(name = name, description = obj.str("description"), source = obj.str("source"), hints = obj.strList("hints"))
+        }
+    }
+
+    override suspend fun runShell(sessionId: String, command: String, agent: String, model: ModelRef?) {
+        selectModelAndAgent(sessionId, model, agent)
+        http.postJsonLong("/api/session/${enc(sessionId)}/shell", buildJsonObject { put("command", command) })
+    }
+
+    override suspend fun renameSession(sessionId: String, title: String) {
+        http.patchJson("/api/session/${enc(sessionId)}", buildJsonObject { put("title", title) })
+    }
+
+    override suspend fun listDirectory(path: String): List<MentionCandidate> {
+        val query = if (path.isBlank()) emptyMap() else mapOf("path" to path)
+        val response = http.getJson("/api/fs/list", query) as? JsonObject ?: return emptyList()
+        return entries(response).sortedWith(compareBy({ it.kind != MentionCandidate.Kind.DIRECTORY }, { it.value.lowercase() }))
+    }
+
+    override suspend fun findPaths(query: String): List<MentionCandidate> {
+        val response = http.getJson(
+            "/api/fs/find",
+            mapOf("query" to query, "limit" to FIND_LIMIT.toString()),
+        ) as? JsonObject ?: return emptyList()
+        return entries(response)
+    }
+
+    private fun entries(response: JsonObject): List<MentionCandidate> =
+        response.arr("data")?.objects().orEmpty().mapNotNull { obj ->
+            val path = obj.str("path")?.replace('\\', '/') ?: return@mapNotNull null
+            val directory = obj.str("type") == "directory" || path.endsWith("/")
+            MentionCandidate(
+                value = if (directory) path.trimEnd('/') + "/" else path,
+                kind = if (directory) MentionCandidate.Kind.DIRECTORY else MentionCandidate.Kind.FILE,
+            )
+        }
+
+    override suspend fun mcpServers(): List<McpServerInfo> {
+        val response = http.getJson("/api/mcp") as? JsonObject ?: return emptyList()
+        return response.arr("data")?.objects().orEmpty().mapNotNull { obj ->
+            val name = obj.str("name") ?: return@mapNotNull null
+            McpServerInfo(
+                name = name,
+                status = ConfigJson.mcpStatus(obj.str("status", "status")),
+                error = obj.str("status", "error"),
+            )
+        }
+    }
+
+    override suspend fun mcpSave(name: String, config: McpConfig) {
+        http.putJson("/api/experimental/mcp/${enc(name)}", buildJsonObject { put("config", ConfigJson.encodeMcpV2(config)) })
+    }
+
+    override suspend fun mcpRemove(name: String): Boolean {
+        http.deleteJson("/api/experimental/mcp/${enc(name)}")
+        return true
+    }
+
+    override suspend fun mcpConnect(name: String) {
+        http.postJsonLong("/api/experimental/mcp/${enc(name)}/connect")
+    }
+
+    override suspend fun mcpDisconnect(name: String) {
+        http.postJson("/api/experimental/mcp/${enc(name)}/disconnect")
+    }
+
+    override suspend fun agentDetails(): List<AgentDetail> {
+        val response = http.getJson("/api/agent")
+        val array = (response as? JsonObject)?.arr("data") ?: response as? JsonArray ?: return emptyList()
+        return array.objects().mapNotNull { obj ->
+            val name = obj.str("name") ?: obj.str("id") ?: return@mapNotNull null
+            ConfigJson.decodeAgent(name, obj, null)
         }
     }
 
@@ -182,7 +257,7 @@ class V2Api(override val http: ServerHttp) : OpencodeApi {
             "/api/fs/find",
             mapOf("query" to query, "type" to "file", "limit" to FIND_LIMIT.toString()),
         ) as? JsonObject ?: return emptyList()
-        val array = response.obj("data") as? JsonArray ?: return emptyList()
+        val array = response.arr("data") ?: return emptyList()
         return array.objects().mapNotNull { it.str("path") }
     }
 
@@ -245,7 +320,7 @@ class V2Api(override val http: ServerHttp) : OpencodeApi {
 
     override suspend fun diff(sessionId: String): List<FileDiffPayload> {
         val response = http.getJson("/api/session/${enc(sessionId)}/diff")
-        val array = (response as? JsonObject)?.obj("data") as? JsonArray
+        val array = (response as? JsonObject)?.arr("data")
             ?: response as? JsonArray
             ?: return emptyList()
         return array.objects().map { obj ->
@@ -261,7 +336,7 @@ class V2Api(override val http: ServerHttp) : OpencodeApi {
 
     override suspend fun models(): List<ModelOption> {
         val response = http.getJson("/api/model")
-        val array = (response as? JsonObject)?.obj("data") as? JsonArray
+        val array = (response as? JsonObject)?.arr("data")
             ?: response as? JsonArray
             ?: return emptyList()
         return array.objects().mapNotNull { obj ->
@@ -273,13 +348,14 @@ class V2Api(override val http: ServerHttp) : OpencodeApi {
                 name = obj.str("name") ?: modelID,
                 disabled = obj.bool("enabled") == false,
                 contextLimit = obj.number("limit", "context")?.takeIf { it > 0 },
+                outputLimit = obj.number("limit", "output")?.takeIf { it > 0 },
             )
         }
     }
 
     override suspend fun agents(): List<AgentOption> {
         val response = http.getJson("/api/agent")
-        val array = (response as? JsonObject)?.obj("data") as? JsonArray
+        val array = (response as? JsonObject)?.arr("data")
             ?: response as? JsonArray
             ?: return emptyList()
         return array.objects().mapNotNull { obj ->

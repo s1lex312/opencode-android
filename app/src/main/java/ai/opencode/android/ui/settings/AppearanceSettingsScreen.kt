@@ -193,6 +193,7 @@ fun AppearanceSettingsScreen(container: AppContainer, onBack: () -> Unit) {
 }
 
 private fun paletteLabel(palette: ThemePalette): Int = when (palette) {
+    ThemePalette.CLAUDE -> R.string.settings_palette_claude
     ThemePalette.OPENCODE -> R.string.settings_palette_opencode
     ThemePalette.DYNAMIC -> R.string.settings_palette_dynamic
     ThemePalette.EMERALD -> R.string.settings_palette_emerald

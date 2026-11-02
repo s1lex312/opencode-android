@@ -1,9 +1,13 @@
 package ai.opencode.android.data.repo
 
 import ai.opencode.android.data.cache.SessionCache
+import ai.opencode.android.data.model.AgentDetail
 import ai.opencode.android.data.model.AgentOption
 import ai.opencode.android.data.model.ChatMessage
 import ai.opencode.android.data.model.FileDiffPayload
+import ai.opencode.android.data.model.McpConfig
+import ai.opencode.android.data.model.McpServerInfo
+import ai.opencode.android.data.model.MentionCandidate
 import ai.opencode.android.data.model.ModelOption
 import ai.opencode.android.data.model.ModelRef
 import ai.opencode.android.data.model.PermissionDecision
@@ -11,6 +15,7 @@ import ai.opencode.android.data.model.PromptRequest
 import ai.opencode.android.data.model.PtyInfo
 import ai.opencode.android.data.model.ServerSession
 import ai.opencode.android.data.model.SlashCommand
+import kotlinx.serialization.json.JsonObject
 
 /**
  * Typed facade the ViewModels talk to. Every call returns [ApiResult] so the UI never has to
@@ -76,6 +81,42 @@ class SessionRepository(
     suspend fun compact(sessionId: String, model: ModelRef?): ApiResult<Unit> = call { compact(sessionId, model) }
 
     suspend fun createPty(cwd: String?): ApiResult<PtyInfo> = call { createPty(cwd) }
+
+    suspend fun runShell(sessionId: String, command: String, agent: String, model: ModelRef?): ApiResult<Unit> =
+        call { runShell(sessionId, command, agent, model) }
+
+    suspend fun renameSession(sessionId: String, title: String): ApiResult<Unit> = call { renameSession(sessionId, title) }
+
+    suspend fun listDirectory(path: String): ApiResult<List<MentionCandidate>> = call { listDirectory(path) }
+
+    suspend fun findPaths(query: String): ApiResult<List<MentionCandidate>> = call { findPaths(query) }
+
+    suspend fun mcpServers(): ApiResult<List<McpServerInfo>> = call { mcpServers() }
+
+    suspend fun mcpSave(name: String, config: McpConfig): ApiResult<Unit> = call { mcpSave(name, config) }
+
+    suspend fun mcpRemove(name: String): ApiResult<Boolean> = call { mcpRemove(name) }
+
+    suspend fun mcpConnect(name: String): ApiResult<Unit> = call { mcpConnect(name) }
+
+    suspend fun mcpDisconnect(name: String): ApiResult<Unit> = call { mcpDisconnect(name) }
+
+    suspend fun mcpAuthenticate(name: String): ApiResult<Unit> = call { mcpAuthenticate(name) }
+
+    suspend fun mcpAuthCode(name: String, code: String): ApiResult<Unit> = call { mcpAuthCode(name, code) }
+
+    suspend fun mcpLogout(name: String): ApiResult<Unit> = call { mcpLogout(name) }
+
+    /** `null` while disconnected. */
+    val supportsConfig: Boolean? get() = connection.api?.supportsConfig
+
+    suspend fun globalConfig(): ApiResult<JsonObject> = call { globalConfig() }
+
+    suspend fun patchGlobalConfig(patch: JsonObject): ApiResult<Unit> = call { patchGlobalConfig(patch) }
+
+    suspend fun agentDetails(): ApiResult<List<AgentDetail>> = call { agentDetails() }
+
+    suspend fun toolIds(): ApiResult<List<String>> = call { toolIds() }
 
     private suspend fun <T> call(block: suspend ai.opencode.android.data.remote.OpencodeApi.() -> T): ApiResult<T> {
         val api = connection.api ?: return notConnected()

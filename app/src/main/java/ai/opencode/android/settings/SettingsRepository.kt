@@ -62,7 +62,7 @@ class SettingsRepository(context: Context) {
             ),
             appearance = AppearanceSettings(
                 themeMode = this[KEY_THEME_MODE]?.toEnum<ThemeMode>() ?: ThemeMode.SYSTEM,
-                palette = this[KEY_THEME_PALETTE]?.toEnum<ThemePalette>() ?: ThemePalette.OPENCODE,
+                palette = this[KEY_THEME_PALETTE]?.toEnum<ThemePalette>() ?: ThemePalette.CLAUDE,
                 pureBlack = this[KEY_PURE_BLACK] ?: false,
                 chatTextScale = this[KEY_CHAT_TEXT_SCALE]?.toEnum<TextScale>() ?: TextScale.DEFAULT,
             ),
@@ -72,7 +72,36 @@ class SettingsRepository(context: Context) {
             serverProfiles = ProfileCodec.decodeServers(this[KEY_SERVER_PROFILES]),
             opencodeAutoUpdate = this[KEY_OPENCODE_AUTO_UPDATE] ?: true,
             opencodeLastUpdateCheck = this[KEY_OPENCODE_LAST_CHECK] ?: 0L,
-        )
+            chat = ChatSettings(
+                style = this[KEY_CHAT_STYLE]?.toEnum<ChatStyle>() ?: ChatStyle.CLAUDE_CODE,
+                monospace = this[KEY_CHAT_MONOSPACE] ?: false,
+                expandReasoning = this[KEY_CHAT_EXPAND_REASONING] ?: false,
+                expandTools = this[KEY_CHAT_EXPAND_TOOLS] ?: false,
+                toolPreviewLines = (this[KEY_CHAT_TOOL_LINES] ?: 3).coerceIn(0, 20),
+                sendOnEnter = this[KEY_CHAT_SEND_ON_ENTER] ?: false,
+                showTimestamps = this[KEY_CHAT_TIMESTAMPS] ?: true,
+                showCost = this[KEY_CHAT_COST] ?: true,
+                contextWarnPercent = (this[KEY_CHAT_WARN] ?: 70).coerceIn(10, 99),
+                contextDangerPercent = (this[KEY_CHAT_DANGER] ?: 90).coerceIn(10, 100),
+                autoCompactPercent = (this[KEY_CHAT_AUTO_COMPACT] ?: 0).coerceIn(0, 99),
+                haptics = this[KEY_CHAT_HAPTICS] ?: true,
+                playfulSpinner = this[KEY_CHAT_PLAYFUL] ?: true,
+            ),
+            phone = PhoneAccessSettings(
+                storage = this[KEY_PHONE_STORAGE] ?: false,
+                androidTools = this[KEY_PHONE_TOOLS] ?: true,
+            ),
+            modelContextLimits = ProfileCodec.decodeLimits(this[KEY_MODEL_LIMITS]),
+            sessionContextLimits = ProfileCodec.decodeLimits(this[KEY_SESSION_LIMITS]),
+        ).migrated(this[KEY_UI_REVISION] ?: 0)
+    }
+
+    /** One-time defaults for installs that predate a UI revision. */
+    private fun AppSettings.migrated(revision: Int): AppSettings {
+        if (revision >= UI_REVISION) return this
+        // 1.4 made the Claude Code look the default; keep any palette the user picked on purpose.
+        val palette = if (appearance.palette == ThemePalette.OPENCODE) ThemePalette.CLAUDE else appearance.palette
+        return copy(appearance = appearance.copy(palette = palette))
     }
 
     private fun MutablePreferences.write(value: AppSettings) {
@@ -101,6 +130,24 @@ class SettingsRepository(context: Context) {
         this[KEY_SERVER_PROFILES] = ProfileCodec.encodeServers(value.serverProfiles)
         this[KEY_OPENCODE_AUTO_UPDATE] = value.opencodeAutoUpdate
         this[KEY_OPENCODE_LAST_CHECK] = value.opencodeLastUpdateCheck
+        this[KEY_CHAT_STYLE] = value.chat.style.name
+        this[KEY_CHAT_MONOSPACE] = value.chat.monospace
+        this[KEY_CHAT_EXPAND_REASONING] = value.chat.expandReasoning
+        this[KEY_CHAT_EXPAND_TOOLS] = value.chat.expandTools
+        this[KEY_CHAT_TOOL_LINES] = value.chat.toolPreviewLines
+        this[KEY_CHAT_SEND_ON_ENTER] = value.chat.sendOnEnter
+        this[KEY_CHAT_TIMESTAMPS] = value.chat.showTimestamps
+        this[KEY_CHAT_COST] = value.chat.showCost
+        this[KEY_CHAT_WARN] = value.chat.contextWarnPercent
+        this[KEY_CHAT_DANGER] = value.chat.contextDangerPercent
+        this[KEY_CHAT_AUTO_COMPACT] = value.chat.autoCompactPercent
+        this[KEY_CHAT_HAPTICS] = value.chat.haptics
+        this[KEY_CHAT_PLAYFUL] = value.chat.playfulSpinner
+        this[KEY_PHONE_STORAGE] = value.phone.storage
+        this[KEY_PHONE_TOOLS] = value.phone.androidTools
+        this[KEY_MODEL_LIMITS] = ProfileCodec.encodeLimits(value.modelContextLimits)
+        this[KEY_SESSION_LIMITS] = ProfileCodec.encodeLimits(value.sessionContextLimits)
+        this[KEY_UI_REVISION] = UI_REVISION
         // Settings that no longer exist: drop them so old installs do not carry stale overrides.
         OBSOLETE_KEYS.forEach { remove(it) }
     }
@@ -134,6 +181,28 @@ class SettingsRepository(context: Context) {
         val KEY_SERVER_PROFILES = stringPreferencesKey("server_profiles")
         val KEY_OPENCODE_AUTO_UPDATE = booleanPreferencesKey("opencode_auto_update")
         val KEY_OPENCODE_LAST_CHECK = androidx.datastore.preferences.core.longPreferencesKey("opencode_last_update_check")
+
+        val KEY_CHAT_STYLE = stringPreferencesKey("chat_style")
+        val KEY_CHAT_MONOSPACE = booleanPreferencesKey("chat_monospace")
+        val KEY_CHAT_EXPAND_REASONING = booleanPreferencesKey("chat_expand_reasoning")
+        val KEY_CHAT_EXPAND_TOOLS = booleanPreferencesKey("chat_expand_tools")
+        val KEY_CHAT_TOOL_LINES = intPreferencesKey("chat_tool_lines")
+        val KEY_CHAT_SEND_ON_ENTER = booleanPreferencesKey("chat_send_on_enter")
+        val KEY_CHAT_TIMESTAMPS = booleanPreferencesKey("chat_timestamps")
+        val KEY_CHAT_COST = booleanPreferencesKey("chat_cost")
+        val KEY_CHAT_WARN = intPreferencesKey("chat_context_warn")
+        val KEY_CHAT_DANGER = intPreferencesKey("chat_context_danger")
+        val KEY_CHAT_AUTO_COMPACT = intPreferencesKey("chat_auto_compact")
+        val KEY_CHAT_HAPTICS = booleanPreferencesKey("chat_haptics")
+        val KEY_CHAT_PLAYFUL = booleanPreferencesKey("chat_playful_spinner")
+        val KEY_PHONE_STORAGE = booleanPreferencesKey("phone_storage")
+        val KEY_PHONE_TOOLS = booleanPreferencesKey("phone_android_tools")
+        val KEY_MODEL_LIMITS = stringPreferencesKey("model_context_limits")
+        val KEY_SESSION_LIMITS = stringPreferencesKey("session_context_limits")
+        val KEY_UI_REVISION = intPreferencesKey("ui_revision")
+
+        /** Bump when [migrated] gains a step. */
+        const val UI_REVISION = 14
 
         val OBSOLETE_KEYS = listOf(
             booleanPreferencesKey("auto_connect"),

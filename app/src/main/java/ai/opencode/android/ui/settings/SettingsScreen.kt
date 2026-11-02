@@ -28,6 +28,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Forum
+import androidx.compose.material.icons.filled.Hub
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Palette
@@ -73,6 +77,11 @@ fun SettingsScreen(
     onOpenAgent: () -> Unit,
     onOpenAppearance: () -> Unit,
     onOpenAbout: () -> Unit,
+    onOpenChat: () -> Unit,
+    onOpenAgents: () -> Unit,
+    onOpenMcp: () -> Unit,
+    onOpenBehaviour: () -> Unit,
+    onOpenPhone: () -> Unit,
 ) {
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(container))
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -109,7 +118,49 @@ fun SettingsScreen(
             )
         }
 
+        SettingsGroup(title = stringResource(R.string.settings_group_agent)) {
+            SettingsItem(
+                title = stringResource(R.string.agents_title),
+                subtitle = stringResource(R.string.agents_hub_subtitle),
+                icon = Icons.Default.SmartToy,
+                showChevron = true,
+                onClick = onOpenAgents,
+            )
+            SettingsDivider()
+            SettingsItem(
+                title = stringResource(R.string.mcp_title),
+                subtitle = stringResource(R.string.mcp_hub_subtitle),
+                icon = Icons.Default.Hub,
+                showChevron = true,
+                onClick = onOpenMcp,
+            )
+            SettingsDivider()
+            SettingsItem(
+                title = stringResource(R.string.behaviour_title),
+                subtitle = stringResource(R.string.behaviour_hub_subtitle),
+                icon = Icons.Default.Security,
+                showChevron = true,
+                onClick = onOpenBehaviour,
+            )
+            SettingsDivider()
+            SettingsItem(
+                title = stringResource(R.string.phone_title),
+                subtitle = stringResource(R.string.phone_hub_subtitle),
+                icon = Icons.Default.PhoneAndroid,
+                showChevron = true,
+                onClick = onOpenPhone,
+            )
+        }
+
         SettingsGroup(title = stringResource(R.string.settings_group_preferences)) {
+            SettingsItem(
+                title = stringResource(R.string.chat_settings_title),
+                subtitle = stringResource(R.string.chat_settings_hub_subtitle),
+                icon = Icons.Default.Forum,
+                showChevron = true,
+                onClick = onOpenChat,
+            )
+            SettingsDivider()
             SettingsItem(
                 title = stringResource(R.string.settings_agent_model),
                 subtitle = stringResource(

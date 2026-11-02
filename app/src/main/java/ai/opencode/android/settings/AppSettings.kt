@@ -22,14 +22,46 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK }
  * Accent families. [DYNAMIC] is Material You (wallpaper colours, Android 12+); on older devices it
  * falls back to [OPENCODE].
  */
-enum class ThemePalette { OPENCODE, DYNAMIC, EMERALD, AMBER, VIOLET, ROSE }
+enum class ThemePalette { CLAUDE, OPENCODE, DYNAMIC, EMERALD, AMBER, VIOLET, ROSE }
+
+/** Transcript layout: terminal-like Claude Code lines or chat bubbles. */
+enum class ChatStyle { CLAUDE_CODE, BUBBLES }
+
+/** Everything about how the chat looks and behaves on this device (not sent to opencode). */
+data class ChatSettings(
+    val style: ChatStyle = ChatStyle.CLAUDE_CODE,
+    /** Monospace prose, like a terminal. Code and tool lines are always monospace. */
+    val monospace: Boolean = false,
+    val expandReasoning: Boolean = false,
+    val expandTools: Boolean = false,
+    /** Output lines shown under a collapsed tool call (`⎿`). 0 hides the preview. */
+    val toolPreviewLines: Int = 3,
+    val sendOnEnter: Boolean = false,
+    val showTimestamps: Boolean = true,
+    val showCost: Boolean = true,
+    val contextWarnPercent: Int = 70,
+    val contextDangerPercent: Int = 90,
+    /** Compact automatically after a turn once the context is this full; 0 = never. */
+    val autoCompactPercent: Int = 0,
+    val haptics: Boolean = true,
+    /** "Pondering…", "Brewing…" instead of a plain "Working…". */
+    val playfulSpinner: Boolean = true,
+)
+
+/** What the agent may touch on the phone itself (Local mode). */
+data class PhoneAccessSettings(
+    /** Bind shared storage (`/sdcard`) into the Linux environment. Needs "All files access". */
+    val storage: Boolean = false,
+    /** Built-in MCP server with phone tools (clipboard, notifications, apps, battery, torch...). */
+    val androidTools: Boolean = true,
+)
 
 /** Relative size of chat text. */
 enum class TextScale(val factor: Float) { SMALL(0.9f), DEFAULT(1f), LARGE(1.15f) }
 
 data class AppearanceSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
-    val palette: ThemePalette = ThemePalette.OPENCODE,
+    val palette: ThemePalette = ThemePalette.CLAUDE,
     /** True black surfaces in dark mode (OLED). */
     val pureBlack: Boolean = false,
     val chatTextScale: TextScale = TextScale.DEFAULT,
@@ -84,7 +116,17 @@ data class AppSettings(
     /** Keep the bundled opencode binary up to date from GitHub releases (Local mode). */
     val opencodeAutoUpdate: Boolean = true,
     val opencodeLastUpdateCheck: Long = 0L,
+    val chat: ChatSettings = ChatSettings(),
+    val phone: PhoneAccessSettings = PhoneAccessSettings(),
+    /** User context window per model (`provider/model` → tokens), overrides the catalogue. */
+    val modelContextLimits: Map<String, Long> = emptyMap(),
+    /** User context window per chat (session id → tokens), overrides the model's. */
+    val sessionContextLimits: Map<String, Long> = emptyMap(),
 ) {
+    /** Context window to use for [sessionId] running [modelKey]; `null` falls back to the catalogue. */
+    fun contextLimitOverride(sessionId: String?, modelKey: String?): Long? =
+        sessionId?.let { sessionContextLimits[it] } ?: modelKey?.let { modelContextLimits[it] }
+
     val activeSystemPrompt: SystemPromptProfile?
         get() = systemPrompts.firstOrNull { it.id == activeSystemPromptId }
 

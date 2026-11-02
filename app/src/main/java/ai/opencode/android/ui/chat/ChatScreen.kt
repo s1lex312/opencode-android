@@ -2,6 +2,8 @@ package ai.opencode.android.ui.chat
 
 import ai.opencode.android.R
 import ai.opencode.android.data.model.ChatMessage
+import ai.opencode.android.data.model.MentionCandidate
+import ai.opencode.android.settings.ChatStyle
 import ai.opencode.android.data.model.Role
 import ai.opencode.android.di.AppContainer
 import ai.opencode.android.ui.components.ErrorCard
@@ -50,6 +52,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.CallSplit
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
+import androidx.compose.material.icons.filled.Hub
+import androidx.compose.material.icons.filled.IosShare
+import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Compress
@@ -90,7 +97,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
@@ -113,6 +123,7 @@ fun ChatScreen(
     onOpenSession: (String) -> Unit,
     onOpenTerminal: (String?) -> Unit,
     onOpenSystemPrompts: () -> Unit,
+    onNavigate: (ChatDestination) -> Unit,
 ) {
     val viewModel: ChatViewModel = viewModel(
         key = "chat-$sessionId",
@@ -124,7 +135,10 @@ fun ChatScreen(
     var modelSheet by rememberSaveable { mutableStateOf(false) }
     var usageSheet by rememberSaveable { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
+    var helpSheet by rememberSaveable { mutableStateOf(false) }
     var selectedMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    val haptics = LocalHapticFeedback.current
+    val claude = state.chat.style == ChatStyle.CLAUDE_CODE
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     // reverseLayout: index 0 is the newest item, so "away from the bottom" means a later index.
@@ -141,16 +155,44 @@ fun ChatScreen(
                     val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, effect.url)
                     runCatching { context.startActivity(Intent.createChooser(send, shareChooserTitle)) }
                 }
+                is ChatEffect.ShareText -> {
+                    val send = Intent(Intent.ACTION_SEND)
+                        .setType("text/markdown")
+                        .putExtra(Intent.EXTRA_SUBJECT, effect.title)
+                        .putExtra(Intent.EXTRA_TEXT, effect.text)
+                    runCatching { context.startActivity(Intent.createChooser(send, shareChooserTitle)) }
+                }
+                is ChatEffect.Copy -> copyToClipboard(context, effect.text)
+                is ChatEffect.Navigate -> when (effect.destination) {
+                    ChatDestination.TERMINAL -> onOpenTerminal(state.directory)
+                    ChatDestination.DIFF -> onOpenDiff()
+                    ChatDestination.SYSTEM_PROMPTS -> onOpenSystemPrompts()
+                    ChatDestination.PROVIDERS -> onOpenProviders()
+                    else -> onNavigate(effect.destination)
+                }
+                ChatEffect.OpenModelPicker -> {
+                    modelSheet = true
+                    if (state.models.isEmpty()) viewModel.loadModels()
+                }
+                ChatEffect.OpenUsage -> usageSheet = true
+                ChatEffect.OpenHelp -> helpSheet = true
+                ChatEffect.Close -> onBack()
             }
         }
     }
 
     // `@` and `/` popups follow the caret.
     val token = composerToken(input)
-    LaunchedEffect(token) {
-        viewModel.searchFiles((token as? ComposerToken.Mention)?.query)
+    val mentionQuery = (token as? ComposerToken.Mention)?.query
+    LaunchedEffect(mentionQuery) {
+        viewModel.searchMentions(mentionQuery)
     }
     val commandSuggestions = (token as? ComposerToken.Command)?.let { viewModel.commandSuggestions(it.prefix) }.orEmpty()
+    val submit: (String) -> Unit = { text ->
+        if (state.chat.haptics) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        viewModel.send(text)
+        scope.launch { listState.animateScrollToItem(0) }
+    }
 
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_PICK)) { uris ->
         uris.forEach { uri -> scope.launch { addAttachment(context, viewModel, uri) } }
@@ -179,14 +221,19 @@ fun ChatScreen(
                             overflow = TextOverflow.Ellipsis,
                             style = MaterialTheme.typography.titleMedium,
                         )
+                        val status = when {
+                            !state.connected -> stringResource(R.string.chat_status_offline)
+                            state.compacting -> stringResource(R.string.usage_compacting)
+                            state.busy -> state.retryMessage?.oneLine(50) ?: stringResource(R.string.chat_status_working)
+                            claude && state.directory != null -> shortPath(state.directory!!)
+                            else -> stringResource(R.string.chat_status_connected)
+                        }
                         Text(
-                            text = when {
-                                !state.connected -> stringResource(R.string.chat_status_offline)
-                                state.compacting -> stringResource(R.string.usage_compacting)
-                                state.busy -> state.retryMessage?.oneLine(50) ?: stringResource(R.string.chat_status_working)
-                                else -> stringResource(R.string.chat_status_connected)
-                            },
+                            text = status,
                             style = MaterialTheme.typography.labelSmall,
+                            fontFamily = if (claude) FontFamily.Monospace else null,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             color = if (state.busy) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -227,7 +274,27 @@ fun ChatScreen(
                                 menuOpen = false
                                 onOpenTerminal(state.directory)
                             }
+                            MenuItem(Icons.Default.IosShare, stringResource(R.string.cmd_export)) {
+                                menuOpen = false
+                                viewModel.send("/export")
+                            }
+                            MenuItem(Icons.AutoMirrored.Filled.HelpOutline, stringResource(R.string.chat_help_title)) {
+                                menuOpen = false
+                                helpSheet = true
+                            }
                             HorizontalDivider()
+                            MenuItem(Icons.Default.Hub, stringResource(R.string.mcp_title)) {
+                                menuOpen = false
+                                onNavigate(ChatDestination.MCP)
+                            }
+                            MenuItem(Icons.Default.SmartToy, stringResource(R.string.agents_title)) {
+                                menuOpen = false
+                                onNavigate(ChatDestination.AGENTS)
+                            }
+                            MenuItem(Icons.Default.Tune, stringResource(R.string.chat_settings_title)) {
+                                menuOpen = false
+                                onNavigate(ChatDestination.CHAT_SETTINGS)
+                            }
                             MenuItem(Icons.Default.Settings, stringResource(R.string.action_settings)) {
                                 menuOpen = false
                                 onOpenSettings()
@@ -241,10 +308,17 @@ fun ChatScreen(
             Column(Modifier.imePadding()) {
                 val pending = state.permissions
                 pending.firstOrNull()?.let { permission ->
-                    PermissionPrompt(
-                        request = permission,
-                        onDecision = { decision -> viewModel.replyPermission(permission, decision) },
-                    )
+                    if (claude) {
+                        ClaudePermissionPrompt(
+                            request = permission,
+                            onDecision = { decision -> viewModel.replyPermission(permission, decision) },
+                        )
+                    } else {
+                        PermissionPrompt(
+                            request = permission,
+                            onDecision = { decision -> viewModel.replyPermission(permission, decision) },
+                        )
+                    }
                 }
                 if (pending.size > 1) {
                     Text(
@@ -259,12 +333,12 @@ fun ChatScreen(
                     onValueChange = { input = it },
                     state = state,
                     commandSuggestions = commandSuggestions,
+                    mentionToken = token as? ComposerToken.Mention,
                     onSend = {
                         val text = input.text
                         if ((text.isNotBlank() || state.attachments.isNotEmpty()) && state.connected) {
                             input = TextFieldValue("")
-                            viewModel.send(text)
-                            scope.launch { listState.animateScrollToItem(0) }
+                            submit(text)
                         }
                     },
                     onStop = viewModel::abort,
@@ -273,6 +347,10 @@ fun ChatScreen(
                         if (state.models.isEmpty()) viewModel.loadModels()
                     },
                     onSelectAgent = viewModel::selectAgent,
+                    onCycleAgent = {
+                        if (state.chat.haptics) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        viewModel.cycleAgent()
+                    },
                     onPickSystemPrompt = viewModel::selectSystemPrompt,
                     onManageSystemPrompts = onOpenSystemPrompts,
                     onOpenUsage = { usageSheet = true },
@@ -290,12 +368,20 @@ fun ChatScreen(
                         }
                     },
                     onRemoveAttachment = viewModel::removeAttachment,
-                    onPickMention = { path ->
+                    onPickMention = { candidate ->
                         val mention = token as? ComposerToken.Mention ?: return@Composer
-                        input = input.withMention(mention, path)
-                        viewModel.pickMention(path)
+                        input = input.withMention(mention, candidate.value, keepOpen = candidate.kind == MentionCandidate.Kind.DIRECTORY)
+                        viewModel.pickMention(candidate)
                     },
-                    onPickCommand = { name -> input = commandValue(name) },
+                    onPickCommand = { command ->
+                        if (command.argHint == null && command.local) {
+                            // Argument-less app commands run right away, like Enter in the TUI.
+                            input = TextFieldValue("")
+                            submit("/" + command.name)
+                        } else {
+                            input = commandValue(command.name)
+                        }
+                    },
                     onRemoveQueued = viewModel::removeQueued,
                     onEditQueued = viewModel::editQueued,
                 )
@@ -342,10 +428,31 @@ fun ChatScreen(
                         contentPadding = PaddingValues(vertical = 12.dp),
                     ) {
                         if (state.busy) {
-                            item(key = "typing-indicator") { TypingIndicator() }
+                            item(key = "typing-indicator") {
+                                if (claude) {
+                                    val lastAssistant = visible.lastOrNull { it.role == Role.ASSISTANT }
+                                    val turnTokens = lastAssistant?.takeIf { message ->
+                                        state.turnStartedAt != null && message.created >= state.turnStartedAt!! - 5_000
+                                    }?.tokens?.let { it.output + it.reasoning } ?: 0L
+                                    ClaudeSpinner(
+                                        startedAt = state.turnStartedAt,
+                                        outputTokens = turnTokens,
+                                        retry = state.retryMessage,
+                                        playful = state.chat.playfulSpinner,
+                                        compacting = state.compacting,
+                                        modifier = Modifier.clickable(onClick = viewModel::abort),
+                                    )
+                                } else {
+                                    TypingIndicator()
+                                }
+                            }
                         }
                         items(reversed, key = { message -> message.id }) { message ->
-                            MessageItem(message = message, onLongPress = { selectedMessage = message })
+                            if (claude) {
+                                ClaudeMessage(message = message, chat = state.chat, onLongPress = { selectedMessage = message })
+                            } else {
+                                MessageItem(message = message, onLongPress = { selectedMessage = message })
+                            }
                         }
                     }
                 }
@@ -373,14 +480,32 @@ fun ChatScreen(
     }
 
     if (usageSheet) {
+        val usage = state.usage
         UsageSheet(
-            usage = state.usage,
+            usage = usage,
             compacting = state.compacting,
+            chat = state.chat,
+            sessionLimit = state.sessionContextLimit,
+            modelLimit = usage?.modelKey?.let { state.modelContextLimits[it] },
+            canWriteServerConfig = container.sessionRepository.supportsConfig == true,
             onCompact = {
                 usageSheet = false
                 viewModel.compact()
             },
+            onSetChatLimit = viewModel::setSessionContextLimit,
+            onSetModelLimit = viewModel::setModelContextLimit,
             onDismiss = { usageSheet = false },
+        )
+    }
+
+    if (helpSheet) {
+        HelpSheet(
+            commands = viewModel.allCommands(),
+            onPick = { command ->
+                helpSheet = false
+                if (command.argHint == null && command.local) submit("/" + command.name) else input = commandValue(command.name)
+            },
+            onDismiss = { helpSheet = false },
         )
     }
 
@@ -405,6 +530,79 @@ fun ChatScreen(
 }
 
 private const val MAX_PICK = 6
+
+/** `/root/projects/app` → `~/projects/app`, long paths keep their tail. */
+private fun shortPath(path: String): String {
+    val home = path.replaceFirst(Regex("^/(root|home/[^/]+|data/data/[^/]+/files/home)(?=/|$)"), "~")
+    return if (home.length > 42) "\u2026" + home.takeLast(41) else home
+}
+
+/** `/help`: every command with its description, plus the input prefixes. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HelpSheet(commands: List<CommandSuggestion>, onPick: (CommandSuggestion) -> Unit, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        LazyColumn(Modifier.fillMaxWidth().navigationBarsPadding(), contentPadding = PaddingValues(bottom = 16.dp)) {
+            item {
+                Text(
+                    stringResource(R.string.chat_help_title),
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                )
+                HelpTip("/", stringResource(R.string.chat_help_slash))
+                HelpTip("@", stringResource(R.string.chat_help_at))
+                HelpTip("!", stringResource(R.string.chat_help_bang))
+                HelpTip("\u23F5\u23F5", stringResource(R.string.chat_help_mode))
+                HelpTip("\u25D4", stringResource(R.string.chat_help_context))
+                HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            }
+            items(commands, key = { it.name + it.local }) { command ->
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { onPick(command) }
+                        .padding(horizontal = 20.dp, vertical = 8.dp),
+                ) {
+                    Row {
+                        Text(
+                            text = "/" + command.name + (command.argHint?.let { " $it" } ?: ""),
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    val description = command.description ?: ClientCommand.find(command.name)?.let { stringResource(it.description) }
+                    val aliases = ClientCommand.find(command.name)?.takeIf { command.local }?.aliases.orEmpty()
+                    if (!description.isNullOrBlank()) {
+                        Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (aliases.isNotEmpty()) {
+                        Text(
+                            text = aliases.joinToString("  ") { "/$it" },
+                            style = MaterialTheme.typography.labelSmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.outline,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HelpTip(key: String, text: String) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)) {
+        Text(
+            text = key,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.width(36.dp),
+        )
+        Text(text, style = MaterialTheme.typography.bodyMedium)
+    }
+}
 
 private suspend fun addAttachment(context: Context, viewModel: ChatViewModel, uri: android.net.Uri) {
     when (val result = Attachments.read(context, uri)) {

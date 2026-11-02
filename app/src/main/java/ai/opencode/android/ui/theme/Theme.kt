@@ -91,7 +91,59 @@ private data class AccentTones(
     val onTertiaryContainer: Color,
 )
 
-private data class Accent(val light: AccentTones, val dark: AccentTones)
+/** Canvas and text tones; accents without their own use the shared cool greys. */
+private data class Neutrals(
+    val background: Color,
+    val onBackground: Color,
+    val onSurfaceVariant: Color,
+    val surfaceVariant: Color,
+    val outline: Color,
+    val outlineVariant: Color,
+    val containerLowest: Color,
+    val containerLow: Color,
+    val container: Color,
+    val containerHigh: Color,
+    val containerHighest: Color,
+    val inverseSurface: Color,
+    val inverseOnSurface: Color,
+)
+
+private data class Accent(
+    val light: AccentTones,
+    val dark: AccentTones,
+    val lightNeutrals: Neutrals? = null,
+    val darkNeutrals: Neutrals? = null,
+)
+
+/** Claude Code: terracotta accent on warm paper / warm charcoal. */
+private val Claude = Accent(
+    light = AccentTones(
+        Color(0xFFC96442), Color.White, Color(0xFFF7DCD0), Color(0xFF3D1406),
+        Color(0xFF6B675E), Color.White, Color(0xFFE9E5DA), Color(0xFF26241F),
+        Color(0xFF4F6BAE), Color.White, Color(0xFFDDE3F5), Color(0xFF0F1B3D),
+    ),
+    dark = AccentTones(
+        Color(0xFFD97757), Color(0xFF2B1209), Color(0xFF5B2E1E), Color(0xFFFFDBCE),
+        Color(0xFFC3BFB4), Color(0xFF2A2824), Color(0xFF3B3934), Color(0xFFE8E4D8),
+        Color(0xFF9DB1E6), Color(0xFF14234A), Color(0xFF2C3B66), Color(0xFFDDE3F5),
+    ),
+    lightNeutrals = Neutrals(
+        background = Color(0xFFFAF9F5), onBackground = Color(0xFF141413),
+        onSurfaceVariant = Color(0xFF5E5D59), surfaceVariant = Color(0xFFE8E6DC),
+        outline = Color(0xFF8A887F), outlineVariant = Color(0xFFD8D5CA),
+        containerLowest = Color.White, containerLow = Color(0xFFF5F4EE), container = Color(0xFFF0EEE6),
+        containerHigh = Color(0xFFE8E6DC), containerHighest = Color(0xFFDEDCD1),
+        inverseSurface = Color(0xFF30302E), inverseOnSurface = Color(0xFFF5F4EE),
+    ),
+    darkNeutrals = Neutrals(
+        background = Color(0xFF262624), onBackground = Color(0xFFF0EEE6),
+        onSurfaceVariant = Color(0xFFA9A69C), surfaceVariant = Color(0xFF3A3935),
+        outline = Color(0xFF6E6C66), outlineVariant = Color(0xFF3E3D39),
+        containerLowest = Color(0xFF1C1C1A), containerLow = Color(0xFF2B2A27), container = Color(0xFF30302E),
+        containerHigh = Color(0xFF393835), containerHighest = Color(0xFF43423E),
+        inverseSurface = Color(0xFFF0EEE6), inverseOnSurface = Color(0xFF262624),
+    ),
+)
 
 private val Opencode = Accent(
     light = AccentTones(
@@ -159,6 +211,7 @@ private val Rose = Accent(
 )
 
 private fun accentFor(palette: ThemePalette): Accent = when (palette) {
+    ThemePalette.CLAUDE -> Claude
     ThemePalette.OPENCODE, ThemePalette.DYNAMIC -> Opencode
     ThemePalette.EMERALD -> Emerald
     ThemePalette.AMBER -> Amber
@@ -168,6 +221,25 @@ private fun accentFor(palette: ThemePalette): Accent = when (palette) {
 
 /** Neutral surfaces are shared by every accent: cool greys that keep code and diffs readable. */
 private fun schemeFor(accent: Accent, dark: Boolean): ColorScheme {
+    val neutrals = if (dark) accent.darkNeutrals else accent.lightNeutrals
+    return schemeWithDefaultNeutrals(accent, dark).let { scheme ->
+        if (neutrals == null) scheme else scheme.withNeutrals(neutrals)
+    }
+}
+
+private fun ColorScheme.withNeutrals(n: Neutrals): ColorScheme = copy(
+    background = n.background, onBackground = n.onBackground,
+    surface = n.background, onSurface = n.onBackground,
+    surfaceVariant = n.surfaceVariant, onSurfaceVariant = n.onSurfaceVariant,
+    outline = n.outline, outlineVariant = n.outlineVariant,
+    surfaceBright = n.containerHighest, surfaceDim = n.background,
+    surfaceContainerLowest = n.containerLowest, surfaceContainerLow = n.containerLow,
+    surfaceContainer = n.container, surfaceContainerHigh = n.containerHigh,
+    surfaceContainerHighest = n.containerHighest,
+    inverseSurface = n.inverseSurface, inverseOnSurface = n.inverseOnSurface,
+)
+
+private fun schemeWithDefaultNeutrals(accent: Accent, dark: Boolean): ColorScheme {
     if (dark) {
         val t = accent.dark
         return darkColorScheme(
