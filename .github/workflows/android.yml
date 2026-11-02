@@ -163,6 +163,8 @@ jobs:
       - name: Build arm64 talloc
         run: |
           set -euo pipefail
+
+          trap 'echo "::error title=talloc step failed::line $LINENO"' ERR
           PREFIX="$GITHUB_WORKSPACE/talloc-arm64"
           CONF="--host=aarch64-linux-gnu --disable-python --without-gettext --prefix=$PREFIX"
           curl -fsSL https://www.samba.org/ftp/talloc/talloc-2.4.2.tar.gz -o talloc.tar.gz
@@ -190,8 +192,12 @@ jobs:
           # Standalone talloc builds only a shared object, so archive its own object files
           # (talloc + the bundled replace/ util helpers) into a static library by hand.
           if [ ! -f "$PREFIX/lib/libtalloc.a" ]; then
-            OBJS="$(find bin/default/lib/talloc bin/default/lib/replace -name '*.o' 2>/dev/null | tr '\n' ' ')"
+            OBJS="$(find bin/default/lib/talloc bin/default/lib/replace -name '*.o' 2>/dev/null | tr '\n' ' ' || true)"
             echo "archiving talloc objects: $OBJS"
+            if [ -z "$OBJS" ]; then
+              echo "::error title=no talloc objects::no .o files found under bin/default/lib"
+              exit 1
+            fi
             # shellcheck disable=SC2086
             aarch64-linux-gnu-ar rcs "$PREFIX/lib/libtalloc.a" $OBJS
           fi
