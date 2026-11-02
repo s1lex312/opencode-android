@@ -157,14 +157,26 @@ jobs:
       - name: Install cross toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential gcc-aarch64-linux-gnu libc6-dev-arm64-cross curl file
+          sudo apt-get install -y build-essential gcc-aarch64-linux-gnu libc6-dev-arm64-cross \
+            curl file pkg-config libpython3-dev
 
       - name: Build static arm64 proot
         run: |
           set -euo pipefail
+          # proot needs libtalloc for the *target* architecture; build it first, then proot itself.
+          curl -fsSL https://www.samba.org/ftp/talloc/talloc-2.4.2.tar.gz -o talloc.tar.gz
+          tar xf talloc.tar.gz
+          cd talloc-2.4.2
+          ./configure --host=aarch64-linux-gnu --disable-python --without-gettext \
+            --prefix="$GITHUB_WORKSPACE/talloc-arm64"
+          make -j"$(nproc)"
+          make install
+          cd "$GITHUB_WORKSPACE"
+
           git clone --depth 1 https://github.com/proot-me/proot.git proot-src
           cd proot-src/src
-          make -j"$(nproc)" CC=aarch64-linux-gnu-gcc LDFLAGS="-static -Wl,--gc-sections" || make -j"$(nproc)" CC=aarch64-linux-gnu-gcc LDFLAGS="-static"
+          PKG_CONFIG_PATH="$GITHUB_WORKSPACE/talloc-arm64/lib/pkgconfig" \
+            make -j"$(nproc)" CC=aarch64-linux-gnu-gcc CFLAGS="-static -O2" LDFLAGS="-static"
           BIN="$(find .. -maxdepth 3 -type f -name proot -perm -u+x | head -n 1)"
           file "$BIN"
           cp "$BIN" "$GITHUB_WORKSPACE/proot-aarch64"

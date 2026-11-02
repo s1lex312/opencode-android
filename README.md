@@ -2,175 +2,190 @@
 
 [![Android CI](https://github.com/s1lex312/opencode-android/actions/workflows/android.yml/badge.svg)](https://github.com/s1lex312/opencode-android/actions/workflows/android.yml)
 
-Нативный Android-клиент для [opencode](https://opencode.ai) — терминального coding-агента.
-Приложение подключается к серверу `opencode serve` по HTTP/HTTPS, показывает список сессий,
-ведёт чат с потоковым выводом (SSE), рисует карточки вызовов инструментов и unified diff
-изменённых файлов. Опционально умеет поднимать локальный сервер внутри proot (экспериментально).
+Нативный Android-клиент [opencode](https://github.com/anomalyco/opencode) с двумя режимами работы:
 
-<p align="center">
-  <b>Kotlin · Jetpack Compose · OkHttp · Kotlinx Serialization · DataStore · Keystore</b><br/>
-  minSdk 26 · targetSdk 34 · приоритетная архитектура: arm64-v8a
-</p>
+| Режим | Что происходит | Что нужно |
+| --- | --- | --- |
+| **Local** (по умолчанию) | Приложение само разворачивает и запускает `opencode serve` на телефоне внутри proot и подключается к `http://127.0.0.1:4096` | Ничего: поставили APK и пользуетесь |
+| **Remote** | Подключение к существующему `opencode serve` на компьютере/сервере/VPS | Адрес, пароль/токен, сеть |
 
----
+Оба режима используют один и тот же клиентский стек: Ktor не нужен — OkHttp + собственный SSE-клиент,
+Compose Material 3, шифрованное хранилище секретов, просмотр diff, карточки инструментов и
+разрешений.
 
-## Что уже работает
+## Возможности
 
-| Возможность | Статус |
-| --- | --- |
-| Список сессий, создание, удаление, кэш списка офлайн | ✅ |
-| Чат с агентом: потоковый текст, reasoning, карточки инструментов | ✅ |
-| Обработка ошибок, переподключение SSE с экспоненциальным backoff | ✅ |
-| Unified diff сессии с подсветкой добавлений/удалений | ✅ |
-| Экран настроек: адрес/порт, Basic/Bearer аутентификация, модель, агент | ✅ |
-| Политики разрешений (`ask` / `auto-allow` / `deny`) | ✅ |
-| Секреты только в `EncryptedSharedPreferences` + Android Keystore | ✅ |
-| Политика «HTTPS или localhost/локальная сеть» (enforced в OkHttp) | ✅ |
-| Адаптивный touch-friendly Compose UI (телефон/планшет/ландшафт) | ✅ |
-| Поддержка двух API opencode: 2.x `HttpApi` и legacy 0.x/1.x REST | ✅ |
-| Встроенный proot-сервер: foreground service + health-check | ⚠️ каркас (см. [server/README.md](server/README.md)) |
-| Unit-тесты парсинга SSE/diff/событий/редьюсера | ✅ |
-| CI: сборка debug APK + тесты в GitHub Actions | ✅ |
+- **Local mode «всё на телефоне»**: провижининг proot-окружения (rootfs + proot + `opencode`) при
+  первом запуске, прогресс установки, проверка SHA-256, повтор и очистка окружения.
+- **Супервизор сервера**: запуск/остановка, health-check `GET /`, автоперезапуск с экспоненциальным
+  backoff (до 5 попыток), лог в файл и в приложение, foreground service `specialUse`, wake lock,
+  устойчивость к сворачиванию и Doze.
+- **Пароль локального сервера** генерируется автоматически (32 символа, ~190 бит), хранится в
+  `EncryptedSharedPreferences` (ключ в Android Keystore), передаётся серверу только через переменную
+  окружения дочернего процесса, в логи не попадает.
+- **Remote mode** без изменений: адрес/порт, Basic/Bearer, тест соединения, политика cleartext.
+- **Сессии и чат**: список сессий с кэшем, создание/удаление, стриминг (SSE), карточки tool-call,
+  разрешения (ASK/AUTO_ALLOW/DENY), прерывание, переподключение с backoff.
+- **Diff**: парсер unified diff, подсветка добавленных/удалённых строк, номера строк, бинарные файлы.
+- **Настройки**: режим Local/Remote, порт, команда запуска, автоперезапуск, модель/агент, политика
+  разрешений, источник bundle-артефакта, логи, оптимизация батареи и уведомления.
 
-## Быстрый старт
+## Требования
 
-### 1. Соберите APK
+- Android 8.0+ (API 26), **arm64-v8a** для Local mode (Remote работает на любой ABI).
+- ~400 МБ свободного места для Local mode (rootfs + proot + бинарь opencode распакованные).
+- Для сборки: JDK 17, Android SDK 34, интернет для Gradle-зависимостей.
 
-Требования: JDK 17, Android SDK (compileSdk 34, build-tools 34.0.0), интернет для Gradle-зависимостей.
+## Быстрый старт (Local mode)
 
-```bash
-git clone https://github.com/s1lex312/opencode-android.git
-cd opencode-android
-./gradlew assembleDebug
-# APK: app/build/outputs/apk/debug/app-debug.apk
-```
+1. Соберите и установите APK:
 
-Установка:
+   ```bash
+   ./gradlew assembleDebug
+   adb install -r app/build/outputs/apk/debug/app-debug.apk
+   ```
 
-```bash
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-```
+2. При первом запуске откроется **Setup**. Нажмите **Install**: приложение скачает (или возьмёт из
+   assets) bundle, проверит SHA-256, распакует `proot`, `rootfs` и `opencode` в
+   `noBackupFilesDir/opencode-env`.
+3. Нажмите **Start** (или просто вернитесь к сессиям — сервер поднимется сам). Через несколько
+   секунд появится `Running (healthy)` и список сессий.
+4. Создайте сессию и общайтесь с агентом: ответы стримятся, инструменты показываются карточками,
+   изменения — на экране diff.
 
-Тесты и полная проверка:
+> Первый запуск требует, чтобы bundle был доступен: либо он лежит в APK
+> (`app/src/main/assets/local-env.tar.gz`), либо вы указали URL + SHA-256 на экране Setup
+> (см. «Сборка bundle» ниже). Пока bundle нет, приложение честно предложит Remote mode.
 
-```bash
-./gradlew testDebugUnitTest
-./gradlew assembleDebug
-```
-
-> `local.properties` не коммитится. Если Android SDK не в стандартном месте, создайте файл:
-> `sdk.dir=/path/to/Android/Sdk`.
-
-### 2. Запустите сервер opencode
-
-На машине с вашим проектом (ноутбук, сервер, Termux):
+## Быстрый старт (Remote mode)
 
 ```bash
-# без пароля — только для доверенной сети
-opencode serve --hostname 0.0.0.0 --port 4096
-
-# с паролем (HTTP Basic, логин всегда "opencode")
+# на компьютере
 OPENCODE_PASSWORD='длинный-секрет' opencode serve --hostname 0.0.0.0 --port 4096
 ```
 
-Версия opencode: клиент поддерживает и текущий сервер 2.x (`/api/...`), и legacy-поверхность
-0.x/1.x (`/session`, `/event`). Версия определяется автоматически при подключении
-(`GET /api/info` → `GET /config`).
+В приложении: **Settings → Where opencode runs → Remote server**, адрес `http://192.168.1.20:4096`,
+Authentication = Password, введите пароль, **Test** → **Save & connect**.
 
-CORS настраивать не нужно: это нативное приложение, а не браузер.
+Публичные адреса — только `https://`. Открытый HTTP разрешён для `localhost`/`127.0.0.1`, а для
+локальной сети (192.168/10/172.16-31) — только при включённом переключателе «Allow cleartext HTTP
+on the local network» (включён по умолчанию, можно выключить для строгого режима).
 
-### 3. Подключите приложение
+## Сборка bundle для Local mode
 
-1. Откройте **Settings → Server connection**.
-2. Введите адрес: `http://192.168.1.20:4096` (та же Wi-Fi сеть) или `http://127.0.0.1:4096`,
-   если сервер запущен на телефоне.
-3. **Authentication**: `Password` + пароль из `OPENCODE_PASSWORD`
-   (или `Token` для reverse-proxy с Bearer).
-4. **Test** → должно появиться `Reachable: opencode vX.Y.Z (API v2)`.
-   Ключи LLM-провайдеров задаются на сервере (`opencode auth login`), приложение их не хранит:
-   оно знает только пароль/токен самого сервера.
-5. **Save & connect** → вернитесь на список сессий, создайте сессию, пишите агенту.
+Bundle — это `tar.gz` с тремя вещами:
 
-Публичные адреса — только `https://`. Открытый HTTP разрешён для `localhost`/`127.0.0.1`,
-а для локальной сети (192.168/10/172.16-31, `*.local`) — только если включён переключатель
-«Allow cleartext HTTP on the local network» (по умолчанию включён; его можно выключить для
-строгого режима).
+```
+proot                          статический arm64 proot
+rootfs/                        минимальный Ubuntu/Debian arm64
+rootfs/usr/local/bin/opencode  standalone-бинарь opencode (linux-arm64)
+```
+
+Скрипт `server/scripts/build-rootfs.sh` собирает bundle и печатает SHA-256:
+
+```bash
+# 1. Скачать готовые части (ubuntu-base + opencode) и собрать со своим статическим proot
+./server/scripts/build-rootfs.sh --mode full --output dist --version 2026.11 \
+    --proot ./proot-aarch64 --download-base --download-opencode
+
+# 2. Или собрать из своих файлов
+./server/scripts/build-rootfs.sh --mode full --output dist --version 2026.11 \
+    --proot ./proot-aarch64 --rootfs ./ubuntu-base-22.04.5-base-arm64.tar.gz --opencode ./opencode
+
+# 3. Проверить bundle (целостность + раскладка)
+./server/scripts/verify-artifact.sh dist/opencode-env-2026.11-arm64.tar.gz <sha256>
+
+# 4. CI-проверка пайплайна без арmb64-бинарей (создаёт нерабочий stub)
+./server/scripts/build-rootfs.sh --mode stub --output dist
+```
+
+Куда положить результат:
+
+- **В APK** (офлайн-установка): `cp dist/opencode-env-*.tar.gz app/src/main/assets/local-env.tar.gz`,
+  затем `./gradlew assembleDebug`. Приложение проверит SHA-256 из `assets/local-env.json`.
+- **Публикация** (APK остаётся ~19 МБ): загрузите tarball в GitHub Release и вставьте на экране
+  Setup его `https://` URL и SHA-256. Скачивание проверяется по хешу перед распаковкой.
+
+Где взять статический arm64 `proot`: собрать из исходников proot-me/proot (нужен `libtalloc` под
+arm64) или взять готовый из Termux-сборки. CI-джоба `Rootfs arm64 bundle (best effort)` пытается
+собрать `talloc` + `proot` и упаковать bundle; она не блокирует основной билд, потому что upstream
+бинарники меняются. Подробности и альтернативы — в [server/README.md](server/README.md).
+
+## Размеры и хранение
+
+| Что | Размер |
+| --- | --- |
+| APK (без bundle) | ~19 МБ |
+| Ubuntu base arm64 + opencode (сжатый bundle) | ~110–130 МБ |
+| То же в распакованном виде | ~350–450 МБ |
+| Лог сервера (с ротацией) | ≤ 512 КБ |
+
+Окружение живёт в `noBackupFilesDir/opencode-env` (не попадает в облачный бэкап). Кнопка
+**Setup → Clear** удаляет его полностью.
 
 ## Безопасность
 
-- Пароль/токен хранятся в `EncryptedSharedPreferences` (AES-256-SIV для ключей, AES-256-GCM
-  для значений), мастер-ключ — в Android Keystore. Если Keystore недоступен, приложение
-  честно предупреждает и хранит секрет только в памяти (без plaintext-файлов).
-- Секреты никогда не попадают в логи: HTTP-логирование пишет только method/path/status/время;
-  заголовок `Authorization` и query-параметры вида `auth_token` редактируются (`Redaction`).
-- TLS: валидация сертификата по системному хранилищу, пользовательские CA не принимаются.
-- `allowBackup=false` + `dataExtractionRules` исключают попадание настроек и кэша в бэкап.
-- Политика cleartext проверяется дважды: при сохранении настроек и в сетевом интерсепторе,
-  поэтому закэшированный конфиг её не обойдёт.
-
-Подробности и обоснования — в [ARCHITECTURE.md](ARCHITECTURE.md) и [ASSUMPTIONS.md](ASSUMPTIONS.md).
+- Пароль/токен Remote и пароль локального сервера хранятся в `EncryptedSharedPreferences`
+  (AES-256-SIV/GCM, мастер-ключ в Android Keystore). При недоступном Keystore — только память,
+  с явным предупреждением.
+- Пароль локального сервера уходит в дочерний процесс через переменную окружения (не через argv,
+  не в логи). В логах только method/path/status/время, секреты редактируются (`Redaction`).
+- Сеть: `https://` где угодно, `http://` — только loopback и (по явному согласию) приватные
+  диапазоны; проверка в `NetworkPolicy` до открытия сокета и повторно в интерсепторе.
+- Bundle скачивается только по `https://` и только с проверкой SHA-256; без хеша установка
+  отклоняется.
+- `allowBackup=false`, `dataExtractionRules` исключают настройки и кэш из бэкапа.
+- Никакого root: proot работает под UID приложения.
 
 ## Структура репозитория
 
 ```
 app/src/main/java/ai/opencode/android/
-  data/
-    remote/      OkHttp-транспорт, SSE-клиент и парсер, V2Api, LegacyApi, JSON-хелперы
-    events/      нормализованные события + маппер обоих API + редуктор стрима
-    model/       доменные модели (сессии, сообщения, части, разрешения)
-    repo/        ServerConnectionManager, SessionRepository, ApiResult
-    diff/        парсер unified diff
-    cache/       файловый кэш списка сессий
-  security/      EncryptedSecretStore, NetworkPolicy, Redaction
-  settings/      AppSettings + DataStore-репозиторий
-  server/        экспериментальный proot-супервизор + foreground service
-  ui/            Compose: тема, навигация, экраны sessions/chat/diff/settings
-  di/            ручной DI-контейнер
-app/src/test/    unit-тесты SSE, diff, маппера событий, редуктора, политики сети
-server/          скрипты и инструкция для proot-развёртывания (опционально)
+  data/           HTTP-транспорт, SSE, события, репозитории, diff-парсер, кэш
+  security/       EncryptedSecretStore, генерация локального пароля, NetworkPolicy, Redaction
+  settings/       AppSettings (ConnectionMode, LocalServerSettings), DataStore
+  server/         супервизор proot-сервера, foreground service, health-check, логи, RestartPolicy
+    provision/    манифест bundle, скачивание, SHA-256, tar.gz-экстрактор, установка окружения
+  ui/             Compose: sessions, chat, diff, settings, setup, logs, тема, навигация
+  di/             ручной DI-контейнер
+app/src/test/     unit-тесты (SSE, diff, события, провижининг, health, логи, рестарты, политика сети)
+server/scripts/   build-rootfs.sh (full|stub), verify-artifact.sh
+docs/             SMOKE-TEST.md — чек-лист проверки на устройстве
 ```
 
-## Известные ограничения
+## Тесты и CI
 
-- Нет вложений файлов/картинок в промпте и нет терминала (PTY) — см. [TODO.md](TODO.md).
-- Пагинация: загружаются последние 100 сессий и 200 сообщений; бесконечной прокрутки нет.
-- Встроенный proot-сервер не поставляется с бинарниками (proot/rootfs) — это осознанное
-  решение: см. [server/README.md](server/README.md) и [ASSUMPTIONS.md](ASSUMPTIONS.md#11-встроенный-proot-сервер).
-- Стриминг использует эвристику (дельты + перезапрос проекции сообщений после хода агента):
-  сервер остаётся источником истины, но при очень длинных ответах возможен короткий «прыжок»
-  текста в момент перезапроса.
-- Приложение не проверялось на реальном устройстве внутри этой рабочей среды; сборка и
-  unit-тесты выполняются в CI (см. `.github/workflows/android.yml`).
+```bash
+./gradlew testDebugUnitTest     # ~90 JVM-тестов
+./gradlew assembleDebug
+```
+
+CI (`.github/workflows/android.yml`):
+
+1. **Build debug APK** — unit-тесты + `assembleDebug`, артефакты APK/отчёты/логи;
+2. **Rootfs packaging (stub)** — собирает и проверяет bundle-пайплайн и манифест (быстро, всегда);
+3. **Rootfs arm64 bundle (best effort)** — пытается собрать настоящий arm64 bundle
+   (`talloc` + `proot` + ubuntu-base + opencode) и выкладывает артефакт; не блокирует CI.
+
+## Ограничения
+
+- Local mode только для arm64-устройств; на x86/эмуляторе используйте Remote mode.
+- Bundle не входит в репозиторий (сотни мегабайт) — его нужно собрать или опубликовать.
+- Нет вложений в промпте, PTY-терминала и пагинации истории (см. [TODO.md](TODO.md)).
+- Приложение проверено компиляцией, unit-тестами и CI-сборкой APK; реальный запуск proot на
+  устройстве нужно подтвердить по [docs/SMOKE-TEST.md](docs/SMOKE-TEST.md).
+- Интеграция с Shizuku не реализована (не требуется для работы).
 
 ## Документация
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) — сравнение вариантов архитектуры, слои, потоки данных, API-маппинг.
-- [ASSUMPTIONS.md](ASSUMPTIONS.md) — все допущения, включая трактовку «opencode 8.0+».
-- [TODO.md](TODO.md) — приоритизированный бэклог.
-- [server/README.md](server/README.md) — proot-сервер: сборка rootfs, установка, ограничения.
+- [ARCHITECTURE.md](ARCHITECTURE.md) — варианты архитектуры, компоненты, жизненный цикл сервера,
+  политика обновления окружения.
+- [ASSUMPTIONS.md](ASSUMPTIONS.md) — все допущения (включая формат bundle и поведение сервера).
+- [TODO.md](TODO.md) — бэклог.
+- [server/README.md](server/README.md) — сборка bundle, proot, провижининг, диагностика.
 - [docs/SMOKE-TEST.md](docs/SMOKE-TEST.md) — чек-лист ручной проверки на устройстве.
-
-## Проверка на устройстве
-
-CI доказывает только то, что проект компилируется и unit-тесты проходят. Сеть, UI, Keystore и
-стриминг проверяются вручную по чек-листу [docs/SMOKE-TEST.md](docs/SMOKE-TEST.md): подключение
-(пароль/без пароля/HTTPS/self-signed), список сессий, стриминг, tool-cards, permissions, diff,
-переподключение после обрыва, proot-сервер.
-
-## CI
-
-`.github/workflows/android.yml` на каждый push в `main`/`arena/**` и на PR:
-
-1. JDK 17 + предустановленный Android SDK (ubuntu-latest);
-2. `./gradlew testDebugUnitTest`;
-3. `./gradlew assembleDebug`;
-4. артефакты: `opencode-android-debug` (APK ~18 МБ), `build-logs`, `unit-test-reports`;
-5. при падении компиляции/тестов ключевые ошибки публикуются как аннотации к check-run.
-
-Последний известный успешный прогон: run `41407699767` — 55 unit-тестов зелёные, debug APK собран
-(`opencode-android-debug`, ~18.5 МБ).
 
 ## Лицензия
 
-MIT — см. [LICENSE](LICENSE). opencode является проектом его авторов (MIT);
-этот репозиторий — независимый клиент и не содержит кода сервера.
+MIT — см. [LICENSE](LICENSE). opencode — проект его авторов; это независимый клиент, код сервера не
+включён в репозиторий. Rootfs и сторонние бинарники распространяются по своим лицензиям.

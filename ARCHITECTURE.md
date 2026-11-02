@@ -20,6 +20,11 @@ opencode — клиент-серверная система. Ядро напис
 поток событий, диффы, разрешения и каталог моделей. Поэтому имеет смысл не тащить ядро на
 Android, а сделать качественный нативный клиент.
 
+**Режимы поставки.** Приложение по умолчанию работает автономно (**Local mode**): само
+разворачивает proot-окружение с rootfs и `opencode` и запускает сервер на телефоне, а клиент
+подключается к `http://127.0.0.1:4096`. Подключение к внешнему серверу (**Remote mode**) осталось
+как равноправная опция для тех, у кого opencode уже работает на ноутбуке/сервере.
+
 ## 2. Сравнение вариантов
 
 ### Вариант A — нативный клиент к `opencode serve` (**выбран**)
@@ -60,15 +65,20 @@ Android, а сделать качественный нативный клиен�
 **Минусы**: не нативный UX, нет офлайн-кэша, плохая работа с SSE/вложениями/клавиатурой,
 невозможно аккуратно хранить секреты (cookies в WebView), нет diff-экрана под палец.
 
-### Вариант D — гибрид A + B (**выбран как компромисс**)
+### Вариант D — гибрид A + B (**выбран**)
 
-Нативный клиент — основной путь. Встроенный сервер реализован как **опциональный
-супервизор**: foreground service поднимает proot-процесс `opencode serve`, следит за health
-endpoint и показывает логи. Бинарники не поставляются (осознанно, см. ASSUMPTIONS), поэтому
-фича помечена экспериментальной и не влияет на основной сценарий.
+Нативный клиент (A) плюс встроенный proot-сервер (B), который является **режимом по умолчанию**:
 
-**Итог:** основной продукт — вариант A, вариант B доступен как экспериментальный режим
-без компромиссов для сборки и UX.
+* окружение (proot + rootfs + `opencode`) не входит в APK, а ставится при первом запуске из
+  подписанного bundle (asset или HTTPS + SHA-256) — APK остаётся ~19 МБ;
+* foreground service, health-check, автоперезапуск и логи делают локальный сервер полноценным,
+  а не демонстрацией;
+* ABI-риск (только arm64) изолирован в Local mode: Remote работает везде;
+* если окружение не установлено, приложение честно предлагает Setup или Remote — краха нет.
+
+**Итог:** вариант D реализован целиком; вариант A остаётся доступным как Remote mode, вариант C
+(WebView) отклонён, вариант B в «чистом» виде (rootfs внутри APK) отклонён из-за размера APK и
+лицензий.
 
 ## 3. Слои приложения
 
@@ -98,8 +108,11 @@ endpoint и показывает логи. Бинарники не постав�
                 │                               │
 ┌───────────────┴───────────────────────────────▼───────────────┐
 │ Security / platform                                           │
-│  EncryptedSecretStore (Keystore)  NetworkPolicy  Redaction    │
-│  LocalServerManager + LocalServerService (опционально)        │
+│  EncryptedSecretStore (Keystore)  LocalSecrets  Redaction     │
+│  NetworkPolicy                                                │
+│  LocalRuntime ── EnvProvisioner ── TarGzExtractor (Local mode) │
+│  LocalServerManager ── HealthProbe ── ServerLogStore          │
+│  LocalServerService (foreground, specialUse, START_STICKY)    │
 └───────────────────────────────────────────────────────────────┘
 ```
 
@@ -111,17 +124,21 @@ endpoint и показывает логи. Бинарники не постав�
 * **ViewModel — единственное место, где смешиваются состояния.** Репозитории возвращают типизированный
   `ApiResult`, а не бросают исключения в UI.
 * **Чистая логика отделена от Android.** `SseParser`, `UnifiedDiffParser`, `EventMapper`,
-  `ChatStreamReducer`, `NetworkPolicy`, `MarkdownLite.parse`, `Formatters` не зависят от
-  `Context` и покрыты JVM-тестами.
+  `ChatStreamReducer`, `NetworkPolicy`, `MarkdownLite.parse`, `Formatters`, а также
+  `TarGzExtractor`, `EnvProvisioner`, `HealthProbe`, `RestartPolicy`, `ServerLogStore`,
+  `LogLineParser` не зависят от `Context` и покрыты JVM-тестами.
 
 ## 4. Поток данных
 
 ### 4.1 Подключение
 
-1. `SettingsRepository.current()` → `AppSettings` (адрес, режим auth, флаги).
-2. `NetworkPolicy.normalize()` проверяет схему/хост/порт (HTTPS или локальные адреса).
-3. `ApiFactory` создаёт `ServerHttp` (OkHttp + `AuthInterceptor` + `NetworkPolicyInterceptor`).
-4. Определение версии API:
+1. `SettingsRepository.current()` → `AppSettings`; для Local mode адрес берётся из
+   `localServer.port`, auth — Basic с локальным паролем из Keystore.
+2. В Local mode `LocalRuntime.awaitReadyForClient()` дожидается health-check локального сервера
+   (или сообщает «не установлено», если окружения нет) — клиент не пытается биться в закрытый порт.
+3. `NetworkPolicy.normalize()` проверяет схему/хост/порт (HTTPS или локальные адреса).
+4. `ApiFactory` создаёт `ServerHttp` (OkHttp + `AuthInterceptor` + `NetworkPolicyInterceptor`).
+5. Определение версии API:
    * `GET /api/info` → 2xx ⇒ `V2Api`;
    * иначе `GET /config` → 2xx ⇒ `LegacyApi`;
    * 401/403 прерывают попытку с понятной ошибкой авторизации.
@@ -209,10 +226,12 @@ git-преамбулы, несколько файлов, несколько ху
 
 | Что | Где | Почему |
 | --- | --- | --- |
-| Адрес, auth-режим, модель, агент, политики, настройки локального сервера | DataStore Preferences | транзакционно, Flow из коробки |
-| Пароль/токен | `EncryptedSharedPreferences` + Keystore | требование «только шифрованное хранилище» |
+| Режим (Local/Remote), адрес, auth-режим, модель, агент, политики, настройки локального сервера | DataStore Preferences | транзакционно, Flow из коробки |
+| Пароль/токен Remote, пароль локального сервера | `EncryptedSharedPreferences` + Keystore | требование «только шифрованное хранилище» |
 | Кэш списка сессий | JSON-файл в `cacheDir` | переживает перезапуск, не является вторым источником истины |
 | Сообщения | только в памяти + перезапрос с сервера | избегаем рассинхронизации и роста БД |
+| proot + rootfs + opencode | `noBackupFilesDir/opencode-env` | сотни мегабайт, не должны попадать в бэкап |
+| Лог сервера | `opencode-env/logs/server.log` | выживает при смерти процесса, ротация ≤512 КБ |
 
 Room сознательно не используется: клиент — тонкое представление удалённого состояния, и одна
 небольшая JSON-модель проще, чем схема, миграции и KSP без выигрыша. Это зафиксировано в
@@ -246,23 +265,118 @@ ASSUMPTIONS; при появлении офлайн-режима с полноц
 * Навигация: sessions → chat → diff/settings, состояние экранов в ViewModel переживает
   поворот и переходы.
 
-## 9. Встроенный сервер (опционально)
+## 9. Local mode: «всё на телефоне»
 
-`LocalServerService` (foreground service, тип `specialUse`) + `LocalServerManager`:
+Цель: установил APK — и пользуешься, без ПК, Termux и внешнего `opencode serve`. Root не нужен:
+proot — это user-space `chroot`, всё живёт в песочнице приложения.
 
-1. Проверяет наличие proot-бинаря и rootfs; если нет — понятная ошибка со ссылкой на
-   `server/README.md`.
-2. Запускает `proot -0 -r <rootfs> -b /dev -b /proc -b /sys -w /root /bin/sh -lc "<command>"`
-   с подстановкой `{port}`/`{rootfs}`; шаблон команды настраивается.
-3. Читает stdout/stderr в кольцевой буфер (500 строк) и отдаёт в UI.
-4. Health-check: `GET http://127.0.0.1:<port>/api/info`, затем `/config`; 200–499 считается
-   «сервер жив» (401 = жив, но просит пароль).
-5. Watchdog каждые 10 с проверяет процесс и health; при падении — `FAILED` и остановка сервиса.
-6. Уведомление с кнопкой Stop; `onDestroy` убивает процесс (нет «сирот»).
+### 9.1 Компоненты
 
-Почему без бинарников: APK не может легально/технически тащить rootfs и proot без ABI-сборки,
-лицензионных текстов и десятков мегабайт; в CI невозможно проверить arm64-процесс. Поэтому
-фича — каркас с честной документацией и скриптами провижининга.
+```
+┌───────────────────────────── Android-приложение (UID приложения) ─────────────────────────────┐
+│                                                                                               │
+│  Compose UI ── SetupScreen ── LogsScreen ── Sessions/Chat/Diff/Settings                       │
+│      │              │                                                                          │
+│      ▼              ▼                                                                          │
+│  SetupViewModel   LocalRuntime ──────────────────────────────────────────┐                    │
+│                        │  1. пароль (Keystore)                          │                    │
+│                        │  2. провижининг окружения                      │                    │
+│                        │  3. запуск + health                            │                    │
+│                        │  4. connect()                                  │                    │
+│                        ▼                                                ▼                    │
+│  EnvProvisioner                        LocalServerManager        ServerConnectionManager     │
+│   • манифест (assets/…)                 • RestartPolicy            • OkHttp + SSE            │
+│   • ArtifactSource (HTTP/asset)         • HealthProbe (GET /)       • NetworkPolicy          │
+│   • SHA-256 (streaming)                 • ServerLogStore (файл)     • V2Api / LegacyApi       │
+│   • TarGzExtractor (ustar/pax/GNU)      • LogLineParser                                     │
+│   • staging → atomic swap                                                                      │
+│                        │                                                ▲                    │
+│                        ▼                                                │                    │
+│  noBackupFilesDir/opencode-env/{proot,rootfs/,installed.json,logs/}     │                    │
+│                        │                                                │                    │
+│  LocalServerService (foreground, specialUse, wake lock, START_STICKY) ──┘                     │
+└───────────────────────────────────┬───────────────────────────────────────────────────────────┘
+                                    │ ProcessBuilder
+                                    ▼
+        proot -0 --kill-on-exit -r rootfs -b /dev -b /proc -b /sys -b resolv.conf
+              -w /root /usr/bin/env HOME=/root PATH=… OPENCODE_PASSWORD=*** 
+              /bin/sh -lc "opencode serve --hostname 127.0.0.1 --port 4096"
+                                    │
+                                    ▼
+                    HTTP/SSE на http://127.0.0.1:4096
+```
+
+### 9.2 Провижининг окружения
+
+1. **Манифест**: `assets/local-env.json` (`version`, `abi`, `url`, `sha256`, `sizeBytes`). Поля URL и
+   SHA-256 можно переопределить на экране Setup — тогда bundle скачивается по HTTPS.
+2. **Источник**: `HttpArtifactSource` (OkHttp, без глобального таймаута) или `AssetArtifactSource`
+   (bundle внутри APK). Для скачивания SHA-256 обязателен; без него установка отклоняется.
+3. **Загрузка/копирование** в `.download/bundle.tar.gz` потоком с подсчётом байт и SHA-256
+   «на лету» — файл не читается дважды и не держится в памяти.
+4. **Проверка** хеша (сравнение, устойчивое к формату записи).
+5. **Распаковка** в `.staging/` (`TarGzExtractor`: ustar, GNU longname, pax, symlink/hardlink,
+   защита от path traversal, права на исполнение).
+6. **Установка**: `proot` → `opencode-env/proot/proot` (0755), `rootfs/` → `opencode-env/rootfs`,
+   запись `installed.json`. Старое окружение удаляется только после успешной распаковки — при
+   ошибке остаётся прежняя рабочая версия.
+7. **Очистка** (Setup → Clear) удаляет rootfs, proot, staging, скачанный архив, лог и маркер.
+
+Состояние (`ProvisionState`) наблюдается UI: `CHECKING → DOWNLOADING → VERIFYING → EXTRACTING →
+INSTALLING → READY|FAILED`, с прогрессом, байтами и текстом ошибки.
+
+### 9.3 Жизненный цикл сервера
+
+```
+STOPPED ──start()──▶ STARTING ──health ok──▶ READY ──stop()──▶ STOPPING ──▶ STOPPED
+                        │  ▲                    │
+                        │  └── backoff ─────────┘   (падение процесса / 3 неудачных health)
+                        └── лимит попыток ──▶ FAILED
+```
+
+- **Запуск**: `proot -0 --kill-on-exit -r <rootfs> -b /dev -b /proc -b /sys -b <resolv.conf>:/etc/resolv.conf
+  -w /root … /bin/sh -lc "opencode serve --hostname 127.0.0.1 --port {port}"`.
+  Пароль — в окружении дочернего процесса (`OPENCODE_PASSWORD`), не в argv.
+- **Health-check**: `GET /`, затем `/api/info`, `/config`; `200–499` = сервер отвечает (401 — тоже
+  «жив»). Опрос каждую секунду до 180 с на старте, затем каждые 5 с.
+- **Перезапуск**: `RestartPolicy` — 1s/2s/4s/8s/16s (кап 30 s), не более 5 попыток; после лимита
+  `FAILED` с текстом и логом. Пользователь может отключить автоперезапуск в настройках.
+- **Остановка**: `stop()` отменяет супервизор, убивает процесс (SIGTERM → SIGKILL через 5 с),
+  пишет маркер в лог, состояние `STOPPED`.
+- **Логи**: `ServerLogStore` — файл `opencode-env/logs/server.log` с ротацией (≤512 КБ, хвост
+  256 КБ), плюс кольцевой буфер 500 строк для UI. `LogLineParser` распознаёт «listening …:port»,
+  `EADDRINUSE`, `proot error`, код выхода — используется для диагностики и подсветки в UI.
+
+### 9.4 Фоновый режим и Doze
+
+- `LocalServerService` — foreground service с типом `specialUse`; `START_STICKY`, `stopWithTask=false`:
+  после сворачивания/свайпа и даже после убийства процесса система перезапускает сервис, а тот
+  поднимает сервер.
+- Partial wake lock на время работы сервиса (освобождается в `onDestroy`) — иначе proot может не
+  успеть ответить в Doze.
+- Уведомление показывает состояние (`Starting…`, `Listening on 127.0.0.1:4096`, `Failed`) и даёт
+  Restart/Stop; на Android 13+ приложение просит `POST_NOTIFICATIONS`.
+- Setup предлагает отключить оптимизацию батареи (`ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`) —
+  по желанию, не обязательно.
+
+### 9.5 Переключение Local/Remote
+
+`ConnectionMode` хранится в DataStore. Клиент всегда берёт `effectiveServerUrl`:
+в Local — `http://127.0.0.1:<port>` + Basic с локальным паролем, в Remote — сохранённый адрес и
+секрет. При Local клиент ждёт готовности сервера (`LocalRuntime.awaitReadyForClient`), а не падает
+сразу: пока proot стартует, соединение переходит в `Connecting`.
+
+### 9.6 Политика обновлений окружения
+
+- Версия окружения — в манифесте (`version`), установленная копия сравнивается с манифестом при
+  открытии Setup; при расхождении показывается «доступно обновление».
+- Обновление = повторный провижининг (скачивание → проверка → staging → swap). Откат — вручную:
+  старое окружение удаляется только после успешной распаковки, но не хранится как вторая копия
+  (экономия ~400 МБ).
+- Bundle версионируется по дате (`YYYY.MM`) + суффикс сборки; SHA-256 публикуется вместе с
+  артефактом, приложение отказывается ставить bundle с несовпадающим хешем.
+- Совместимость: ABI проверяется по манифесту (ожидается `arm64-v8a`), отсутствие `/bin/sh` в
+  rootfs или `proot` в архиве — ошибка установки, а не «тихая» поломка.
 
 ## 10. Контракт API: что именно вызывается
 
@@ -308,11 +422,20 @@ ASSUMPTIONS; при появлении офлайн-режима с полноц
 | `NetworkPolicyTest` | https/http-политика, приватные диапазоны, редактирование секретов |
 | `MarkdownLiteTest` | кодовые блоки, незакрытый fence, параграфы |
 | `FormattersTest` | относительное время и утилиты строк |
+| `TarGzExtractorTest` | файлы/каталоги/симлинки, GNU longname, path traversal, прогресс |
+| `EnvProvisionerTest` | установка, проверка SHA-256, отказ без хеша, дружелюбные ошибки, очистка, маркер |
+| `EnvManifestTest` | парсинг манифеста, snake_case, мусор, round-trip |
+| `HealthProbeTest` | порядок проб `GET /` → `/api/info` → `/config`, 401/5xx, отсутствие ответа |
+| `RestartPolicyTest` | экспоненциальный backoff и лимит попыток |
+| `ServerLogStoreTest` | запись, хвост, ротация, очистка |
+| `LogLineParserTest` | «listening», EADDRINUSE, proot-ошибки, коды выхода |
+| `LocalSecretsTest` | генерация и переиспользование пароля локального сервера |
 
-CI прогоняет `testDebugUnitTest` и `assembleDebug`, складывает APK и отчёты в артефакты.
+CI прогоняет `testDebugUnitTest` и `assembleDebug`, складывает APK и отчёты в артефакты, а также
+проверяет пайплайн сборки bundle (`--mode stub`) и пытается собрать настоящий arm64-артефакт.
 
 ## 12. Дальнейшие шаги
 
-См. [TODO.md](TODO.md). Ключевое: полноценный офлайн-режим (Room), вложения, PTY-терминал,
-пуш-уведомления о permission-запросах, доведение встроенного сервера до рабочего состояния
-(сборка proot + rootfs + проверка на arm64-устройстве).
+См. [TODO.md](TODO.md). Ключевое: публикация подписанного arm64-bundle и проверка Local mode на
+реальном устройстве, вложения и PTY-терминал, уведомления о permission-запросах, офлайн-история
+(Room), Shizuku-интеграция как опция.

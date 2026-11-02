@@ -267,6 +267,12 @@ class LocalServerManager(
                 builder.environment()["OPENCODE_PASSWORD"] = password
                 builder.environment()["OPENCODE_SERVER_PASSWORD"] = password
             }
+            // Bundles may ship a dynamically linked proot (e.g. built for Android/bionic); keep its
+            // shared libraries next to the binary and point the loader at them.
+            val prootLibs = File(proot.parentFile, "lib")
+            if (prootLibs.isDirectory) {
+                builder.environment()["LD_LIBRARY_PATH"] = prootLibs.absolutePath
+            }
             val started = builder.start()
             process = started
             appendLog("Started proot (pid ${runCatching { pidOf(started) }.getOrNull() ?: -1}), port $port")

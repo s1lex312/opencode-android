@@ -1,131 +1,141 @@
-# Встроенный proot-сервер (экспериментально)
+# Bundle окружения для Local mode
 
-Эта папка — про провижининг локального сервера opencode, который запускается **на самом
-Android-устройстве** внутри proot, без root. Приложение умеет его запускать
-(`LocalServerService` + `LocalServerManager`), но **не содержит** ни proot, ни rootfs.
+`server/` — про то, как собрать **bundle**, который приложение ставит себе на телефон, и как
+устроен запуск. Приложение работает без root: proot — user-space `chroot`, всё живёт в песочнице
+приложения.
 
-## Почему бинарников нет в APK
+## Что такое bundle
 
-* Размер: минимальный Ubuntu arm64 rootfs с Bun и opencode — 150–300 МБ.
-* ABI: нужен именно arm64; универсальный APK раздуется, а на x86_64/armeabi работать не будет.
-* Лицензии: rootfs (Ubuntu/Debian) и сторонние пакеты требуют отдельных текстов лицензий.
-* Проверка: в CI нет arm64-устройства, а эмуляция proot на x86 не даёт достоверного результата.
+Один файл `opencode-env-<version>-arm64.tar.gz`:
 
-Поэтому это осознанный «bring your own runtime»: разработчик собирает rootfs и proot,
-кладёт их на устройство, указывает пути в настройках приложения.
-
-## Что нужно
-
-* arm64 Android-устройство (Android 8+), включённая отладка по USB;
-* `adb`;
-* **статически собранный** arm64 `proot` (динамический бинарник не запустится: в Android нет
-  glibc, а rootfs-библиотеки не подхватываются до входа в rootfs);
-* rootfs Ubuntu/Debian arm64 с установленным opencode (Bun или npm).
-
-## Шаг 1. Сборка rootfs (на Linux-хосте)
-
-```bash
-# Ubuntu arm64 rootfs c opencode внутри; нужен root/sudo на хосте
-sudo ./server/scripts/build-rootfs.sh \
-  --output ./out/rootfs-arm64.tar.gz \
-  --install-opencode
-
-# без установки opencode (добавите позже вручную внутри proot)
-sudo ./server/scripts/build-rootfs.sh --output ./out/rootfs-arm64.tar.gz
+```
+proot                          статический (или bionic-совместимый) arm64 proot
+proot/lib/*.so                 опционально: библиотеки, если proot динамический
+rootfs/                        минимальный Ubuntu/Debian arm64
+rootfs/bin/sh                  обязателен (проверяется при установке)
+rootfs/usr/local/bin/opencode  standalone-бинарь opencode для linux arm64
+rootfs/etc/resolv.conf         заготовка DNS (приложение подменяет своим файлом)
 ```
 
-Скрипт использует `debootstrap` (если есть) или официальный Ubuntu base tarball и, при
-`--install-opencode`, запускает установку через `qemu-user-static` + `proot` на хосте.
-Внимательно прочитайте скрипт: он делает `mount`/`chroot`-подобные операции на вашем хосте.
+Рядом публикуется `manifest.json`:
 
-## Шаг 2. proot
-
-Вариант A — собрать статический proot под arm64:
-
-```bash
-# на arm64-хосте или через кросс-компиляцию musl
-git clone https://github.com/proot-me/proot.git
-cd proot/src
-make CC="aarch64-linux-musl-gcc" LDFLAGS="-static"
+```json
+{
+  "version": "2026.11",
+  "abi": "arm64-v8a",
+  "url": "https://example.com/opencode-env-2026.11-arm64.tar.gz",
+  "sha256": "…",
+  "sizeBytes": 123456789
+}
 ```
 
-Вариант B — взять готовый статический бинарник из доверенного источника (например, из
-`termux-packages`/`proot-distro`) и переименовать в `libproot.so`.
+Приложение отказывается ставить bundle при несовпадении SHA-256 или при отсутствии хеша для
+скачивания.
 
-Положите бинарник одним из способов:
-
-1. **В APK** (проще всего): `app/src/main/jniLibs/arm64-v8a/libproot.so` — Android упакует
-   его в `nativeLibraryDir` с правом на исполнение. Файл не попадёт в git (см. `.gitignore`
-   рекомендации ниже).
-2. **На устройство**: `filesDir/proot/proot`, затем `chmod 700` (см. скрипт ниже).
-
-> Имя `lib*.so` нужно, потому что Android устанавливает как исполняемые только файлы из
-> `nativeLibraryDir` (для `.so`). Не добавляйте бинарник в git — это артефакт.
-
-## Шаг 3. Провижининг на устройстве
+## Сборка
 
 ```bash
-# 1) proot + rootfs
-PROOT_BIN=./out/proot-arm64-static \
-ROOTFS_TARBALL=./out/rootfs-arm64.tar.gz \
-APP_ID=ai.opencode.android \
-./server/scripts/install-on-device.sh
+# из скачанных upstream-частей (ubuntu-base + opencode) и своего proot
+./server/scripts/build-rootfs.sh --mode full \
+    --output dist --version 2026.11 \
+    --proot ./proot-aarch64 --download-base --download-opencode
 
-# для debug-сборки applicationId другой:
-PROOT_BIN=./out/proot-arm64-static \
-ROOTFS_TARBALL=./out/rootfs-arm64.tar.gz \
-APP_ID=ai.opencode.android.debug \
-./server/scripts/install-on-device.sh
+# из своих файлов
+./server/scripts/build-rootfs.sh --mode full \
+    --output dist --version 2026.11 \
+    --proot ./proot-aarch64 \
+    --rootfs ./ubuntu-base-22.04.5-base-arm64.tar.gz \
+    --opencode ./opencode
+
+# проверка: целостность + обязательные элементы
+./server/scripts/verify-artifact.sh dist/opencode-env-2026.11-arm64.tar.gz "$(sha256sum dist/opencode-env-2026.11-arm64.tar.gz | cut -d' ' -f1)"
+
+# быстрая проверка самого пайплайна (нерабочий stub, без сети и root)
+./server/scripts/build-rootfs.sh --mode stub --output dist
 ```
 
-Скрипт кладёт rootfs в `/data/data/<app>/files/rootfs` (через `run-as`, поэтому работает
-только с debuggable APK) и proot в `/data/data/<app>/files/proot/proot`.
+Скрипт печатает SHA-256, размер и готовые команды для обоих способов доставки.
 
-## Шаг 4. Настройки в приложении
+## Доставка
 
-**Settings → Local server (experimental)**:
+| Способ | Как | Плюсы / минусы |
+| --- | --- | --- |
+| Внутри APK | `cp dist/opencode-env-*.tar.gz app/src/main/assets/local-env.tar.gz`, обновить `assets/local-env.json` (`sha256`, `version`) | Работает офлайн, но APK растёт на ~120 МБ |
+| По URL | Загрузить tarball в GitHub Release, на экране Setup вставить `https://` URL + SHA-256 | APK ~19 МБ, прогресс скачивания; нужен интернет при установке |
 
-| Поле | Значение |
-| --- | --- |
-| Rootfs path | `/data/data/ai.opencode.android/files/rootfs` (пусто = `filesDir/rootfs`) |
-| proot path | `/data/data/ai.opencode.android/files/proot/proot` (пусто = `libproot.so` из APK) |
-| Port | `4096` |
-| Server command | `opencode serve --hostname 127.0.0.1 --port {port}` |
+`assets/local-env.json` по умолчанию содержит пустой `url` и `"version": "unset"` — приложение
+покажет Setup с предложением установить bundle или переключиться в Remote mode.
 
-Нажмите **Save local settings**, затем **Start**. Приложение:
+## Где взять proot для arm64
 
-1. проверит наличие proot/rootfs и напишет понятную ошибку, если чего-то нет;
-2. запустит `proot -0 -r <rootfs> -b /dev -b /proc -b /sys -w /root /bin/sh -lc "<command>"`;
-3. будет опрашивать `http://127.0.0.1:4096/api/info` (fallback `/config`) до 120 секунд;
-4. покажет статус `Running (healthy)` и логи (последние 500 строк);
-5. уведомление в шторке с кнопкой **Stop**; сервис — foreground (`specialUse`).
+`proot` требует `libtalloc` под целевую архитектуру. Варианты:
 
-После `Running` можно вернуться на экран сессий: адрес `http://127.0.0.1:4096` — это тот же
-сервер, приложение подключится к нему как к обычному `opencode serve`.
+1. **Кросс-сборка** (то, что пытается делать CI-джоба `Rootfs arm64 bundle (best effort)`):
+   собрать `talloc` под `aarch64-linux-gnu`, затем `proot-me/proot`:
 
-## Проверка вручную
+   ```bash
+   curl -fsSLO https://www.samba.org/ftp/talloc/talloc-2.4.2.tar.gz && tar xf talloc-2.4.2.tar.gz
+   (cd talloc-2.4.2 && ./configure --host=aarch64-linux-gnu --disable-python --without-gettext --prefix="$PWD/../talloc-arm64" && make -j && make install)
+   git clone --depth 1 https://github.com/proot-me/proot && cd proot/src
+   PKG_CONFIG_PATH=../../talloc-arm64/lib/pkgconfig make CC=aarch64-linux-gnu-gcc CFLAGS="-static -O2" LDFLAGS="-static"
+   ```
 
-```bash
-adb shell run-as ai.opencode.android.debug ls -la files/rootfs/bin/sh
-adb shell run-as ai.opencode.android.debug ls -la files/proot/proot
-curl -sS http://127.0.0.1:4096/api/info   # на устройстве, например через adb shell (toybox curl нет — используйте приложение)
+   Полученный статический бинарь кладётся как `--proot`. Важно: он должен быть собран под
+   arm64 (aarch64), а не под x86_64 хоста.
+
+2. **Android/bionic-сборка** (как в Termux): `proot`, собранный под bionic, работает на устройстве;
+   если он динамический — положите нужные `.so` в `proot/lib/` внутри bundle, приложение выставит
+   `LD_LIBRARY_PATH`.
+
+3. **Готовый статический бинарь** из доверенного источника — обязательно проверьте на устройстве
+   (`docs/SMOKE-TEST.md`, раздел 7).
+
+## Запуск внутри приложения
+
 ```
+proot -0 --kill-on-exit -r <rootfs> -b /dev -b /proc -b /sys \
+      -b <files>/resolv.conf:/etc/resolv.conf -w /root \
+      /usr/bin/env HOME=/root PATH=/usr/local/bin:/usr/bin:/bin TERM=dumb LANG=C.UTF-8 \
+      OPENCODE_PASSWORD=<сгенерированный пароль> \
+      /bin/sh -lc "opencode serve --hostname 127.0.0.1 --port 4096"
+```
+
+- пароль генерируется приложением, хранится в Keystore-backed хранилище и передаётся только через
+  окружение процесса;
+- health-check — `GET /` (fallback `/api/info`, `/config`), 200–499 = сервер жив;
+- автоперезапуск: 1→2→4→8→16 с, максимум 5 попыток (настраивается);
+- лог: `noBackupFilesDir/opencode-env/logs/server.log` (ротация ≤512 КБ) + экран **Setup → Logs**.
+
+## Куда ставится окружение
+
+```
+/data/data/<applicationId>/noBackupFilesDir/opencode-env/
+  proot/proot
+  rootfs/…
+  installed.json        # манифест установленной версии
+  logs/server.log
+  resolv.conf
+  .download/ .staging/   # временные, удаляются после установки
+```
+
+Ничего не пишется в общие каталоги, root не нужен, всё удаляется кнопкой **Setup → Clear**.
 
 ## Типичные проблемы
 
 | Симптом | Причина / решение |
 | --- | --- |
-| `proot binary not found` | не указан путь и нет `libproot.so` в APK; см. шаги 2–3 |
-| `Rootfs directory not found` | rootfs не распакован или указан неверный путь |
-| `opencode exited with code 127` | внутри rootfs нет `/bin/sh` или `opencode` в `PATH`; проверьте rootfs |
-| `error: execve("/bin/sh"): No such file or directory` | динамический proot/битый rootfs; нужен статический proot |
-| Health-check timeout | сервер слушает не на 127.0.0.1/не тот порт; проверьте команду и логи |
-| Процесс убивается в фоне | Doze/агрессивный OEM-менеджер батареи; отключите оптимизацию для приложения |
+| «The environment bundle was not found» | bundle не в assets и URL не задан — соберите и опубликуйте его |
+| «Checksum mismatch» | скачался не тот файл или манифест устарел; сверьте SHA-256 |
+| «Not enough free space» | нужно ~1 ГБ свободного места на распаковку и запас |
+| `proot error: execve("/bin/sh"): No such file or directory` | proot не для этой архитектуры или rootfs битый |
+| `EADDRINUSE` | порт 4096 занят другим приложением/процессом — смените порт в настройках |
+| «Server did not become healthy» | смотрите лог: часто нет `opencode` в rootfs или нет прав на исполнение |
+| Сервер падает в фоне | отключите оптимизацию батареи для приложения (Setup → Disable) |
+| Нет сети внутри rootfs | публичный DNS недоступен; замените `resolv.conf` (см. TODO) |
 
 ## Ограничения
 
-* Только arm64-устройства.
-* Нет автоматической распаковки rootfs из tarball в приложении (в TODO).
-* `opencode` внутри rootfs должен быть предустановлен (версия — любая, поддерживаемая
-  клиентом: 2.x или legacy 0.x/1.x).
-* Shizuku-интеграция не реализована (в TODO).
+- Только arm64-устройства.
+- Bundle не собирается в этом репозитории автоматически как релиз: CI проверяет пайплайн (stub) и
+  пытается собрать arm64-артефакт (best effort).
+- Shizuku не требуется и не используется.
