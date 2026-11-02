@@ -1,7 +1,9 @@
 name: Release
 
-# Builds the debug APK (and, best effort, the arm64 local-env bundle) and publishes both as
-# GitHub Release assets. Runs on a version tag (`v1.2.3`) or manually from the Actions tab.
+# Publishes two APKs to one GitHub Release:
+#   * opencode-android-full-<tag>.apk  — environment bundled inside (~125 MB), works offline
+#   * opencode-android-lite-<tag>.apk  — thin client (~19 MB), downloads/imports the environment
+# plus SHA256SUMS.txt and, when the bundle builds, the arm64 environment archive itself.
 
 on:
   push:
@@ -10,11 +12,11 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag to create/publish, e.g. v1.0.0'
+        description: 'Release tag to create/publish, e.g. v1.0.2'
         required: true
-        default: 'v1.0.0'
+        default: 'v1.0.2'
       build_bundle:
-        description: 'Also build and attach the arm64 local-env bundle (slow, ~5 min)'
+        description: 'Build and attach the arm64 local-env bundle (slow, ~5 min)'
         type: boolean
         default: true
 
@@ -25,69 +27,16 @@ env:
   VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
 jobs:
-  apk:
-    name: Build APK
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-          cache: gradle
-
-      # ubuntu-latest ships the Android SDK (ANDROID_HOME + accepted licenses) with platform 34
-      # and build-tools 34.0.0, which is exactly what this project targets.
-
-      - name: Grant execute permission to Gradle wrapper
-        run: chmod +x gradlew
-
-      - name: Unit tests
-        run: ./gradlew --no-daemon --console=plain testDebugUnitTest
-
-      - name: Assemble debug APK
-        run: ./gradlew --no-daemon --console=plain assembleDebug
-
-      - name: Rename APK and compute checksum
-        run: |
-          set -euo pipefail
-          mkdir -p release
-          cp app/build/outputs/apk/debug/app-debug.apk "release/opencode-android-${VERSION}.apk"
-          ( cd release && sha256sum "opencode-android-${VERSION}.apk" > SHA256SUMS.txt )
-          ls -la release
-          cat release/SHA256SUMS.txt
-
-      - name: Verify APK
-        run: |
-          set -euo pipefail
-          APK="release/opencode-android-${VERSION}.apk"
-          SIZE="$(stat -c%s "$APK")"
-          echo "APK: $APK ($SIZE bytes)"
-          [ "$SIZE" -gt 5000000 ] || { echo "::error title=tiny APK::APK is suspiciously small ($SIZE bytes)"; exit 1; }
-          unzip -t "$APK" > /dev/null || { echo "::error title=broken APK::APK is not a valid zip archive"; exit 1; }
-          unzip -l "$APK" | grep -q 'classes.dex' || { echo "::error title=broken APK::no classes.dex inside"; exit 1; }
-          BT="$(ls -d "${ANDROID_HOME}"/build-tools/* | sort -V | tail -n 1)"
-          "${BT}/aapt" dump badging "$APK" | head -n 6
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-apk
-          path: release/
-          if-no-files-found: error
-          retention-days: 30
-
+  # -------------------------------------------------------------------------------------------
+  # The arm64 environment (proot + rootfs + opencode) that goes into the Full APK / release.
+  # -------------------------------------------------------------------------------------------
   bundle:
     name: Build arm64 bundle
     if: github.event_name == 'push' || inputs.build_bundle
     runs-on: ubuntu-latest
     timeout-minutes: 45
     # Third-party artifacts (Termux proot, ubuntu-base, opencode release) may move; a failure here
-    # must not block the APK release. The release notes link to the manual build instructions.
+    # must not block the APK release — the Lite APK always ships, the Full one is skipped.
     continue-on-error: true
     steps:
       - name: Checkout
@@ -142,19 +91,162 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  # -------------------------------------------------------------------------------------------
+  # Lite APK: no environment inside.
+  # -------------------------------------------------------------------------------------------
+  lite:
+    name: Build Lite APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Grant execute permission to Gradle wrapper
+        run: chmod +x gradlew
+
+      - name: Unit tests
+        run: ./gradlew --no-daemon --console=plain testLiteDebugUnitTest
+
+      - name: Assemble Lite APK
+        run: ./gradlew --no-daemon --console=plain assembleLiteDebug
+
+      - name: Rename and checksum
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          APK="$(ls app/build/outputs/apk/lite/debug/*.apk | head -n1)"
+          cp "$APK" "release/opencode-android-lite-${VERSION}.apk"
+          ls -la release
+
+      - name: Verify APK
+        run: bash .github/scripts/verify-apk.sh "release/opencode-android-lite-${VERSION}.apk"
+
+      - name: Upload Lite artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apk-lite
+          path: release/opencode-android-lite-*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+  # -------------------------------------------------------------------------------------------
+  # Full APK: the bundle is unpacked into app/src/full/assets before assembling.
+  # -------------------------------------------------------------------------------------------
+  full:
+    name: Build Full APK
+    needs: [bundle]
+    if: needs.bundle.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Grant execute permission to Gradle wrapper
+        run: chmod +x gradlew
+
+      - name: Download environment bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: release-rootfs-bundle
+          path: dist
+
+      - name: Embed bundle into the Full flavor
+        run: |
+          set -euo pipefail
+          mkdir -p app/src/full/assets
+          BUNDLE="$(ls dist/opencode-env-*-arm64.tar.gz | head -n1)"
+          echo "bundle: $BUNDLE ($(stat -c%s "$BUNDLE") bytes)"
+          cp "$BUNDLE" app/src/full/assets/local-env.tar.gz
+          sha256sum app/src/full/assets/local-env.tar.gz
+          # Regenerate the manifest that the app reads from assets (version + hash + size).
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, re
+
+          bundle = pathlib.Path("app/src/full/assets/local-env.tar.gz")
+          digest = hashlib.sha256(bundle.read_bytes()).hexdigest()
+          manifest_path = pathlib.Path("dist/manifest.json")
+          version = "unset"
+          if manifest_path.is_file():
+              version = json.loads(manifest_path.read_text()).get("version", "unset")
+          pathlib.Path("app/src/full/assets/local-env.json").write_text(json.dumps({
+              "version": version,
+              "abi": "arm64-v8a",
+              "url": "",
+              "asset": "local-env.tar.gz",
+              "sha256": digest,
+              "sizeBytes": bundle.stat().st_size,
+              "notes": "Embedded into the Full APK by the release workflow.",
+          }, indent=2) + "\n")
+          print("embedded", version, digest, bundle.stat().st_size)
+          PY
+
+      - name: Unit tests
+        run: ./gradlew --no-daemon --console=plain testLiteDebugUnitTest
+
+      - name: Assemble Full APK
+        run: ./gradlew --no-daemon --console=plain assembleFullDebug
+
+      - name: Rename and checksum
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          APK="$(ls app/build/outputs/apk/full/debug/*.apk | head -n1)"
+          cp "$APK" "release/opencode-android-full-${VERSION}.apk"
+          ls -la release
+
+      - name: Verify APK
+        env:
+          EXPECT_MIN_BYTES: '120000000'
+        run: bash .github/scripts/verify-apk.sh "release/opencode-android-full-${VERSION}.apk"
+
+      - name: Upload Full artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apk-full
+          path: release/opencode-android-full-*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+  # -------------------------------------------------------------------------------------------
+  # One release, both APKs.
+  # -------------------------------------------------------------------------------------------
   release:
     name: Publish release
-    needs: [apk]
-    if: always() && needs.apk.result == 'success'
+    needs: [lite, full]
+    if: always() && needs.lite.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download APK
+      - name: Download Lite APK
         uses: actions/download-artifact@v4
         with:
-          name: release-apk
+          name: release-apk-lite
+          path: release
+
+      - name: Download Full APK (optional)
+        id: full
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: release-apk-full
           path: release
 
       - name: Download bundle (optional)
@@ -165,13 +257,16 @@ jobs:
           name: release-rootfs-bundle
           path: release/bundle
 
-      - name: Flatten bundle assets
+      - name: Collect assets and checksums
         run: |
           set -euo pipefail
           if [ -d release/bundle ]; then
             cp -v release/bundle/* release/ || true
+            rmdir release/bundle 2>/dev/null || true
           fi
+          ( cd release && sha256sum opencode-android-*.apk opencode-env-*.tar.gz 2>/dev/null > SHA256SUMS.txt || true )
           ls -la release
+          cat release/SHA256SUMS.txt
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -187,22 +282,33 @@ jobs:
 
             Нативное Android-приложение для [opencode](https://github.com/anomalyco/opencode).
 
+            ### Какой APK скачать
+
+            | Вариант | Размер | Что внутри | Кому |
+            | --- | --- | --- | --- |
+            | **Full** — `opencode-android-full-${{ env.VERSION }}.apk` | ~125 МБ | proot + rootfs + opencode встроены в APK | Local mode **без интернета**: скачал, установил, работает |
+            | **Lite** — `opencode-android-lite-${{ env.VERSION }}.apk` | ~19 МБ | только клиент | Remote mode или Local mode со скачиванием окружения при первом запуске |
+
+            Обе версии имеют одинаковый `applicationId`, поэтому ставятся друг поверх друга как
+            обновление (настройки и уже распакованное окружение сохраняются).
+
             ### Установка
-            1. Скачайте `opencode-android-${{ env.VERSION }}.apk` ниже.
-            2. Разрешите установку из неизвестных источников и установите APK (Android 8.0+, arm64).
-            3. При первом запуске приложение предложит поставить окружение для Local mode
-               (скачивание ~120 МБ) или подключиться к вашему серверу (Remote mode).
+            1. Скачайте нужный APK (проверка целостности: `sha256sum -c SHA256SUMS.txt`).
+            2. Разрешите установку из неизвестных источников и установите файл.
+            3. Full: Local mode стартует сразу, офлайн. Lite: вставьте URL bundle и SHA-256,
+               импортируйте файл, либо переключитесь в Remote mode.
 
-            ### Что внутри релиза
-            - `opencode-android-${{ env.VERSION }}.apk` — debug-подписанный APK (~19 МБ).
-            - `SHA256SUMS.txt` — контрольная сумма APK.
-            - `opencode-env-*.tar.gz` + `manifest.json` + `.sha256` — bundle для Local mode
-              (arm64). Если ассета нет, используйте инструкцию
+            Требования: Android 8.0+; для Local mode — arm64-устройство.
+
+            ### Дополнительно
+            - `SHA256SUMS.txt` — контрольные суммы APK и bundle.
+            - `opencode-env-*.tar.gz` + `manifest.json` + `.sha256` — окружение для Local mode
+              (нужно Lite-версии; можно импортировать файлом или скачать по URL).
+              Если ассета нет — соберите его по инструкции
               [server/README.md](https://github.com/${{ github.repository }}/blob/main/server/README.md).
-
-            Проверка целостности: `sha256sum -c SHA256SUMS.txt`.
           files: |
-            release/opencode-android-*.apk
+            release/opencode-android-full-*.apk
+            release/opencode-android-lite-*.apk
             release/SHA256SUMS.txt
             release/opencode-env-*.tar.gz
             release/opencode-env-*.tar.gz.sha256

@@ -3,7 +3,9 @@ package ai.opencode.android.server
 import ai.opencode.android.data.repo.ServerConnectionManager
 import ai.opencode.android.security.LocalSecrets
 import ai.opencode.android.security.SecretStore
+import ai.opencode.android.server.provision.EnvConfig
 import ai.opencode.android.server.provision.EnvProvisioner
+import ai.opencode.android.server.provision.ProvisionResult
 import ai.opencode.android.settings.SettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
@@ -38,6 +40,8 @@ class LocalRuntime(
     private val manager: LocalServerManager,
     private val connection: ServerConnectionManager,
     private val scope: CoroutineScope,
+    /** True when the APK ships the bundle (Full flavor), so setup needs no network at all. */
+    private val embeddedBundle: () -> Boolean = { false },
 ) {
 
     private val _state = MutableStateFlow(LocalRuntimeState())
@@ -57,8 +61,25 @@ class LocalRuntime(
             }
             ensurePassword()
             if (!provisioner.isInstalled()) {
-                _state.value = LocalRuntimeState(needsSetup = true)
-                return@launch
+                // Full builds carry the environment in the APK: unpack it and continue, offline.
+                // Lite builds must not start a silent 105 MB download, so they ask for a source.
+                if (!embeddedBundle()) {
+                    _state.value = LocalRuntimeState(needsSetup = true)
+                    return@launch
+                }
+                val bundled = provisioner.bundled()
+                if (bundled == null) {
+                    _state.value = LocalRuntimeState(needsSetup = true, lastError = "No bundled environment")
+                    return@launch
+                }
+                _state.value = LocalRuntimeState(starting = true)
+                when (val installed = provisioner.provision(EnvConfig.effective(bundled, settings.localServer))) {
+                    is ProvisionResult.Ok -> Unit
+                    is ProvisionResult.Err -> {
+                        _state.value = LocalRuntimeState(lastError = installed.message)
+                        return@launch
+                    }
+                }
             }
             if (manager.state.value.phase == LocalServerState.Phase.READY) {
                 connection.connect(force = true)

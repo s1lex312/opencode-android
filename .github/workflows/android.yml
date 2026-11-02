@@ -42,13 +42,15 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          ./gradlew --no-daemon --console=plain testDebugUnitTest --stacktrace 2>&1 | tee unit-tests.log
+          ./gradlew --no-daemon --console=plain testLiteDebugUnitTest --stacktrace 2>&1 | tee unit-tests.log
 
       - name: Assemble debug APK
         shell: bash
         run: |
           set -o pipefail
-          ./gradlew --no-daemon --console=plain assembleDebug --stacktrace 2>&1 | tee assemble-debug.log
+          # The Lite flavor needs no environment bundle, so CI stays fast and small.
+          # The Full flavor (with the ~105 MB bundle) is assembled by the release workflow.
+          ./gradlew --no-daemon --console=plain assembleLiteDebug --stacktrace 2>&1 | tee assemble-debug.log
 
       - name: Report build errors as annotations
         if: failure()
@@ -58,7 +60,7 @@ jobs:
             const fs = require("fs");
             const path = require("path");
             let out = "";
-            const dir = "app/build/test-results/testDebugUnitTest";
+            const dir = "app/build/test-results/testLiteDebugUnitTest";
             if (fs.existsSync(dir)) {
               for (const f of fs.readdirSync(dir).filter((x) => x.endsWith(".xml"))) {
                 const xml = fs.readFileSync(path.join(dir, f), "utf8");
@@ -104,12 +106,12 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: Upload debug APK
+      - name: Upload debug APK (lite)
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: opencode-android-debug
-          path: app/build/outputs/apk/debug/*.apk
+          name: opencode-android-lite-debug
+          path: app/build/outputs/apk/lite/debug/*.apk
           if-no-files-found: error
           retention-days: 14
 

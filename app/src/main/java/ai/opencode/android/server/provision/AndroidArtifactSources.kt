@@ -4,6 +4,7 @@ import ai.opencode.android.settings.LocalServerSettings
 import android.content.Context
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.File
 import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
@@ -56,6 +57,19 @@ class AssetArtifactSource(
 }
 
 /**
+ * Reads a bundle the user picked manually (SAF): the file is already copied into app storage, so
+ * installing it needs neither network nor a published URL.
+ */
+class FileArtifactSource(private val file: File) : ArtifactSource {
+
+    override val label: String get() = "local file ${file.name}"
+
+    override val sizeBytes: Long? get() = file.length().takeIf { it > 0 }
+
+    override fun open(): InputStream = file.inputStream()
+}
+
+/**
  * Resolves the effective manifest: the one shipped in `assets/local-env.json`, optionally
  * overridden by values the user pasted into Settings (self-hosted bundle, custom hash/version).
  */
@@ -82,6 +96,21 @@ object EnvConfig {
             manifest = manifest.copy(version = settings.artifactVersion.trim())
         }
         return manifest
+    }
+
+    /**
+     * True when this APK really ships the bundle (the `full` flavor does, `lite` does not), so the
+     * UI can tell the user whether Local mode installs offline or needs a download/import.
+     */
+    fun hasEmbeddedBundle(
+        context: Context,
+        assetName: String = EnvManifest.DEFAULT_ASSET,
+    ): Boolean {
+        // Uncompressed assets can be opened by descriptor; compressed ones only as a stream.
+        val byDescriptor = runCatching { context.assets.openFd(assetName).use { it.length > 0 } }
+            .getOrDefault(false)
+        if (byDescriptor) return true
+        return runCatching { context.assets.open(assetName).use { true } }.getOrDefault(false)
     }
 
     fun source(context: Context, manifest: EnvManifest, client: OkHttpClient): ArtifactSource? {
