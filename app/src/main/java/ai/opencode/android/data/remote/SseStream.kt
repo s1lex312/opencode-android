@@ -1,6 +1,7 @@
 package ai.opencode.android.data.remote
 
 import ai.opencode.android.BuildConfig
+import ai.opencode.android.security.Redaction
 import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers

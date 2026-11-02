@@ -38,7 +38,7 @@ class LocalServerService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            container.localServer.stop()
+            container.localServerManager.stop()
             stopSelf()
             return START_NOT_STICKY
         }
@@ -47,11 +47,11 @@ class LocalServerService : Service() {
 
         scope.launch {
             val settings = container.settingsRepository.current().localServer
-            container.localServer.start(settings)
+            container.localServerManager.start(settings)
         }
 
         scope.launch {
-            container.localServer.state.collect { state ->
+            container.localServerManager.state.collect { state ->
                 when (state.phase) {
                     LocalServerState.Phase.STARTING -> updateNotification(
                         buildNotification("Starting opencode server…", indeterminate = true),
@@ -79,7 +79,7 @@ class LocalServerService : Service() {
 
     override fun onDestroy() {
         scope.cancel()
-        container.localServer.stop()
+        container.localServerManager.stop()
         super.onDestroy()
     }
 
