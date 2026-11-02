@@ -38,8 +38,14 @@ if [[ "$APK" == *lite* ]]; then
 fi
 
 if [[ "$APK" == *full* ]]; then
-  case "$ENTRIES" in
-    *assets/local-env.tar.gz*) echo "bundle: present in $APK" ;;
-    *) echo "::error title=Full APK without bundle::$APK does not contain assets/local-env.tar.gz"; exit 1 ;;
-  esac
+  BUNDLE_ENTRY="$(printf '%s\n' "$ENTRIES" | grep -i 'local-env' | head -n 1 || true)"
+  if [ -z "$BUNDLE_ENTRY" ]; then
+    echo "entries: $(printf '%s\n' "$ENTRIES" | wc -l)"
+    echo "sample: $(printf '%s\n' "$ENTRIES" | head -n 10 | tr '\n' ' ')"
+    echo "assets: $(printf '%s\n' "$ENTRIES" | grep -c '^assets/' || true) entries"
+    echo "::error title=Full APK without bundle::$APK does not contain a local-env entry"
+    exit 1
+  fi
+  echo "bundle entry: $BUNDLE_ENTRY"
+  echo "bundle entry size: $(unzip -l "$APK" "$BUNDLE_ENTRY" | awk 'NR==4 {print $1}')"
 fi

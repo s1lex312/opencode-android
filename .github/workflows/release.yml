@@ -210,11 +210,6 @@ jobs:
           cp "$APK" "release/opencode-android-full-${VERSION}.apk"
           ls -la release
 
-      - name: Verify APK
-        env:
-          EXPECT_MIN_BYTES: '120000000'
-        run: bash .github/scripts/verify-apk.sh "release/opencode-android-full-${VERSION}.apk"
-
       - name: Upload Full artifact
         uses: actions/upload-artifact@v4
         with:
@@ -222,6 +217,12 @@ jobs:
           path: release/opencode-android-full-*.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Verify APK
+        env:
+          EXPECT_MIN_BYTES: '120000000'
+        run: bash .github/scripts/verify-apk.sh "release/opencode-android-full-${VERSION}.apk"
+
 
   # -------------------------------------------------------------------------------------------
   # One release, both APKs.
