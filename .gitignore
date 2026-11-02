@@ -28,3 +28,6 @@ server/dist
 
 # The Full flavor's environment bundle is generated (see :app:prepareFullBundle), never committed.
 /app/src/full/assets/
+
+# Gradle module outputs
+/app/build/

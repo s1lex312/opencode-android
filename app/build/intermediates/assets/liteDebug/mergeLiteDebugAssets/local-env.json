@@ -1,9 +1,0 @@
-{
-  "version": "unset",
-  "abi": "arm64-v8a",
-  "url": "",
-  "asset": "local-env.tar.gz",
-  "sha256": "",
-  "sizeBytes": 0,
-  "notes": "Built by server/scripts/build-rootfs.sh. Either copy the tarball to app/src/main/assets/local-env.tar.gz, or publish it (GitHub release) and paste its URL + SHA-256 on the Setup screen."
-}
