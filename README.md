@@ -76,7 +76,8 @@ on the local network» (включён по умолчанию, можно вы�
 Bundle — это `tar.gz` с тремя вещами:
 
 ```
-proot                          статический arm64 proot
+proot                          статический arm64 proot (или Termux-сборка под bionic)
+proot-libs/*.so                опционально: библиотеки для динамического proot
 rootfs/                        минимальный Ubuntu/Debian arm64
 rootfs/usr/local/bin/opencode  standalone-бинарь opencode (linux-arm64)
 ```
@@ -164,8 +165,9 @@ CI (`.github/workflows/android.yml`):
 
 1. **Build debug APK** — unit-тесты + `assembleDebug`, артефакты APK/отчёты/логи;
 2. **Rootfs packaging (stub)** — собирает и проверяет bundle-пайплайн и манифест (быстро, всегда);
-3. **Rootfs arm64 bundle (best effort)** — пытается собрать настоящий arm64 bundle
-   (`talloc` + `proot` + ubuntu-base + opencode) и выкладывает артефакт; не блокирует CI.
+3. **Rootfs arm64 bundle** — собирает настоящий arm64 bundle (Termux `proot` + `proot-libs` +
+   ubuntu-base 22.04 arm64 + standalone `opencode`) и выкладывает артефакт `rootfs-arm64-bundle`;
+   помечен `continue-on-error`, потому что зависит от внешних URL.
 
 ## Ограничения
 

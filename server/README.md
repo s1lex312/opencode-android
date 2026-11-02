@@ -10,7 +10,8 @@
 
 ```
 proot                          статический (или bionic-совместимый) arm64 proot
-proot/lib/*.so                 опционально: библиотеки, если proot динамический
+proot-libs/*.so                опционально: библиотеки, если proot динамический
+                               (приложение кладёт их в opencode-env/proot/lib)
 rootfs/                        минимальный Ubuntu/Debian arm64
 rootfs/bin/sh                  обязателен (проверяется при установке)
 rootfs/usr/local/bin/opencode  standalone-бинарь opencode для linux arm64
@@ -60,6 +61,11 @@ rootfs/etc/resolv.conf         заготовка DNS (приложение по
 
 | Способ | Как | Плюсы / минусы |
 | --- | --- | --- |
+**Готовый bundle уже собирается в CI**: workflow `.github/workflows/android.yml`, job
+`Rootfs arm64 bundle`, артефакт **`rootfs-arm64-bundle`** (14 дней хранения). Внутри —
+`opencode-env-<version>-arm64.tar.gz`, `manifest.json` и `.sha256`. Скачайте его из вкладки
+Actions и используйте как asset или опубликуйте по HTTPS.
+
 | Внутри APK | `cp dist/opencode-env-*.tar.gz app/src/main/assets/local-env.tar.gz`, обновить `assets/local-env.json` (`sha256`, `version`) | Работает офлайн, но APK растёт на ~120 МБ |
 | По URL | Загрузить tarball в GitHub Release, на экране Setup вставить `https://` URL + SHA-256 | APK ~19 МБ, прогресс скачивания; нужен интернет при установке |
 
@@ -70,7 +76,23 @@ rootfs/etc/resolv.conf         заготовка DNS (приложение по
 
 `proot` требует `libtalloc` под целевую архитектуру. Варианты:
 
-1. **Кросс-сборка** (то, что пытается делать CI-джоба `Rootfs arm64 bundle (best effort)`):
+0. **Termux-пакет (используется в CI, самый простой)**: `proot` из
+   `packages.termux.dev/apt/termux-main` — сборка под arm64 Android (bionic). Распакуйте `.deb`
+   (`ar x pkg.deb && tar xf data.tar.*`) и передайте:
+
+   ```bash
+   ./server/scripts/build-rootfs.sh --mode full --output dist --version 2026.11 \
+       --proot ./termux/data/data/com.termux/files/usr/bin/proot \
+       --proot-libs ./proot-libs \
+       --download-base --download-opencode
+   ```
+
+   `proot-libs` — каталог с `libtalloc.so.2`, `libandroid-support.so` и другими зависимостями
+   (можно скопировать весь `usr/lib` из тех же `.deb`). Приложение выставляет
+   `LD_LIBRARY_PATH=<env>/proot/lib`, поэтому такой proot работает без Termux рядом.
+
+1. **Кросс-сборка** (что пробовали в CI до Termux-варианта; требует статического `talloc`,
+   которого нет в Ubuntu):
    собрать `talloc` под `aarch64-linux-gnu`, затем `proot-me/proot`:
 
    ```bash
@@ -83,9 +105,8 @@ rootfs/etc/resolv.conf         заготовка DNS (приложение по
    Полученный статический бинарь кладётся как `--proot`. Важно: он должен быть собран под
    arm64 (aarch64), а не под x86_64 хоста.
 
-2. **Android/bionic-сборка** (как в Termux): `proot`, собранный под bionic, работает на устройстве;
-   если он динамический — положите нужные `.so` в `proot/lib/` внутри bundle, приложение выставит
-   `LD_LIBRARY_PATH`.
+2. **Своя Android/bionic-сборка** (NDK, как в termux-packages): если proot динамический —
+   положите нужные `.so` в `proot-libs/` внутри bundle.
 
 3. **Готовый статический бинарь** из доверенного источника — обязательно проверьте на устройстве
    (`docs/SMOKE-TEST.md`, раздел 7).
@@ -111,6 +132,7 @@ proot -0 --kill-on-exit -r <rootfs> -b /dev -b /proc -b /sys \
 ```
 /data/data/<applicationId>/noBackupFilesDir/opencode-env/
   proot/proot
+  proot/lib/*.so        # если bundle содержал proot-libs/
   rootfs/…
   installed.json        # манифест установленной версии
   logs/server.log
@@ -129,6 +151,7 @@ proot -0 --kill-on-exit -r <rootfs> -b /dev -b /proc -b /sys \
 | «Not enough free space» | нужно ~1 ГБ свободного места на распаковку и запас |
 | `proot error: execve("/bin/sh"): No such file or directory` | proot не для этой архитектуры или rootfs битый |
 | `EADDRINUSE` | порт 4096 занят другим приложением/процессом — смените порт в настройках |
+| `CANNOT LINK EXECUTABLE "proot": library "libtalloc.so.2" not found` | нет `proot-libs/` в bundle — соберите его с `--proot-libs` |
 | «Server did not become healthy» | смотрите лог: часто нет `opencode` в rootfs или нет прав на исполнение |
 | Сервер падает в фоне | отключите оптимизацию батареи для приложения (Setup → Disable) |
 | Нет сети внутри rootfs | публичный DNS недоступен; замените `resolv.conf` (см. TODO) |
@@ -136,6 +159,7 @@ proot -0 --kill-on-exit -r <rootfs> -b /dev -b /proc -b /sys \
 ## Ограничения
 
 - Только arm64-устройства.
-- Bundle не собирается в этом репозитории автоматически как релиз: CI проверяет пайплайн (stub) и
-  пытается собрать arm64-артефакт (best effort).
+- Релиз bundle публикуется вручную: CI собирает артефакт `rootfs-arm64-bundle`, но GitHub Release
+  создаётся отдельно (TODO).
+- proot/talloc распространяются по GPLv2/LGPL — при публикации bundle приложите их лицензии.
 - Shizuku не требуется и не используется.

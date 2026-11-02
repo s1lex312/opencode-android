@@ -111,14 +111,18 @@ Room не используется. Причины:
   собирается скриптом (`server/scripts/build-rootfs.sh`) и либо кладётся в `assets`, либо
   публикуется; приложение скачивает его по HTTPS с обязательной проверкой SHA-256.
 * **Структура bundle** (зафиксирована в коде и скрипте, `TarGzExtractor` + `EnvProvisioner`):
-  `proot` в корне, `rootfs/` с `/bin/sh` и `rootfs/usr/local/bin/opencode`. proot может быть
-  динамическим: если рядом есть `proot/lib/`, приложение выставляет `LD_LIBRARY_PATH`.
+  `proot` в корне, `rootfs/` с `/bin/sh` и `rootfs/usr/local/bin/opencode`, опционально
+  `proot-libs/*.so`. proot может быть динамическим: `proot-libs/` устанавливается в
+  `opencode-env/proot/lib/`, и приложение выставляет `LD_LIBRARY_PATH` на этот каталог.
+  Готовый bundle собирает CI из Termux-пакета `proot` (arm64/bionic), поэтому бинарь ожидает
+  bionic, а не glibc.
 * **opencode внутри bundle — standalone-бинарь** `opencode-linux-arm64` из релизов проекта
   (Bun-compiled), а не npm-пакет: не нужен Node/Bun внутри rootfs, экономия ~200 МБ. Если у
   пользователя свой rootfs с `opencode` в `PATH`, bundle всё равно валиден.
-* **proot должен быть для Android/arm64.** Статическая сборка (musl/glibc) или динамическая под
-  bionic с библиотеками в `proot/lib`. x86_64-бинарь в CI-артефакте не заработает на телефоне —
-  поэтому job `rootfs-full` помечен best effort, а артефакт проверяется по `docs/SMOKE-TEST.md`.
+* **proot должен быть для Android/arm64.** CI использует сборку Termux (bionic) + её `.so`; вариант
+  со статическим proot возможен, но требует статического `libtalloc` под aarch64, которого нет в
+  Ubuntu-репозиториях (кросс-сборка talloc через waf не даёт `.a`). Артефакт проверяется по
+  `docs/SMOKE-TEST.md`.
 * **Health-check: `GET /`** (затем `/api/info`, `/config`). 200–499 = сервер жив; 401 тоже
   считается здоровым (просто нет креденшелов). Health опрашивается каждую секунду до 180 с,
   затем каждые 5 с; 3 подряд неудачи → перезапуск.
