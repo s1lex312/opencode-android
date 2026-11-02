@@ -172,7 +172,12 @@ jobs:
           mkdir -p app/src/full/assets
           BUNDLE="$(ls dist/opencode-env-*-arm64.tar.gz | head -n1)"
           echo "bundle: $BUNDLE ($(stat -c%s "$BUNDLE") bytes)"
+          # Canonical name, no matter what upstream called the file (some asset servers trim ".gz").
+          rm -f app/src/full/assets/local-env.tar app/src/full/assets/local-env.tar.gz
           cp "$BUNDLE" app/src/full/assets/local-env.tar.gz
+          [ -f app/src/full/assets/local-env.tar.gz ] || { echo "::error title=embed failed::local-env.tar.gz was not created"; exit 1; }
+          [ "$(stat -c%s app/src/full/assets/local-env.tar.gz)" -gt 100000000 ] || { echo "::error title=embed failed::bundle is too small"; exit 1; }
+          ls -la app/src/full/assets
           sha256sum app/src/full/assets/local-env.tar.gz
           # Regenerate the manifest that the app reads from assets (version + hash + size).
           python3 - <<'PY'

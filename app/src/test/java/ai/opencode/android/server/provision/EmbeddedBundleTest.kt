@@ -60,6 +60,29 @@ class EmbeddedBundleTest {
     }
 
     @Test
+    fun `truncated tar asset is found`() {
+        // Exactly what CI produced: aapt2 stored the bundle as `local-env.tar` (no ".gz").
+        assertEquals(
+            "local-env.tar",
+            EmbeddedBundle.findBundle(listOf("local-env.json", "local-env.tar")),
+        )
+    }
+
+    @Test
+    fun `exact name wins over the truncated one`() {
+        assertEquals(
+            "local-env.tar.gz",
+            EmbeddedBundle.findBundle(listOf("local-env.json", "local-env.tar", "local-env.tar.gz")),
+        )
+    }
+
+    @Test
+    fun `the json manifest is never mistaken for the bundle`() {
+        assertEquals(null, EmbeddedBundle.findBundle(listOf("local-env.json")))
+        assertEquals(null, EmbeddedBundle.findBundle(emptyList()))
+    }
+
+    @Test
     fun `probe without a known size still counts as present`() {
         // Compressed assets only expose a stream; a 0 size must not turn a Full build into Lite.
         assertEquals(EmbeddedBundleStatus.EMBEDDED, state(size = 0).status)
