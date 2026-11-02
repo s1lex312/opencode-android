@@ -191,6 +191,7 @@ jobs:
           export LDFLAGS="-static"
           if ! PKG_CONFIG_PATH="$GITHUB_WORKSPACE/talloc-arm64/lib/pkgconfig" \
                  make -j"$(nproc)" CROSS_COMPILE=aarch64-linux-gnu- WITHOUT_PYTHON=1 \
+                 PKG_CONFIG=pkg-config \
                  > /tmp/proot.log 2>&1; then
             echo "::error title=proot build failed::$(tail -c 3000 /tmp/proot.log | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
             exit 1
