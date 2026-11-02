@@ -264,7 +264,38 @@ ASSUMPTIONS; при появлении офлайн-режима с полноц
 лицензионных текстов и десятков мегабайт; в CI невозможно проверить arm64-процесс. Поэтому
 фича — каркас с честной документацией и скриптами провижининга.
 
-## 10. Тестирование
+## 10. Контракт API: что именно вызывается
+
+Все пути и тела сверены с `packages/protocol/openapi.json` сервера opencode 2.x и с типами
+`@opencode-ai/sdk` (legacy). Ниже — фактический список, который использует клиент.
+
+| Назначение | v2 (`ApiFlavor.V2`) | legacy (`ApiFlavor.LEGACY`) |
+| --- | --- | --- |
+| Определение версии | `GET /api/info` (`ServerInfo {version, pid, urls, paths.tmp}`) | `GET /config` |
+| Список сессий | `GET /api/session?limit&order` → `{data:[Session.Info], cursor}` | `GET /session` |
+| Создание / удаление | `POST /api/session {title}` → `{data:Session.Info}`; `DELETE /api/session/{id}` | `POST /session`; `DELETE /session/{id}` |
+| Сообщения | `GET /api/session/{id}/message?limit&order=asc` → `{data:[Session.Message.Info]}` | `GET /session/{id}/message?limit=` |
+| Отправка промпта | `POST /api/session/{id}/model {model:Model.Ref}` → `POST …/agent {agent}` → `POST …/prompt {text}` | `POST /session/{id}/prompt_async {parts, model:{providerID,modelID}}` |
+| Прерывание | `POST /api/session/{id}/interrupt` | `POST /session/{id}/abort` |
+| Разрешения | `POST /api/session/{id}/permission/{requestID}/reply {decision}` (`once\|always\|reject`) | `POST /session/{id}/permissions/{permissionID} {response}` |
+| Diff | `GET /api/session/{id}/diff` → `{data:[FileDiff.Info{file,patch,additions,deletions,status}]}` | `GET /session/{id}/diff` |
+| Модели | `GET /api/model` → `{location, data:[Model.Info]}` | `GET /config/providers` |
+| События | `GET /api/event` (`{id, created, type, data}`) | `GET /event` (`{type, properties}`) |
+
+Особенности, которые пришлось учесть:
+
+* `/api/info` возвращает объект **без** обёртки `data`, а списки — в `{data: …}`; парсер
+  поддерживает оба варианта.
+* Сообщение пользователя (`type: "user"`) несёт поле `text`, а ассистент — массив `content`
+  (`text`/`reasoning`/`tool`); у `tool` состояние `state.status` = `streaming|running|completed|error`.
+* У `session.message.shell` поле `output` — это объект `{output, cursor, size}`, а не строка.
+* `session.status.status` — объект `{type: idle|busy|retry, message?}`; `busy` выводится из `type`.
+* События `session.text.delta` содержат `{sessionID, assistantMessageID, ordinal, delta}`,
+  инструменты — `{sessionID, assistantMessageID, id, name|input|content|metadata}`.
+* `/api/permission/request` (список активных запросов) клиентом пока не используется: разрешения
+  приходят событием `permission.asked` (в планах — досинхронизация при подключении).
+
+## 11. Тестирование
 
 Юнит-тесты (JVM):
 
@@ -280,7 +311,7 @@ ASSUMPTIONS; при появлении офлайн-режима с полноц
 
 CI прогоняет `testDebugUnitTest` и `assembleDebug`, складывает APK и отчёты в артефакты.
 
-## 11. Дальнейшие шаги
+## 12. Дальнейшие шаги
 
 См. [TODO.md](TODO.md). Ключевое: полноценный офлайн-режим (Room), вложения, PTY-терминал,
 пуш-уведомления о permission-запросах, доведение встроенного сервера до рабочего состояния
