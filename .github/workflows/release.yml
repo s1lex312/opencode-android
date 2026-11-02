@@ -224,7 +224,8 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y patchelf file
+          sudo apt-get install -y patchelf binutils file
+          patchelf --version || echo "::notice title=patchelf missing::byte patching will be used"
           bash .github/scripts/extract-proot-jnilibs.sh \
             app/src/full/assets/local-env.tar.gz \
             app/src/full/jniLibs/arm64-v8a
