@@ -18,8 +18,8 @@ android {
         applicationId = "ai.opencode.android"
         minSdk = 26
         targetSdk = 34
-        versionCode = 7
-        versionName = "1.1.4"
+        versionCode = 8
+        versionName = "1.1.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
@@ -195,7 +195,11 @@ tasks.matching { it.name.matches(Regex("assembleFull(Debug|Release)")) }.configu
             val assets = Collections.list(zip.entries())
                 .map { it.name }
                 .filter { it.startsWith("assets/") }
-            val bundle = zip.getEntry("assets/local-env.tar.gz")
+            // aapt2 stores `local-env.tar.gz` as `local-env.tar` (it drops the `.gz`), so accept
+            // both spellings and report the real one.
+            val bundleNames = listOf("assets/local-env.tar.gz", "assets/local-env.tar")
+            val bundleName = bundleNames.firstOrNull { zip.getEntry(it) != null }
+            val bundle = bundleName?.let { zip.getEntry(it) }
             if (bundle == null) {
                 throw GradleException(
                     "Full APK ${apk.name} does not contain assets/local-env.tar.gz. " +
@@ -209,8 +213,8 @@ tasks.matching { it.name.matches(Regex("assembleFull(Debug|Release)")) }.configu
                 )
             }
             logger.lifecycle(
-                "Full APK verified: ${apk.name} ships environment ${bundle.size} bytes " +
-                    "(${apk.length() / 1024 / 1024} MB total)",
+                "Full APK verified: ${apk.name} ships $bundleName (${bundle.size} bytes, " +
+                    "${apk.length() / 1024 / 1024} MB total)",
             )
         }
     }
@@ -238,7 +242,14 @@ tasks.register("prepareFullBundle") {
             )
 
         fullBundleFile.parentFile.mkdirs()
+        // Always land on the canonical name, whatever the downloaded file was called.
+        fullBundleFile.parentFile.listFiles()
+            ?.filter { it != fullBundleFile && it.name.startsWith("local-env.") && !it.name.endsWith(".json") }
+            ?.forEach { it.delete() }
         bundle.copyTo(fullBundleFile, overwrite = true)
+        check(fullBundleFile.name == "local-env.tar.gz" && fullBundleFile.length() > 1_000_000L) {
+            "prepareFullBundle produced ${fullBundleFile.name} (${fullBundleFile.length()} bytes)"
+        }
 
         val manifestText = distDirs.asSequence()
             .map { it.resolve("manifest.json") }

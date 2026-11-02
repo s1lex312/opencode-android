@@ -44,10 +44,10 @@ entry_size() {
   unzip -l "$APK" "$1" | awk 'NR==4 {print $1}'
 }
 
-echo "::notice title=APK contents::$APK ($SIZE bytes) entries=$(printf '%s\n' "$ENTRIES" | wc -l) bundle=$(entry_size assets/local-env.tar.gz | tr -d ' ') ${VERSION_LINE}"
+echo "::notice title=APK contents::$APK ($SIZE bytes) entries=$(printf '%s\n' "$ENTRIES" | wc -l) bundle=$(entry_size "$(printf '%s\n' "$ENTRIES" | grep -E '^assets/local-env\.(tar|tar\.gz)$' | head -n1 || echo assets/local-env.tar.gz)" | tr -d ' ') ${VERSION_LINE}"
 
 if [[ "$APK" == *lite* ]]; then
-  if has_entry 'assets/local-env.tar.gz'; then
+  if printf '%s\n' "$ENTRIES" | grep -Eq '^assets/local-env\.(tar|tar\.gz)$'; then
     echo "::error title=Lite APK contains a bundle::$APK must stay small"
     exit 1
   fi
@@ -62,16 +62,18 @@ fi
 if [[ "$APK" == *full* ]]; then
   # Exact entry name: `grep local-env` would also match the 294 byte local-env.json manifest and
   # silently pass a Full APK that lost its 105 MB archive (that is exactly what happened in 1.1.2).
-  if ! has_entry 'assets/local-env.tar.gz'; then
+  # aapt2 may store `local-env.tar.gz` as `local-env.tar`; accept both, keep everything else strict.
+  BUNDLE_ENTRY="$(printf '%s\n' "$ENTRIES" | grep -E '^assets/local-env\.(tar|tar\.gz)$' | head -n 1 || true)"
+  if [ -z "$BUNDLE_ENTRY" ]; then
     echo "assets: $(printf '%s\n' "$ENTRIES" | grep -c '^assets/' || true) entries"
     printf 'asset entries: %s\n' "$(printf '%s\n' "$ENTRIES" | grep '^assets/' | tr '\n' ' ')"
-    echo "::error title=Full APK without bundle::$APK has no assets/local-env.tar.gz entry"
+    echo "::error title=Full APK without bundle::$APK has no assets/local-env.tar[.gz] entry"
     exit 1
   fi
-  BUNDLE_BYTES="$(entry_size 'assets/local-env.tar.gz')"
-  echo "bundle entry: assets/local-env.tar.gz ($BUNDLE_BYTES bytes)"
+  BUNDLE_BYTES="$(entry_size "$BUNDLE_ENTRY")"
+  echo "bundle entry: $BUNDLE_ENTRY ($BUNDLE_BYTES bytes)"
   if [ "${BUNDLE_BYTES:-0}" -lt 100000000 ]; then
-    echo "::error title=Full APK bundle too small::assets/local-env.tar.gz is only ${BUNDLE_BYTES:-0} bytes, expected ~105 MB"
+    echo "::error title=Full APK bundle too small::$BUNDLE_ENTRY is only ${BUNDLE_BYTES:-0} bytes, expected ~105 MB"
     exit 1
   fi
   case "$VERSION_LINE" in

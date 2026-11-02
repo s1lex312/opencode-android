@@ -49,6 +49,22 @@ data class EmbeddedBundleState(
 
 object EmbeddedBundle {
 
+    /**
+     * Picks the bundle asset out of the APK's asset list.
+     *
+     * Packaging tools rename entries: aapt2 drops the `.gz` of `local-env.tar.gz` and stores
+     * `local-env.tar` (observed in CI). The provisioner and the Setup screen must therefore accept
+     * both spellings, and any other `.tar`/`.tar.gz` as a last resort — never the `.json` manifest.
+     */
+    fun findBundle(assets: List<String>, preferred: String = EnvManifest.DEFAULT_ASSET): String? {
+        if (preferred in assets) return preferred
+        val candidates = listOf("local-env.tar.gz", "local-env.tar", ".tar.gz", ".tar")
+        candidates.forEach { suffix ->
+            assets.firstOrNull { it.endsWith(suffix) }?.let { return it }
+        }
+        return assets.firstOrNull { it.startsWith("local-env.") && !it.endsWith(".json") }
+    }
+
     fun evaluate(inputs: EmbeddedBundleInputs): EmbeddedBundleState {
         val usable = inputs.assetPresent && inputs.assetSizeBytes >= 0
         val status = when {

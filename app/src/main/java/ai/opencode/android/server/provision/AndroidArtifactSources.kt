@@ -139,9 +139,8 @@ object EnvConfig {
     ): String? {
         if (probeEmbeddedBundle(context, preferred).present) return preferred
         val names = assetNames(context)
-        return names.firstOrNull { it == preferred }
-            ?: names.firstOrNull { it.endsWith(EnvManifest.DEFAULT_ASSET) }
-            ?: names.firstOrNull { it.endsWith(".tar.gz") }
+        // Accept `local-env.tar` too: aapt2 truncates `.gz` when packaging a noCompress asset.
+        return EmbeddedBundle.findBundle(names, preferred)
     }
 
     /** Top level asset names, used only for diagnostics when a Full build looks broken. */
