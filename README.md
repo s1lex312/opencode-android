@@ -1,6 +1,21 @@
 # opencode for Android
 
 [![Android CI](https://github.com/s1lex312/opencode-android/actions/workflows/android.yml/badge.svg)](https://github.com/s1lex312/opencode-android/actions/workflows/android.yml)
+[![Latest release](https://img.shields.io/github/v/release/s1lex312/opencode-android?label=release)](https://github.com/s1lex312/opencode-android/releases/latest)
+
+## ⬇️ Download
+
+### **[Скачать последний APK → Releases](https://github.com/s1lex312/opencode-android/releases/latest)**
+
+1. Откройте страницу **Releases** и скачайте `opencode-android-*.apk` (плюс `SHA256SUMS.txt`,
+   если хотите проверить целостность: `sha256sum -c SHA256SUMS.txt`).
+2. Разрешите установку из неизвестных источников и установите APK — **Android 8.0+**, для Local
+   mode нужен **arm64** (Remote mode работает на любой ABI).
+3. Запустите приложение: Local mode предложит поставить окружение (bundle `opencode-env-*.tar.gz`
+   лежит в том же релизе), либо переключитесь в Remote mode и подключитесь к своему серверу.
+
+Вкладка **Actions** нужна только разработчикам — для установки и работы приложения она не
+требуется.
 
 Нативный Android-клиент [opencode](https://github.com/anomalyco/opencode) с двумя режимами работы:
 
@@ -161,7 +176,8 @@ docs/             SMOKE-TEST.md — чек-лист проверки на уст
 ./gradlew assembleDebug
 ```
 
-CI (`.github/workflows/android.yml`):
+CI (`.github/workflows/android.yml`) — для разработчиков; готовые сборки публикуются в Releases
+(`.github/workflows/release.yml`, запуск по тегу `v*` или вручную):
 
 1. **Build debug APK** — unit-тесты + `assembleDebug`, артефакты APK/отчёты/логи;
 2. **Rootfs packaging (stub)** — собирает и проверяет bundle-пайплайн и манифест (быстро, всегда);
