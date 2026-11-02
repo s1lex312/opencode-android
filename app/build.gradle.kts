@@ -18,8 +18,8 @@ android {
         applicationId = "ai.opencode.android"
         minSdk = 26
         targetSdk = 34
-        versionCode = 12
-        versionName = "1.1.9"
+        versionCode = 13
+        versionName = "1.1.10"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
@@ -325,6 +325,10 @@ tasks.register("prepareProotJniLibs") {
     group = "build"
     description = "Extracts proot (+ its libs and loader) from the bundle into src/full/jniLibs/arm64-v8a."
 
+    // Full flavour only: without a bundle there is no proot runtime to package. The Lite flavour
+    // has neither the bundle nor a jniLibs source dir, so this task must be a no-op there.
+    onlyIf { fullBundleFile.isFile }
+
     doLast {
         val script = rootProject.file(".github/scripts/extract-proot-jnilibs.sh")
         val outDir = layout.projectDirectory.dir("src/full/jniLibs/arm64-v8a").asFile
@@ -343,6 +347,7 @@ tasks.register("prepareProotJniLibs") {
                 script.absolutePath,
                 fullBundleFile.absolutePath,
                 outDir.absolutePath,
+                "--allow-missing",
             )
                 .directory(rootProject.projectDir)
                 .redirectErrorStream(true)
