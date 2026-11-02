@@ -1,1 +1,209 @@
-# opencode-android
+# opencode for Android
+
+[![Android CI](https://github.com/s1lex312/opencode-android/actions/workflows/android.yml/badge.svg)](https://github.com/s1lex312/opencode-android/actions/workflows/android.yml)
+[![Latest release](https://img.shields.io/github/v/release/s1lex312/opencode-android?label=release)](https://github.com/s1lex312/opencode-android/releases/latest)
+
+## ⬇️ Download
+
+### **[Скачать последний APK → Releases](https://github.com/s1lex312/opencode-android/releases/latest)**
+
+1. Откройте страницу **Releases** и скачайте `opencode-android-*.apk` (плюс `SHA256SUMS.txt`,
+   если хотите проверить целостность: `sha256sum -c SHA256SUMS.txt`).
+2. Разрешите установку из неизвестных источников и установите APK — **Android 8.0+**, для Local
+   mode нужен **arm64** (Remote mode работает на любой ABI).
+3. Запустите приложение: Local mode предложит поставить окружение (bundle `opencode-env-*.tar.gz`
+   лежит в том же релизе), либо переключитесь в Remote mode и подключитесь к своему серверу.
+
+Вкладка **Actions** нужна только разработчикам — для установки и работы приложения она не
+требуется.
+
+Нативный Android-клиент [opencode](https://github.com/anomalyco/opencode) с двумя режимами работы:
+
+| Режим | Что происходит | Что нужно |
+| --- | --- | --- |
+| **Local** (по умолчанию) | Приложение само разворачивает и запускает `opencode serve` на телефоне внутри proot и подключается к `http://127.0.0.1:4096` | Ничего: поставили APK и пользуетесь |
+| **Remote** | Подключение к существующему `opencode serve` на компьютере/сервере/VPS | Адрес, пароль/токен, сеть |
+
+Оба режима используют один и тот же клиентский стек: Ktor не нужен — OkHttp + собственный SSE-клиент,
+Compose Material 3, шифрованное хранилище секретов, просмотр diff, карточки инструментов и
+разрешений.
+
+## Возможности
+
+- **Local mode «всё на телефоне»**: провижининг proot-окружения (rootfs + proot + `opencode`) при
+  первом запуске, прогресс установки, проверка SHA-256, повтор и очистка окружения.
+- **Супервизор сервера**: запуск/остановка, health-check `GET /`, автоперезапуск с экспоненциальным
+  backoff (до 5 попыток), лог в файл и в приложение, foreground service `specialUse`, wake lock,
+  устойчивость к сворачиванию и Doze.
+- **Пароль локального сервера** генерируется автоматически (32 символа, ~190 бит), хранится в
+  `EncryptedSharedPreferences` (ключ в Android Keystore), передаётся серверу только через переменную
+  окружения дочернего процесса, в логи не попадает.
+- **Remote mode** без изменений: адрес/порт, Basic/Bearer, тест соединения, политика cleartext.
+- **Сессии и чат**: список сессий с кэшем, создание/удаление, стриминг (SSE), карточки tool-call,
+  разрешения (ASK/AUTO_ALLOW/DENY), прерывание, переподключение с backoff.
+- **Diff**: парсер unified diff, подсветка добавленных/удалённых строк, номера строк, бинарные файлы.
+- **Настройки**: режим Local/Remote, порт, команда запуска, автоперезапуск, модель/агент, политика
+  разрешений, источник bundle-артефакта, логи, оптимизация батареи и уведомления.
+
+## Требования
+
+- Android 8.0+ (API 26), **arm64-v8a** для Local mode (Remote работает на любой ABI).
+- ~400 МБ свободного места для Local mode (rootfs + proot + бинарь opencode распакованные).
+- Для сборки: JDK 17, Android SDK 34, интернет для Gradle-зависимостей.
+
+## Быстрый старт (Local mode)
+
+1. Соберите и установите APK:
+
+   ```bash
+   ./gradlew assembleDebug
+   adb install -r app/build/outputs/apk/debug/app-debug.apk
+   ```
+
+2. При первом запуске откроется **Setup**. Нажмите **Install**: приложение скачает (или возьмёт из
+   assets) bundle, проверит SHA-256, распакует `proot`, `rootfs` и `opencode` в
+   `noBackupFilesDir/opencode-env`.
+3. Нажмите **Start** (или просто вернитесь к сессиям — сервер поднимется сам). Через несколько
+   секунд появится `Running (healthy)` и список сессий.
+4. Создайте сессию и общайтесь с агентом: ответы стримятся, инструменты показываются карточками,
+   изменения — на экране diff.
+
+> Первый запуск требует, чтобы bundle был доступен: либо он лежит в APK
+> (`app/src/main/assets/local-env.tar.gz`), либо вы указали URL + SHA-256 на экране Setup
+> (см. «Сборка bundle» ниже). Пока bundle нет, приложение честно предложит Remote mode.
+
+## Быстрый старт (Remote mode)
+
+```bash
+# на компьютере
+OPENCODE_PASSWORD='длинный-секрет' opencode serve --hostname 0.0.0.0 --port 4096
+```
+
+В приложении: **Settings → Where opencode runs → Remote server**, адрес `http://192.168.1.20:4096`,
+Authentication = Password, введите пароль, **Test** → **Save & connect**.
+
+Публичные адреса — только `https://`. Открытый HTTP разрешён для `localhost`/`127.0.0.1`, а для
+локальной сети (192.168/10/172.16-31) — только при включённом переключателе «Allow cleartext HTTP
+on the local network» (включён по умолчанию, можно выключить для строгого режима).
+
+## Сборка bundle для Local mode
+
+Bundle — это `tar.gz` с тремя вещами:
+
+```
+proot                          статический arm64 proot (или Termux-сборка под bionic)
+proot-libs/*.so                опционально: библиотеки для динамического proot
+rootfs/                        минимальный Ubuntu/Debian arm64
+rootfs/usr/local/bin/opencode  standalone-бинарь opencode (linux-arm64)
+```
+
+Скрипт `server/scripts/build-rootfs.sh` собирает bundle и печатает SHA-256:
+
+```bash
+# 1. Скачать готовые части (ubuntu-base + opencode) и собрать со своим статическим proot
+./server/scripts/build-rootfs.sh --mode full --output dist --version 2026.11 \
+    --proot ./proot-aarch64 --download-base --download-opencode
+
+# 2. Или собрать из своих файлов
+./server/scripts/build-rootfs.sh --mode full --output dist --version 2026.11 \
+    --proot ./proot-aarch64 --rootfs ./ubuntu-base-22.04.5-base-arm64.tar.gz --opencode ./opencode
+
+# 3. Проверить bundle (целостность + раскладка)
+./server/scripts/verify-artifact.sh dist/opencode-env-2026.11-arm64.tar.gz <sha256>
+
+# 4. CI-проверка пайплайна без арmb64-бинарей (создаёт нерабочий stub)
+./server/scripts/build-rootfs.sh --mode stub --output dist
+```
+
+Куда положить результат:
+
+- **В APK** (офлайн-установка): `cp dist/opencode-env-*.tar.gz app/src/main/assets/local-env.tar.gz`,
+  затем `./gradlew assembleDebug`. Приложение проверит SHA-256 из `assets/local-env.json`.
+- **Публикация** (APK остаётся ~19 МБ): загрузите tarball в GitHub Release и вставьте на экране
+  Setup его `https://` URL и SHA-256. Скачивание проверяется по хешу перед распаковкой.
+
+Где взять статический arm64 `proot`: собрать из исходников proot-me/proot (нужен `libtalloc` под
+arm64) или взять готовый из Termux-сборки. CI-джоба `Rootfs arm64 bundle (best effort)` пытается
+собрать `talloc` + `proot` и упаковать bundle; она не блокирует основной билд, потому что upstream
+бинарники меняются. Подробности и альтернативы — в [server/README.md](server/README.md).
+
+## Размеры и хранение
+
+| Что | Размер |
+| --- | --- |
+| APK (без bundle) | ~19 МБ |
+| Ubuntu base arm64 + opencode (сжатый bundle) | ~110–130 МБ |
+| То же в распакованном виде | ~350–450 МБ |
+| Лог сервера (с ротацией) | ≤ 512 КБ |
+
+Окружение живёт в `noBackupFilesDir/opencode-env` (не попадает в облачный бэкап). Кнопка
+**Setup → Clear** удаляет его полностью.
+
+## Безопасность
+
+- Пароль/токен Remote и пароль локального сервера хранятся в `EncryptedSharedPreferences`
+  (AES-256-SIV/GCM, мастер-ключ в Android Keystore). При недоступном Keystore — только память,
+  с явным предупреждением.
+- Пароль локального сервера уходит в дочерний процесс через переменную окружения (не через argv,
+  не в логи). В логах только method/path/status/время, секреты редактируются (`Redaction`).
+- Сеть: `https://` где угодно, `http://` — только loopback и (по явному согласию) приватные
+  диапазоны; проверка в `NetworkPolicy` до открытия сокета и повторно в интерсепторе.
+- Bundle скачивается только по `https://` и только с проверкой SHA-256; без хеша установка
+  отклоняется.
+- `allowBackup=false`, `dataExtractionRules` исключают настройки и кэш из бэкапа.
+- Никакого root: proot работает под UID приложения.
+
+## Структура репозитория
+
+```
+app/src/main/java/ai/opencode/android/
+  data/           HTTP-транспорт, SSE, события, репозитории, diff-парсер, кэш
+  security/       EncryptedSecretStore, генерация локального пароля, NetworkPolicy, Redaction
+  settings/       AppSettings (ConnectionMode, LocalServerSettings), DataStore
+  server/         супервизор proot-сервера, foreground service, health-check, логи, RestartPolicy
+    provision/    манифест bundle, скачивание, SHA-256, tar.gz-экстрактор, установка окружения
+  ui/             Compose: sessions, chat, diff, settings, setup, logs, тема, навигация
+  di/             ручной DI-контейнер
+app/src/test/     unit-тесты (SSE, diff, события, провижининг, health, логи, рестарты, политика сети)
+server/scripts/   build-rootfs.sh (full|stub), verify-artifact.sh
+docs/             SMOKE-TEST.md — чек-лист проверки на устройстве
+```
+
+## Тесты и CI
+
+```bash
+./gradlew testDebugUnitTest     # ~90 JVM-тестов
+./gradlew assembleDebug
+```
+
+CI (`.github/workflows/android.yml`) — для разработчиков; готовые сборки публикуются в Releases
+(`.github/workflows/release.yml`, запуск по тегу `v*` или вручную):
+
+1. **Build debug APK** — unit-тесты + `assembleDebug`, артефакты APK/отчёты/логи;
+2. **Rootfs packaging (stub)** — собирает и проверяет bundle-пайплайн и манифест (быстро, всегда);
+3. **Rootfs arm64 bundle** — собирает настоящий arm64 bundle (Termux `proot` + `proot-libs` +
+   ubuntu-base 22.04 arm64 + standalone `opencode`) и выкладывает артефакт `rootfs-arm64-bundle`;
+   помечен `continue-on-error`, потому что зависит от внешних URL.
+
+## Ограничения
+
+- Local mode только для arm64-устройств; на x86/эмуляторе используйте Remote mode.
+- Bundle не входит в репозиторий (сотни мегабайт) — его нужно собрать или опубликовать.
+- Нет вложений в промпте, PTY-терминала и пагинации истории (см. [TODO.md](TODO.md)).
+- Приложение проверено компиляцией, unit-тестами и CI-сборкой APK; реальный запуск proot на
+  устройстве нужно подтвердить по [docs/SMOKE-TEST.md](docs/SMOKE-TEST.md).
+- Интеграция с Shizuku не реализована (не требуется для работы).
+
+## Документация
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) — варианты архитектуры, компоненты, жизненный цикл сервера,
+  политика обновления окружения.
+- [ASSUMPTIONS.md](ASSUMPTIONS.md) — все допущения (включая формат bundle и поведение сервера).
+- [TODO.md](TODO.md) — бэклог.
+- [server/README.md](server/README.md) — сборка bundle, proot, провижининг, диагностика.
+- [docs/SMOKE-TEST.md](docs/SMOKE-TEST.md) — чек-лист ручной проверки на устройстве.
+
+## Лицензия
+
+MIT — см. [LICENSE](LICENSE). opencode — проект его авторов; это независимый клиент, код сервера не
+включён в репозиторий. Rootfs и сторонние бинарники распространяются по своим лицензиям.

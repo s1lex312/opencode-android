@@ -1,0 +1,25 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+*.apk
+*.aab
+*.keystore
+!debug.keystore
+app/release
+.kotlin
+
+# provisioning artifacts for the optional embedded server (never commit binaries)
+server/proot*
+app/src/main/jniLibs/*/libproot.so
+/out
+
+# rootfs bundle output (never commit hundreds of MB)
+/dist
+server/dist

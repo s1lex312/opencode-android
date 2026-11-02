@@ -1,0 +1,214 @@
+name: Android CI
+
+on:
+  push:
+    branches:
+      - main
+      - 'arena/**'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      # ubuntu-latest ships the Android SDK (ANDROID_HOME + accepted licenses) with
+      # platform 34 and build-tools 34.0.0, which is exactly what this project targets.
+
+      - name: Grant execute permission to Gradle wrapper
+        run: chmod +x gradlew
+
+      - name: Unit tests
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon --console=plain testDebugUnitTest --stacktrace 2>&1 | tee unit-tests.log
+
+      - name: Assemble debug APK
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon --console=plain assembleDebug --stacktrace 2>&1 | tee assemble-debug.log
+
+      - name: Report build errors as annotations
+        if: failure()
+        shell: bash
+        run: |
+          node -e '
+            const fs = require("fs");
+            const path = require("path");
+            let out = "";
+            const dir = "app/build/test-results/testDebugUnitTest";
+            if (fs.existsSync(dir)) {
+              for (const f of fs.readdirSync(dir).filter((x) => x.endsWith(".xml"))) {
+                const xml = fs.readFileSync(path.join(dir, f), "utf8");
+                const re = /<testcase[^>]*name="([^"]*)"[^>]*classname="([^"]*)"([\s\S]*?)<\/testcase>/g;
+                let m;
+                while ((m = re.exec(xml)) !== null) {
+                  const body = m[3];
+                  const fm = /<failure[^>]*message="([^"]*)"/.exec(body) ||
+                             /<failure[^>]*>([\s\S]*?)<\/failure>/.exec(body);
+                  if (fm) out += "FAILED " + m[2] + "." + m[1] + " :: " + String(fm[1]).slice(0, 800) + "\n";
+                }
+              }
+            }
+            for (const f of ["unit-tests.log", "assemble-debug.log"]) {
+              if (!fs.existsSync(f)) continue;
+              const lines = fs.readFileSync(f, "utf8").split("\n");
+              const errs = lines.filter((l) =>
+                /^e: |error:|FAILURE: Build|Caused by:|What went wrong|Execution failed/.test(l));
+              if (errs.length) out += "--- " + f + " ---\n" + errs.slice(0, 60).join("\n") + "\n";
+            }
+            if (!out.trim()) out = "no matching failures";
+            const escaped = out.replace(/%/g, "%25").replace(/\r/g, "").replace(/\n/g, "%0A");
+            console.log("::error title=Build/test failure::" + escaped.slice(0, 50000));
+          '
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            unit-tests.log
+            assemble-debug.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports
+          path: app/build/reports/tests/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload debug APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencode-android-debug
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  rootfs-stub:
+    name: Rootfs packaging (stub)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build stub bundle
+        run: |
+          bash server/scripts/build-rootfs.sh \
+            --mode stub \
+            --output dist \
+            --version "ci-${GITHUB_RUN_NUMBER}"
+
+      - name: Verify bundle and manifest
+        run: |
+          set -euo pipefail
+          SHA="$(python3 -c 'import json;print(json.load(open("dist/manifest.json"))["sha256"])')"
+          bash server/scripts/verify-artifact.sh dist/opencode-env-*.tar.gz "$SHA"
+          echo "::notice title=Rootfs manifest::version=$(python3 -c 'import json;print(json.load(open("dist/manifest.json"))["version"])') sha256=$SHA"
+
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: rootfs-stub-bundle
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  rootfs-full:
+    name: Rootfs arm64 bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # The bundle is assembled from third-party artifacts (Termux proot, ubuntu-base, opencode
+    # release) whose URLs change over time. A failure here must not block the app build; the
+    # produced artifact is validated on a real device (see docs/SMOKE-TEST.md).
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y file pkg-config
+
+      - name: Fetch arm64 proot (Termux build) and its libraries
+        run: |
+          set -euo pipefail
+          # Cross-building proot from source needs a static libtalloc for aarch64, which Ubuntu
+          # does not ship and talloc's waf does not build here. The Termux package is an arm64
+          # Android (bionic) build with the same user-space semantics, so use it and ship its
+          # shared libraries alongside the binary (the app sets LD_LIBRARY_PATH to proot/lib).
+          BASE=https://packages.termux.dev/apt/termux-main
+          curl -fsSL "$BASE/dists/stable/main/binary-aarch64/Packages" -o Packages
+          pick() {
+            awk -v pkg="$1" 'BEGIN{RS="";FS="\n"} $1=="Package: "pkg {for(i=1;i<=NF;i++) if($i ~ /^Filename: /){sub("^Filename: ","",$i); print $i; exit}}' Packages | head -n1
+          }
+          mkdir -p debs termux
+          for pkg in proot libtalloc libandroid-support; do
+            f="$(pick "$pkg")"
+            [ -n "$f" ] || { echo "::error title=termux package missing::no Filename for $pkg"; exit 1; }
+            echo "$pkg -> $f"
+            curl -fsSL "$BASE/$f" -o "debs/$pkg.deb"
+            mkdir -p "termux/$pkg"
+            ( cd "termux/$pkg" && ar x "../../debs/$pkg.deb" && tar xf data.tar.* )
+          done
+          PROOT_BIN="$(find termux -type f -path '*bin/proot' | head -n1)"
+          echo "proot: $PROOT_BIN"
+          file "$PROOT_BIN"
+          file "$PROOT_BIN" | grep -qi 'aarch64' || { echo "::error title=wrong ABI::packaged proot is not arm64"; exit 1; }
+          cp "$PROOT_BIN" proot-aarch64
+          chmod 755 proot-aarch64
+          mkdir -p proot-libs
+          find termux -type f -path '*usr/lib/*' -name '*.so*' -exec cp -a {} proot-libs/ \;
+          ls -la proot-libs
+
+      - name: Build arm64 bundle
+        run: |
+          bash server/scripts/build-rootfs.sh \
+            --mode full \
+            --output dist \
+            --version "ci-${GITHUB_RUN_NUMBER}" \
+            --proot ./proot-aarch64 \
+            --proot-libs ./proot-libs \
+            --download-base \
+            --download-opencode
+
+      - name: Show manifest
+        run: cat dist/manifest.json
+
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: rootfs-arm64-bundle
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
