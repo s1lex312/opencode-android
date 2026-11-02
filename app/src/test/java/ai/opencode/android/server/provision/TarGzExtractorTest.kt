@@ -7,6 +7,8 @@ import org.junit.Test
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.attribute.PosixFilePermission
 import java.util.zip.GZIPOutputStream
 
 class TarGzExtractorTest {
@@ -28,12 +30,12 @@ class TarGzExtractorTest {
         assertTrue(File(target, "rootfs/bin/sh").isFile)
         assertEquals("#!/bin/sh\n", File(target, "rootfs/bin/sh").readText())
         assertTrue(File(target, "rootfs/bin/sh-link").isFile || java.nio.file.Files.isSymbolicLink(File(target, "rootfs/bin/sh-link").toPath()))
-        assertTrue(File(target, "proot").canExecute())
+        assertOwnerExecutable(File(target, "proot"))
     }
 
     @Test
     fun `extracts a raw tar, the way aapt2 leaves it inside the APK`() {
-        val root = File(tempDir(), "raw")
+        val root = File(createTempDir(), "raw")
         val bytes = TestTar.buildRaw(
             TestTar.dir("rootfs/"),
             TestTar.file("rootfs/bin/sh", "#!/bin/sh\n", mode = 0b111_101_101),
@@ -43,8 +45,8 @@ class TarGzExtractorTest {
         val stats = TarGzExtractor.extract(bytes.inputStream(), root)
 
         assertEquals(3, stats.entries)
-        assertTrue(File(root, "rootfs/usr/local/bin/opencode").readText() == "opencode-binary")
-        assertTrue(File(root, "rootfs/bin/sh").canExecute())
+        assertEquals("opencode-binary", File(root, "rootfs/usr/local/bin/opencode").readText())
+        assertOwnerExecutable(File(root, "rootfs/bin/sh"))
     }
 
     @Test
@@ -95,6 +97,16 @@ class TarGzExtractorTest {
     }
 
     // ------------------------------------------------------------------ helpers
+
+    /**
+     * The tar mode bits (0755) must reach the extracted file. Checked through the POSIX permission
+     * set instead of `File.canExecute()`, which also depends on the mount options of the temp dir.
+     */
+    private fun assertOwnerExecutable(file: File) {
+        assertTrue("missing file: ${file.path}", file.isFile)
+        val permissions = runCatching { Files.getPosixFilePermissions(file.toPath()) }.getOrNull() ?: return
+        assertTrue("${file.path} is not executable: $permissions", PosixFilePermission.OWNER_EXECUTE in permissions)
+    }
 
     private fun createTempDir(): File = File(System.getProperty("java.io.tmpdir"), "targz-" + System.nanoTime()).apply { mkdirs() }
 
