@@ -149,7 +149,11 @@ fun SessionsScreen(
 
                 when {
                     state.loading && state.sessions.isEmpty() -> LoadingIndicator("Loading sessions…")
-                    state.sessions.isEmpty() -> Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
+                    state.sessions.isEmpty() -> Column(
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
                         EmptyState(
                             title = if (state.connected) "No sessions yet" else "Not connected",
                             message = if (state.connected) {
@@ -163,7 +167,7 @@ fun SessionsScreen(
                     }
 
                     else -> LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(
                             start = 8.dp,
                             end = 8.dp,

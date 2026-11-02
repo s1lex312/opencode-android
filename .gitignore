@@ -14,3 +14,8 @@ local.properties
 !debug.keystore
 app/release
 .kotlin
+
+# provisioning artifacts for the optional embedded server (never commit binaries)
+server/proot*
+app/src/main/jniLibs/*/libproot.so
+/out

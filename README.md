@@ -1,5 +1,7 @@
 # opencode for Android
 
+[![Android CI](https://github.com/s1lex312/opencode-android/actions/workflows/android.yml/badge.svg)](https://github.com/s1lex312/opencode-android/actions/workflows/android.yml)
+
 Нативный Android-клиент для [opencode](https://opencode.ai) — терминального coding-агента.
 Приложение подключается к серверу `opencode serve` по HTTP/HTTPS, показывает список сессий,
 ведёт чат с потоковым выводом (SSE), рисует карточки вызовов инструментов и unified diff
@@ -85,6 +87,8 @@ CORS настраивать не нужно: это нативное прило�
 3. **Authentication**: `Password` + пароль из `OPENCODE_PASSWORD`
    (или `Token` для reverse-proxy с Bearer).
 4. **Test** → должно появиться `Reachable: opencode vX.Y.Z (API v2)`.
+   Ключи LLM-провайдеров задаются на сервере (`opencode auth login`), приложение их не хранит:
+   оно знает только пароль/токен самого сервера.
 5. **Save & connect** → вернитесь на список сессий, создайте сессию, пишите агенту.
 
 Публичные адреса — только `https://`. Открытый HTTP разрешён для `localhost`/`127.0.0.1`,
@@ -144,15 +148,26 @@ server/          скрипты и инструкция для proot-развё�
 - [ASSUMPTIONS.md](ASSUMPTIONS.md) — все допущения, включая трактовку «opencode 8.0+».
 - [TODO.md](TODO.md) — приоритизированный бэклог.
 - [server/README.md](server/README.md) — proot-сервер: сборка rootfs, установка, ограничения.
+- [docs/SMOKE-TEST.md](docs/SMOKE-TEST.md) — чек-лист ручной проверки на устройстве.
+
+## Проверка на устройстве
+
+CI доказывает только то, что проект компилируется и unit-тесты проходят. Сеть, UI, Keystore и
+стриминг проверяются вручную по чек-листу [docs/SMOKE-TEST.md](docs/SMOKE-TEST.md): подключение
+(пароль/без пароля/HTTPS/self-signed), список сессий, стриминг, tool-cards, permissions, diff,
+переподключение после обрыва, proot-сервер.
 
 ## CI
 
 `.github/workflows/android.yml` на каждый push в `main`/`arena/**` и на PR:
 
-1. JDK 17 + Android SDK;
+1. JDK 17 + предустановленный Android SDK (ubuntu-latest);
 2. `./gradlew testDebugUnitTest`;
 3. `./gradlew assembleDebug`;
-4. артефакты: `opencode-android-debug` (APK) и отчёты тестов.
+4. артефакты: `opencode-android-debug` (APK ~18 МБ), `build-logs`, `unit-test-reports`;
+5. при падении компиляции/тестов ключевые ошибки публикуются как аннотации к check-run.
+
+Последний известный успешный прогон: run `41406392163` (зелёный: 53 unit-теста + APK).
 
 ## Лицензия
 

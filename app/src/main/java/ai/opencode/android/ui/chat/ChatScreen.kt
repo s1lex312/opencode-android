@@ -114,10 +114,19 @@ fun ChatScreen(
         },
         bottomBar = {
             Column(Modifier.imePadding()) {
-                state.permissions.forEach { permission ->
+                val pending = state.permissions
+                pending.firstOrNull()?.let { permission ->
                     PermissionPrompt(
                         request = permission,
                         onDecision = { decision -> viewModel.replyPermission(permission, decision) },
+                    )
+                }
+                if (pending.size > 1) {
+                    Text(
+                        text = "+${pending.size - 1} more permission request(s) queued",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, bottom = 4.dp),
                     )
                 }
                 ComposerBar(
@@ -140,8 +149,7 @@ fun ChatScreen(
         Column(
             modifier = Modifier
                 .padding(padding)
-                .fillMaxSize()
-                .navigationBarsPadding(),
+                .fillMaxSize(),
         ) {
             state.connectionError?.let { error ->
                 ErrorCard(message = error, onRetry = viewModel::retry)
@@ -157,7 +165,7 @@ fun ChatScreen(
             when {
                 state.loading && state.messages.isEmpty() -> LoadingIndicator("Loading conversation…")
                 state.messages.isEmpty() -> Column(
-                    modifier = Modifier.fillMaxSize().padding(24.dp),
+                    modifier = Modifier.weight(1f).fillMaxWidth().padding(24.dp),
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
@@ -175,7 +183,7 @@ fun ChatScreen(
                     LazyColumn(
                         state = listState,
                         reverseLayout = true,
-                        modifier = Modifier.fillMaxSize().weight(1f),
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
                         contentPadding = PaddingValues(vertical = 8.dp),
                     ) {
                         if (state.busy) {

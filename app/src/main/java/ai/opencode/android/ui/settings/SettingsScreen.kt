@@ -234,7 +234,8 @@ private fun AuthenticationSection(
     SectionCard(
         title = "Authentication",
         description = "opencode serve accepts HTTP Basic auth (username opencode + password) or a bearer token. " +
-            "Secrets are encrypted with a Keystore-backed AES-256-GCM key and never written to logs.",
+            "Secrets are encrypted with a Keystore-backed AES-256-GCM key and never written to logs. " +
+            "LLM provider keys are configured on the server (opencode auth login), not in this app.",
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             AuthMode.entries.forEach { mode ->
