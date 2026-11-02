@@ -16,8 +16,8 @@ android {
         applicationId = "ai.opencode.android"
         minSdk = 26
         targetSdk = 34
-        versionCode = 5
-        versionName = "1.1.2"
+        versionCode = 6
+        versionName = "1.1.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
@@ -38,10 +38,15 @@ android {
         create("lite") {
             dimension = "packaging"
             versionNameSuffix = "-lite"
+            // Build-time truth: this APK has no environment inside. The app must ask for a source.
+            buildConfigField("boolean", "EMBEDDED_BUNDLE", "false")
         }
         create("full") {
             dimension = "packaging"
             versionNameSuffix = "-full"
+            // Build-time truth: src/full/assets/local-env.tar.gz is packaged into this APK.
+            // A Full build whose asset is missing is a broken artifact, not a Lite build.
+            buildConfigField("boolean", "EMBEDDED_BUNDLE", "true")
         }
     }
 
@@ -157,6 +162,43 @@ fun requireFullBundle(taskName: String) {
 /** Guards every task that packages Full assets (mergeFull*Assets → APK/resource processing). */
 tasks.matching { it.name.matches(Regex("mergeFull(Debug|Release)Assets")) }.configureEach {
     doFirst { requireFullBundle(name) }
+}
+
+/**
+ * Post-package guard: open the produced Full APK as a zip and prove the environment is really
+ * inside it. A "Full" APK without `assets/local-env.tar.gz` (~105 MB) is a broken artifact, so the
+ * build fails here instead of shipping it and letting the app fall back to the Lite experience.
+ */
+tasks.matching { it.name.matches(Regex("assembleFull(Debug|Release)")) }.configureEach {
+    doLast {
+        val buildType = name.removePrefix("assembleFull").lowercase()
+        val apkDir = layout.buildDirectory.dir("outputs/apk/full/$buildType").get().asFile
+        val apk = apkDir.listFiles().orEmpty().firstOrNull { it.extension == "apk" }
+            ?: throw GradleException("Full build produced no APK in ${apkDir.path}")
+
+        java.util.zip.ZipFile(apk).use { zip ->
+            val assets = java.util.Collections.list(zip.entries())
+                .map { it.name }
+                .filter { it.startsWith("assets/") }
+            val bundle = zip.getEntry("assets/local-env.tar.gz")
+            if (bundle == null) {
+                throw GradleException(
+                    "Full APK ${apk.name} does not contain assets/local-env.tar.gz. " +
+                        "Assets inside: $assets",
+                )
+            }
+            if (bundle.size < 100_000_000L) {
+                throw GradleException(
+                    "Full APK ${apk.name} contains assets/local-env.tar.gz but only ${bundle.size} bytes " +
+                        "(expected ~105 MB). Assets inside: $assets",
+                )
+            }
+            logger.lifecycle(
+                "Full APK verified: ${apk.name} ships environment ${bundle.size} bytes " +
+                    "(${apk.length() / 1024 / 1024} MB total)",
+            )
+        }
+    }
 }
 
 /**
