@@ -1,3 +1,4 @@
+import java.security.MessageDigest
 import java.util.Properties
 
 plugins {
@@ -190,7 +191,7 @@ tasks.register("prepareFullBundle") {
         val version = Regex("\"version\"\\s*:\\s*\"([^\"]+)\"").find(manifestText)?.groupValues?.get(1)
             ?: Regex("opencode-env-(.+)-arm64\\.tar\\.gz").find(bundle.name)?.groupValues?.get(1)
             ?: "unset"
-        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        val digest = MessageDigest.getInstance("SHA-256")
         bundle.inputStream().use { input ->
             val buffer = ByteArray(1 shl 16)
             while (true) {
