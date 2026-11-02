@@ -18,6 +18,8 @@ app/release
 # provisioning artifacts for the optional embedded server (never commit binaries)
 server/proot*
 app/src/main/jniLibs/*/libproot.so
+# proot runtime extracted into the Full flavour's jniLibs (see extract-proot-jnilibs.sh)
+/app/src/full/jniLibs/
 /out
 
 # rootfs bundle output (never commit hundreds of MB)

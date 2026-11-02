@@ -197,3 +197,22 @@ Room не используется. Причины:
 
 * Репозиторий содержит только клиентский код (MIT). Код opencode не копировался; используются
   публичные HTTP-контракты. Название «opencode» принадлежит его авторам; это неофициальный клиент.
+
+## 15. Исполнение `proot` на Android 10+
+
+* С `targetSdk >= 29` SELinux не даёт приложению `execve()` файла из его приватной директории
+  (`error=13, Permission denied`) — это и был реальный отказ Local mode на устройстве.
+* Решение: `proot` (и его `loader`, и его bionic-библиотеки) поставляются как нативные библиотеки
+  в `jniLibs`, а `jniLibs { useLegacyPackaging = true }` заставляет установщик распаковать их в
+  `nativeLibraryDir` — единственный каталог, откуда приложение может запускать бинарь.
+* Versioned-имена (`libtalloc.so.2`) в `jniLibs` недопустимы, поэтому `patchelf` переписывает
+  `DT_SONAME` и `DT_NEEDED` на канонические `lib*.so`; это делает
+  `.github/scripts/extract-proot-jnilibs.sh` в CI (и `:app:prepareProotJniLibs` локально).
+* Приложение **никогда** не пишет в `nativeLibraryDir`: `EnvProvisioner` проверяет путь и падает,
+  если цель установки оказалась внутри этого каталога.
+* `PROOT_TMP_DIR` указывает в `noBackupFilesDir/opencode-env/tmp` (proot пишет туда свой loader),
+  `PROOT_LOADER` — на `libproot_loader.so`, `PROOT_NO_SECCOMP=1` (seccomp-ускорение proot на
+  Android-ядрах часто недоступно).
+* Остаточный риск: если конкретная сборка proot не поддерживает `PROOT_LOADER` и всегда
+  распаковывает свой loader в `PROOT_TMP_DIR`, exec этого loader-а из app data будет запрещён;
+  тогда нужен статический proot без отдельного loader-а.

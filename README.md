@@ -86,8 +86,14 @@ Compose Material 3, шифрованное хранилище секретов, 
    ```
 
 2. При первом запуске откроется **Setup**. Нажмите **Install**: приложение скачает (или возьмёт из
-   assets) bundle, проверит SHA-256, распакует `proot`, `rootfs` и `opencode` в
-   `noBackupFilesDir/opencode-env`.
+   assets) bundle, проверит SHA-256, распакует `rootfs` и `opencode` в
+   `noBackupFilesDir/opencode-env`. Сам `proot` исполняется не оттуда: с Android 10 SELinux
+   запрещает `execve()` из приватной папки приложения (`error=13, Permission denied`), поэтому
+   он поставляется как нативная библиотека — `app/src/full/jniLibs/arm64-v8a/libproot.so` — и
+   запускается из `applicationInfo.nativeLibraryDir`. Этот каталог заполняет
+   `.github/scripts/extract-proot-jnilibs.sh` (его вызывают `:app:prepareFullBundle` и релизный
+   workflow); `proot-libs/*.so` там же, с переписанными через `patchelf` именами и `DT_NEEDED`,
+   а `loader` (если он есть) — как `libproot_loader.so` + `PROOT_LOADER`.
 3. Нажмите **Start** (или просто вернитесь к сессиям — сервер поднимется сам). Через несколько
    секунд появится `Running (healthy)` и список сессий.
 4. Создайте сессию и общайтесь с агентом: ответы стримятся, инструменты показываются карточками,

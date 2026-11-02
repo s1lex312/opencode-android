@@ -81,5 +81,13 @@ if [[ "$APK" == *full* ]]; then
     "") echo "::warning title=no aapt::cannot verify the variant of $APK" ;;
     *) echo "::error title=wrong variant::$APK does not report a -full version"; exit 1 ;;
   esac
+  # Android 10+ only lets an app exec binaries that live in nativeLibraryDir, so proot must be
+  # packaged as a native library. Without it Local mode cannot start at all.
+  if ! printf '%s\n' "$ENTRIES" | grep -Fxq 'lib/arm64-v8a/libproot.so'; then
+    printf 'lib entries: %s\n' "$(printf '%s\n' "$ENTRIES" | grep '^lib/' | tr '\n' ' ')"
+    echo "::error title=Full APK without runtime::$APK has no lib/arm64-v8a/libproot.so"
+    exit 1
+  fi
+  echo "proot runtime: lib/arm64-v8a/libproot.so"
   echo "full: bundle present ($BUNDLE_BYTES bytes), variant ok"
 fi
