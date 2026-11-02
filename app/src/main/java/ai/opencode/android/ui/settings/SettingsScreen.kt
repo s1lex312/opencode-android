@@ -6,6 +6,7 @@ import ai.opencode.android.di.AppContainer
 import ai.opencode.android.server.LocalServerService
 import ai.opencode.android.server.LocalServerState
 import ai.opencode.android.settings.AuthMode
+import ai.opencode.android.settings.ConnectionMode
 import ai.opencode.android.ui.components.AdaptiveContent
 import ai.opencode.android.ui.components.LoadingIndicator
 import ai.opencode.android.ui.components.SectionCard
@@ -39,6 +40,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -70,7 +72,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
+fun SettingsScreen(
+    container: AppContainer,
+    onBack: () -> Unit,
+    onOpenSetup: () -> Unit = {},
+    onOpenLogs: () -> Unit = {},
+) {
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(container))
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -118,11 +125,12 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp, horizontal = 2.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
+                    item { ModeSection(state, viewModel, onOpenSetup) }
                     item { ConnectionSection(state, viewModel) }
                     item { AuthenticationSection(state, viewModel, passwordDraft, tokenDraft, { passwordDraft = it }, { tokenDraft = it }) }
                     item { ModelSection(state, viewModel, onOpenPicker = { showModelDialog = true }) }
                     item { PermissionsSection(state, viewModel) }
-                    item { LocalServerSection(state, viewModel, onStart = startLocalServer) }
+                    item { LocalServerSection(state, viewModel, onStart = startLocalServer, onOpenSetup = onOpenSetup, onOpenLogs = onOpenLogs) }
                     item { AboutSection(state) }
                 }
             }
@@ -152,6 +160,42 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             text = { Text(message) },
             title = { Text("Saved") },
         )
+    }
+}
+
+@Composable
+private fun ModeSection(
+    state: SettingsUiState,
+    viewModel: SettingsViewModel,
+    onOpenSetup: () -> Unit,
+) {
+    SectionCard(
+        title = "Where opencode runs",
+        description = "Local: the app installs and runs the server on this phone (no PC needed). " +
+            "Remote: the app connects to an opencode server on your computer, LAN or VPS.",
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = state.connectionMode == ConnectionMode.LOCAL,
+                onClick = { viewModel.setConnectionMode(ConnectionMode.LOCAL) },
+                label = { Text("Local (this phone)") },
+            )
+            FilterChip(
+                selected = state.connectionMode == ConnectionMode.REMOTE,
+                onClick = { viewModel.setConnectionMode(ConnectionMode.REMOTE) },
+                label = { Text("Remote server") },
+            )
+        }
+        Text(
+            text = if (state.isLocalMode) {
+                "Server address: http://127.0.0.1:${state.settings.localServer.port} (managed automatically)"
+            } else {
+                "Server address: ${state.settings.serverUrl}"
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedButton(onClick = onOpenSetup) { Text("Open local setup") }
     }
 }
 
@@ -376,12 +420,14 @@ private fun LocalServerSection(
     state: SettingsUiState,
     viewModel: SettingsViewModel,
     onStart: () -> Unit,
+    onOpenSetup: () -> Unit,
+    onOpenLogs: () -> Unit,
 ) {
     val context = LocalContext.current
     SectionCard(
-        title = "Local server (experimental)",
-        description = "Run opencode inside a proot rootfs on this device, no root required. " +
-            "The APK ships no proot binary or rootfs — provision them as described in server/README.md.",
+        title = "Local server",
+        description = "opencode runs inside proot on this device (no root, no PC). " +
+            "Installed environment: ${state.envVersion ?: "not installed"}. Use Setup to install, reinstall or clean it.",
     ) {
         val local = state.localServer
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -443,9 +489,19 @@ private fun LocalServerSection(
                 modifier = Modifier.weight(1f),
             )
         }
+        SwitchRow(
+            title = "Restart automatically",
+            subtitle = "Restart the server with backoff if it crashes (max 5 attempts)",
+            checked = state.settings.localServer.autoRestart,
+            onCheckedChange = viewModel::setAutoRestart,
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = viewModel::saveLocalServerSettings) { Text("Save local settings") }
             OutlinedButton(onClick = viewModel::clearLocalServerLogs) { Text("Clear log") }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onOpenSetup) { Text("Setup") }
+            OutlinedButton(onClick = onOpenLogs) { Text("Open logs") }
         }
         if (local.logs.isNotEmpty()) {
             Column(

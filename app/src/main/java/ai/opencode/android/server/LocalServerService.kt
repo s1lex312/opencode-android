@@ -12,6 +12,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
@@ -21,83 +22,126 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
- * Foreground service that keeps the optional proot-based opencode server alive while the app is
- * in the background. The service is only started on explicit user action from Settings; it stops
- * itself as soon as the supervisor reports STOPPED/FAILED.
+ * Foreground service that keeps the in-app opencode server alive while the app is backgrounded,
+ * the screen is off or the activity is destroyed.
+ *
+ * * `START_STICKY`: if Android kills the process, the service is recreated and the server is
+ *   restarted (bounded by [LocalServerManager]'s restart policy).
+ * * a partial wake lock keeps the CPU alive for the proot process during Doze; it is released as
+ *   soon as the service stops, so idle battery impact is limited to actual server use.
+ * * the notification is the only UI in the background: it shows state and offers Stop.
  */
 class LocalServerService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var container: ai.opencode.android.di.AppContainer
     private var observing = false
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
         super.onCreate()
         container = (application as OpencodeApp).container
         createChannel()
+        acquireWakeLock()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
-            container.localServerManager.stop()
-            stopSelf()
-            return START_NOT_STICKY
-        }
+        when (intent?.action) {
+            ACTION_STOP -> {
+                container.localRuntime.stop()
+                stopSelf()
+                return START_NOT_STICKY
+            }
 
-        if (observing) {
-            // The service is already supervising a server; nothing else to do on a repeated start.
-            return START_NOT_STICKY
+            ACTION_RESTART -> {
+                startForeground(NOTIFICATION_ID, buildNotification("Restarting opencode server…", indeterminate = true))
+                container.localRuntime.restart()
+                observeIfNeeded()
+                return START_STICKY
+            }
         }
-        observing = true
 
         startForeground(NOTIFICATION_ID, buildNotification("Starting opencode server…", indeterminate = true))
+        observeIfNeeded()
+
+        // Idempotent: generates the password, checks the environment, starts proot and connects.
+        container.localRuntime.start()
+        return START_STICKY
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // Keep the server running when the user swipes the app away, unless they disabled it.
+        scope.launch {
+            val settings = runCatching { container.settingsRepository.current() }.getOrNull()
+            if (settings == null || !settings.isLocalMode || !settings.localServer.enabled) {
+                container.localRuntime.stop()
+                stopSelf()
+            }
+        }
+        super.onTaskRemoved(rootIntent)
+    }
+
+    override fun onDestroy() {
+        scope.cancel()
+        container.localRuntime.stop()
+        releaseWakeLock()
+        super.onDestroy()
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun observeIfNeeded() {
+        if (observing) return
+        observing = true
 
         scope.launch {
-            val settings = container.settingsRepository.current().localServer
-            container.localServerManager.start(settings)
+            container.localRuntime.state.collect { runtime ->
+                if (runtime.needsSetup) {
+                    updateNotification(buildNotification("Setup required: open the app to install", indeterminate = false))
+                    stopSelf()
+                }
+            }
         }
 
         scope.launch {
-            // The state flow replays its current value (STOPPED before the launch completes), so
-            // only react to STOPPED once the supervisor actually made progress.
             var sawProgress = false
             container.localServerManager.state.collect { state ->
                 when (state.phase) {
                     LocalServerState.Phase.STARTING -> {
                         sawProgress = true
-                        updateNotification(buildNotification("Starting opencode server…", indeterminate = true))
+                        updateNotification(
+                            buildNotification(
+                                state.message ?: "Starting opencode server…",
+                                indeterminate = true,
+                            ),
+                        )
                     }
 
                     LocalServerState.Phase.READY -> {
                         sawProgress = true
                         updateNotification(
-                            buildNotification(state.message ?: "opencode server is running", indeterminate = false),
+                            buildNotification(
+                                state.message ?: "Listening on 127.0.0.1:${state.port}",
+                                indeterminate = false,
+                            ),
                         )
                     }
 
+                    LocalServerState.Phase.STOPPING ->
+                        updateNotification(buildNotification("Stopping opencode server…", indeterminate = true))
+
                     LocalServerState.Phase.FAILED -> {
-                        updateNotification(buildNotification(state.message ?: "opencode server failed", indeterminate = false))
+                        updateNotification(
+                            buildNotification(state.message ?: "opencode server failed", indeterminate = false),
+                        )
                         stopSelf()
                     }
 
                     LocalServerState.Phase.STOPPED -> if (sawProgress) stopSelf()
-                    LocalServerState.Phase.STOPPING -> updateNotification(
-                        buildNotification("Stopping opencode server…", indeterminate = true),
-                    )
                 }
             }
         }
-
-        return START_NOT_STICKY
     }
-
-    override fun onDestroy() {
-        scope.cancel()
-        container.localServerManager.stop()
-        super.onDestroy()
-    }
-
-    override fun onBind(intent: Intent?): IBinder? = null
 
     private fun createChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -108,7 +152,7 @@ class LocalServerService : Service() {
             getString(R.string.notification_channel_local_server),
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = "Status of the locally hosted opencode server"
+            description = "Status of the opencode server running on this device"
             setShowBadge(false)
         }
         manager.createNotificationChannel(channel)
@@ -127,6 +171,12 @@ class LocalServerService : Service() {
             Intent(this, LocalServerService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        val restartIntent = PendingIntent.getService(
+            this,
+            2,
+            Intent(this, LocalServerService::class.java).setAction(ACTION_RESTART),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_upload_done)
             .setContentTitle(getString(R.string.notification_local_server_title))
@@ -135,6 +185,7 @@ class LocalServerService : Service() {
             .setOnlyAlertOnce(true)
             .setProgress(0, 0, indeterminate)
             .setContentIntent(openIntent)
+            .addAction(0, "Restart", restartIntent)
             .addAction(0, "Stop", stopIntent)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -143,11 +194,28 @@ class LocalServerService : Service() {
 
     private fun updateNotification(notification: Notification) {
         val manager = getSystemService(NotificationManager::class.java) ?: return
-        manager.notify(NOTIFICATION_ID, notification)
+        runCatching { manager.notify(NOTIFICATION_ID, notification) }
+    }
+
+    private fun acquireWakeLock() {
+        if (wakeLock != null) return
+        val power = getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
+        wakeLock = runCatching {
+            power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "opencode:local-server").apply {
+                setReferenceCounted(false)
+                acquire(12 * 60 * 60 * 1000L)
+            }
+        }.getOrNull()
+    }
+
+    private fun releaseWakeLock() {
+        runCatching { wakeLock?.takeIf { it.isHeld }?.release() }
+        wakeLock = null
     }
 
     companion object {
         const val ACTION_STOP = "ai.opencode.android.action.STOP_LOCAL_SERVER"
+        const val ACTION_RESTART = "ai.opencode.android.action.RESTART_LOCAL_SERVER"
         private const val CHANNEL_ID = "opencode_local_server"
         private const val NOTIFICATION_ID = 4711
 
@@ -155,6 +223,13 @@ class LocalServerService : Service() {
             ContextCompat.startForegroundService(
                 context,
                 Intent(context, LocalServerService::class.java),
+            )
+        }
+
+        fun restart(context: Context) {
+            ContextCompat.startForegroundService(
+                context,
+                Intent(context, LocalServerService::class.java).setAction(ACTION_RESTART),
             )
         }
 

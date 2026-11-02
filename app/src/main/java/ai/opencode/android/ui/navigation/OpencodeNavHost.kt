@@ -3,6 +3,8 @@ package ai.opencode.android.ui.navigation
 import ai.opencode.android.di.AppContainer
 import ai.opencode.android.ui.chat.ChatScreen
 import ai.opencode.android.ui.diff.DiffScreen
+import ai.opencode.android.ui.logs.LogsScreen
+import ai.opencode.android.ui.setup.SetupScreen
 import ai.opencode.android.ui.sessions.SessionsScreen
 import ai.opencode.android.ui.settings.SettingsScreen
 import android.net.Uri
@@ -18,6 +20,8 @@ object Routes {
     const val SETTINGS = "settings"
     const val CHAT = "chat/{sessionId}"
     const val DIFF = "diff/{sessionId}"
+    const val SETUP = "setup"
+    const val LOGS = "logs"
 
     fun chat(sessionId: String): String = "chat/${Uri.encode(sessionId)}"
 
@@ -34,11 +38,29 @@ fun OpencodeNavHost(container: AppContainer) {
                 container = container,
                 onOpenSession = { sessionId -> navController.navigate(Routes.chat(sessionId)) },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                onOpenSetup = { navController.navigate(Routes.SETUP) },
             )
         }
 
         composable(Routes.SETTINGS) {
             SettingsScreen(
+                container = container,
+                onBack = { navController.popBackStack() },
+                onOpenSetup = { navController.navigate(Routes.SETUP) },
+                onOpenLogs = { navController.navigate(Routes.LOGS) },
+            )
+        }
+
+        composable(Routes.SETUP) {
+            SetupScreen(
+                container = container,
+                onBack = { navController.popBackStack() },
+                onOpenLogs = { navController.navigate(Routes.LOGS) },
+            )
+        }
+
+        composable(Routes.LOGS) {
+            LogsScreen(
                 container = container,
                 onBack = { navController.popBackStack() },
             )

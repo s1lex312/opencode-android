@@ -19,3 +19,7 @@ app/release
 server/proot*
 app/src/main/jniLibs/*/libproot.so
 /out
+
+# rootfs bundle output (never commit hundreds of MB)
+/dist
+server/dist

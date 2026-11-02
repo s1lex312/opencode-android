@@ -112,3 +112,80 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
+
+  rootfs-stub:
+    name: Rootfs packaging (stub)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build stub bundle
+        run: |
+          bash server/scripts/build-rootfs.sh \
+            --mode stub \
+            --output dist \
+            --version "ci-${GITHUB_RUN_NUMBER}"
+
+      - name: Verify bundle and manifest
+        run: |
+          set -euo pipefail
+          SHA="$(python3 -c 'import json;print(json.load(open("dist/manifest.json"))["sha256"])')"
+          bash server/scripts/verify-artifact.sh dist/opencode-env-*.tar.gz "$SHA"
+          echo "::notice title=Rootfs manifest::version=$(python3 -c 'import json;print(json.load(open("dist/manifest.json"))["version"])') sha256=$SHA"
+
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: rootfs-stub-bundle
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  rootfs-full:
+    name: Rootfs arm64 bundle (best effort)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Upstream wasm/binary layouts change from time to time; a failure here must not block the app
+    # build. The produced artifact is validated on a real device (see docs/SMOKE-TEST.md).
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install cross toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential gcc-aarch64-linux-gnu libc6-dev-arm64-cross curl file
+
+      - name: Build static arm64 proot
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/proot-me/proot.git proot-src
+          cd proot-src/src
+          make -j"$(nproc)" CC=aarch64-linux-gnu-gcc LDFLAGS="-static -Wl,--gc-sections" || make -j"$(nproc)" CC=aarch64-linux-gnu-gcc LDFLAGS="-static"
+          BIN="$(find .. -maxdepth 3 -type f -name proot -perm -u+x | head -n 1)"
+          file "$BIN"
+          cp "$BIN" "$GITHUB_WORKSPACE/proot-aarch64"
+
+      - name: Build arm64 bundle
+        run: |
+          bash server/scripts/build-rootfs.sh \
+            --mode full \
+            --output dist \
+            --version "ci-${GITHUB_RUN_NUMBER}" \
+            --proot ./proot-aarch64 \
+            --download-base \
+            --download-opencode
+
+      - name: Show manifest
+        run: cat dist/manifest.json
+
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: rootfs-arm64-bundle
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14

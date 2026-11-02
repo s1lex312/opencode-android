@@ -42,6 +42,8 @@ class SettingsRepository(context: Context) {
         val providerID = this[KEY_MODEL_PROVIDER].orEmpty()
         val modelID = this[KEY_MODEL_ID].orEmpty()
         return AppSettings(
+            connectionMode = this[KEY_CONNECTION_MODE]?.toConnectionMode()
+                ?: if (this[KEY_SERVER_URL] != null) ConnectionMode.REMOTE else ConnectionMode.LOCAL,
             serverUrl = this[KEY_SERVER_URL] ?: AppSettings.DEFAULT_SERVER_URL,
             authMode = this[KEY_AUTH_MODE]?.toAuthMode() ?: AuthMode.NONE,
             username = this[KEY_USERNAME] ?: "opencode",
@@ -53,17 +55,23 @@ class SettingsRepository(context: Context) {
             requestTimeoutSeconds = this[KEY_TIMEOUT] ?: 300,
             lastSessionId = this[KEY_LAST_SESSION]?.takeIf { it.isNotBlank() },
             localServer = LocalServerSettings(
-                enabled = this[KEY_LOCAL_SERVER_ENABLED] ?: false,
-                rootfsPath = this[KEY_LOCAL_ROOTFS].orEmpty(),
-                prootPath = this[KEY_LOCAL_PROOT].orEmpty(),
+                enabled = this[KEY_LOCAL_SERVER_ENABLED] ?: true,
                 port = this[KEY_LOCAL_PORT] ?: 4096,
                 serverCommand = this[KEY_LOCAL_COMMAND]
                     ?: "opencode serve --hostname 127.0.0.1 --port {port}",
+                rootfsPath = this[KEY_LOCAL_ROOTFS].orEmpty(),
+                prootPath = this[KEY_LOCAL_PROOT].orEmpty(),
+                artifactUrl = this[KEY_LOCAL_ARTIFACT_URL].orEmpty(),
+                artifactSha256 = this[KEY_LOCAL_ARTIFACT_SHA].orEmpty(),
+                artifactVersion = this[KEY_LOCAL_ARTIFACT_VERSION].orEmpty(),
+                autoRestart = this[KEY_LOCAL_AUTO_RESTART] ?: true,
+                maxRestarts = this[KEY_LOCAL_MAX_RESTARTS] ?: 5,
             ),
         )
     }
 
     private fun androidx.datastore.preferences.core.MutablePreferences.write(value: AppSettings) {
+        this[KEY_CONNECTION_MODE] = value.connectionMode.name
         this[KEY_SERVER_URL] = value.serverUrl
         this[KEY_AUTH_MODE] = value.authMode.name
         this[KEY_USERNAME] = value.username
@@ -80,7 +88,15 @@ class SettingsRepository(context: Context) {
         this[KEY_LOCAL_PROOT] = value.localServer.prootPath
         this[KEY_LOCAL_PORT] = value.localServer.port
         this[KEY_LOCAL_COMMAND] = value.localServer.serverCommand
+        this[KEY_LOCAL_ARTIFACT_URL] = value.localServer.artifactUrl
+        this[KEY_LOCAL_ARTIFACT_SHA] = value.localServer.artifactSha256
+        this[KEY_LOCAL_ARTIFACT_VERSION] = value.localServer.artifactVersion
+        this[KEY_LOCAL_AUTO_RESTART] = value.localServer.autoRestart
+        this[KEY_LOCAL_MAX_RESTARTS] = value.localServer.maxRestarts
     }
+
+    private fun String.toConnectionMode(): ConnectionMode =
+        runCatching { ConnectionMode.valueOf(this) }.getOrDefault(ConnectionMode.LOCAL)
 
     private fun String.toAuthMode(): AuthMode = runCatching { AuthMode.valueOf(this) }.getOrDefault(AuthMode.NONE)
 
@@ -88,6 +104,7 @@ class SettingsRepository(context: Context) {
         runCatching { PermissionPolicy.valueOf(this) }.getOrDefault(PermissionPolicy.ASK)
 
     private companion object {
+        val KEY_CONNECTION_MODE = stringPreferencesKey("connection_mode")
         val KEY_SERVER_URL = stringPreferencesKey("server_url")
         val KEY_AUTH_MODE = stringPreferencesKey("auth_mode")
         val KEY_USERNAME = stringPreferencesKey("auth_username")
@@ -104,5 +121,10 @@ class SettingsRepository(context: Context) {
         val KEY_LOCAL_PROOT = stringPreferencesKey("local_server_proot")
         val KEY_LOCAL_PORT = intPreferencesKey("local_server_port")
         val KEY_LOCAL_COMMAND = stringPreferencesKey("local_server_command")
+        val KEY_LOCAL_ARTIFACT_URL = stringPreferencesKey("local_artifact_url")
+        val KEY_LOCAL_ARTIFACT_SHA = stringPreferencesKey("local_artifact_sha256")
+        val KEY_LOCAL_ARTIFACT_VERSION = stringPreferencesKey("local_artifact_version")
+        val KEY_LOCAL_AUTO_RESTART = booleanPreferencesKey("local_auto_restart")
+        val KEY_LOCAL_MAX_RESTARTS = intPreferencesKey("local_max_restarts")
     }
 }

@@ -27,14 +27,14 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Honour `LocalServerSettings.enabled` by starting the foreground service. Everything is
-     * best-effort: if the platform refuses the start (background restrictions, missing proot) the
-     * app still works against a remote server, and the failure is reported by the supervisor.
+     * LOCAL mode is the default: bring the in-app server up as soon as the UI is on screen.
+     * Everything is best-effort — if the environment is missing the Setup screen takes over and
+     * the app still works in REMOTE mode.
      */
     private fun maybeStartLocalServer(container: AppContainer) {
         lifecycleScope.launch {
             val settings = runCatching { container.settingsRepository.current() }.getOrNull() ?: return@launch
-            if (!settings.localServer.enabled) return@launch
+            if (!settings.isLocalMode || !settings.localServer.enabled) return@launch
             if (container.localServerManager.state.value.running) return@launch
             runCatching { LocalServerService.start(this@MainActivity) }
         }

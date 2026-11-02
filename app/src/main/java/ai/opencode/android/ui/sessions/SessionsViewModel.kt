@@ -6,6 +6,9 @@ import ai.opencode.android.data.model.ServerSession
 import ai.opencode.android.data.repo.ApiResult
 import ai.opencode.android.data.repo.ServerConnectionManager
 import ai.opencode.android.data.repo.SessionRepository
+import ai.opencode.android.server.LocalServerManager
+import ai.opencode.android.server.LocalServerState
+import ai.opencode.android.server.provision.EnvProvisioner
 import ai.opencode.android.settings.SettingsRepository
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -36,12 +39,17 @@ data class SessionsUiState(
     val fromCache: Boolean = false,
     val pendingOpenSessionId: String? = null,
     val connection: ConnectionState = ConnectionState.Idle,
+    val localMode: Boolean = false,
+    val localNeedsSetup: Boolean = false,
+    val localServer: LocalServerState = LocalServerState(),
 )
 
 class SessionsViewModel(
     private val repository: SessionRepository,
     private val connection: ServerConnectionManager,
     private val settingsRepository: SettingsRepository,
+    private val provisioner: EnvProvisioner,
+    private val localServerManager: LocalServerManager,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SessionsUiState())
@@ -66,13 +74,34 @@ class SessionsViewModel(
             }
         }
         viewModelScope.launch {
+            provisioner.state.collect {
+                _state.update {
+                    it.copy(
+                        localNeedsSetup = it.localMode && !provisioner.isInstalled(),
+                    )
+                }
+            }
+        }
+        viewModelScope.launch {
+            localServerManager.state.collect { local ->
+                _state.update { it.copy(localServer = local) }
+            }
+        }
+        viewModelScope.launch {
             val settings = runCatching { settingsRepository.current() }.getOrNull() ?: return@launch
-            _state.update { it.copy(serverLabel = settings.serverUrl) }
-            if (settings.autoConnect) {
-                connection.connect()
-            } else if (!connection.isConnected) {
-                // Nothing is going to load: show the empty "Not connected" state, not a spinner.
-                _state.update { it.copy(loading = false) }
+            val local = settings.isLocalMode
+            _state.update {
+                it.copy(
+                    serverLabel = settings.effectiveServerUrl,
+                    localMode = local,
+                    localNeedsSetup = local && !provisioner.isInstalled(),
+                )
+            }
+            when {
+                // LOCAL: the foreground service starts the server and connects when it is healthy.
+                local -> if (!provisioner.isInstalled()) _state.update { it.copy(loading = false) }
+                settings.autoConnect -> connection.connect()
+                !connection.isConnected -> _state.update { it.copy(loading = false) }
             }
         }
     }
@@ -192,6 +221,8 @@ class SessionsViewModel(
                     repository = container.sessionRepository,
                     connection = container.connectionManager,
                     settingsRepository = container.settingsRepository,
+                    provisioner = container.provisioner,
+                    localServerManager = container.localServerManager,
                 )
             }
         }

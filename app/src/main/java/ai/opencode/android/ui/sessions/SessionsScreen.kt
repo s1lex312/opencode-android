@@ -2,6 +2,7 @@ package ai.opencode.android.ui.sessions
 
 import ai.opencode.android.data.model.ServerSession
 import ai.opencode.android.di.AppContainer
+import ai.opencode.android.server.LocalServerState
 import ai.opencode.android.ui.components.AdaptiveContent
 import ai.opencode.android.ui.components.ConnectionBadge
 import ai.opencode.android.ui.components.EmptyState
@@ -49,6 +50,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,10 +67,19 @@ fun SessionsScreen(
     container: AppContainer,
     onOpenSession: (String) -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenSetup: () -> Unit,
 ) {
     val viewModel: SessionsViewModel = viewModel(factory = SessionsViewModel.factory(container))
     val state by viewModel.state.collectAsStateWithLifecycle()
     var sessionToDelete by remember { mutableStateOf<ServerSession?>(null) }
+    var setupPrompted by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(state.localNeedsSetup) {
+        if (state.localNeedsSetup && !setupPrompted) {
+            setupPrompted = true
+            onOpenSetup()
+        }
+    }
 
     LaunchedEffect(state.pendingOpenSessionId) {
         val id = state.pendingOpenSessionId
@@ -121,6 +132,16 @@ fun SessionsScreen(
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize()) {
             AdaptiveContent {
+                if (state.localMode) {
+                    LocalServerBanner(
+                        state = state,
+                        onOpenSetup = onOpenSetup,
+                        onStart = {
+                            container.startLocalServerService()
+                            viewModel.connect()
+                        },
+                    )
+                }
                 state.error?.let { error ->
                     ErrorCard(
                         message = error,
@@ -204,6 +225,45 @@ fun SessionsScreen(
                 TextButton(onClick = { sessionToDelete = null }) { Text("Cancel") }
             },
         )
+    }
+}
+
+@Composable
+private fun LocalServerBanner(
+    state: SessionsUiState,
+    onOpenSetup: () -> Unit,
+    onStart: () -> Unit,
+) {
+    val server = state.localServer
+    val (title, actionLabel, action) = when {
+        state.localNeedsSetup -> Triple("Finish setup to run opencode on this phone", "Open setup", onOpenSetup)
+        server.phase == LocalServerState.Phase.FAILED ->
+            Triple("Local server failed: ${server.message ?: "unknown error"}", "Open setup", onOpenSetup)
+
+        server.phase == LocalServerState.Phase.STARTING ->
+            Triple("Starting the local server…", "Setup", onOpenSetup)
+
+        server.phase == LocalServerState.Phase.STOPPED ->
+            Triple("The local server is not running", "Start", onStart)
+
+        else -> Triple("", "", onOpenSetup)
+    }
+    if (title.isBlank()) return
+
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = action) { Text(actionLabel) }
+        }
     }
 }
 

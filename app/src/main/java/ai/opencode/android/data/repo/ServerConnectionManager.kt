@@ -55,9 +55,19 @@ class ServerConnectionManager(
 
     val api: OpencodeApi? get() = connected?.api
 
-    val serverKey: String get() = connected?.api?.baseUrl ?: settingsSnapshot?.serverUrl ?: AppSettings.DEFAULT_SERVER_URL
+    val serverKey: String
+        get() = connected?.api?.baseUrl
+            ?: settingsSnapshot?.effectiveServerUrl
+            ?: AppSettings.DEFAULT_SERVER_URL
 
     private var settingsSnapshot: AppSettings? = null
+
+    /**
+     * Gate that blocks connecting until the in-app server answers its health check. Installed by
+     * [ai.opencode.android.di.AppContainer] when LOCAL mode is in use; defaults to "always ready"
+     * so isolated tests and REMOTE mode are unaffected.
+     */
+    var localReadiness: suspend () -> Boolean = { true }
 
     val isConnected: Boolean get() = _state.value is ConnectionState.Connected
 
@@ -74,11 +84,27 @@ class ServerConnectionManager(
                 return@launch
             }
             settingsSnapshot = settings
+            val effective = if (settings.isLocalMode) {
+                settings.copy(
+                    serverUrl = settings.localServer.url,
+                    authMode = settings.effectiveAuthMode,
+                    username = settings.effectiveUsername,
+                )
+            } else {
+                settings
+            }
             try {
+                if (settings.isLocalMode && !localReadiness()) {
+                    _state.value = ConnectionState.Failed(
+                        message = "The local server is not ready",
+                        hint = "Open Setup to install the environment, or start the server in Settings.",
+                    )
+                    return@launch
+                }
                 val result = ApiFactory(
-                    settings = settings,
-                    password = secretStore.password(),
-                    token = secretStore.token(),
+                    settings = effective,
+                    password = if (settings.isLocalMode) secretStore.localPassword() else secretStore.password(),
+                    token = if (settings.isLocalMode) null else secretStore.token(),
                 ).connect()
                 connected = result
                 _state.value = ConnectionState.Connected(result.info, result.api.baseUrl)

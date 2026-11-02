@@ -10,10 +10,13 @@ import ai.opencode.android.data.repo.SessionRepository
 import ai.opencode.android.di.AppContainer
 import ai.opencode.android.security.NetworkPolicy
 import ai.opencode.android.security.SecretStore
+import ai.opencode.android.server.LocalRuntime
 import ai.opencode.android.server.LocalServerManager
 import ai.opencode.android.server.LocalServerState
+import ai.opencode.android.server.provision.EnvProvisioner
 import ai.opencode.android.settings.AppSettings
 import ai.opencode.android.settings.AuthMode
+import ai.opencode.android.settings.ConnectionMode
 import ai.opencode.android.settings.SettingsRepository
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -50,6 +53,8 @@ data class SettingsUiState(
     val testOk: Boolean = false,
     val connectionStatus: String = "",
     val localServer: LocalServerState = LocalServerState(),
+    val envInstalled: Boolean = false,
+    val envVersion: String? = null,
 ) {
     val authMode: AuthMode get() = settings.authMode
     val permissionPolicy: PermissionPolicy get() = settings.permissionPolicy
@@ -57,6 +62,8 @@ data class SettingsUiState(
     val allowLanCleartext: Boolean get() = settings.allowPrivateNetworkCleartext
     val autoConnect: Boolean get() = settings.autoConnect
     val localEnabled: Boolean get() = settings.localServer.enabled
+    val connectionMode: ConnectionMode get() = settings.connectionMode
+    val isLocalMode: Boolean get() = settings.isLocalMode
 }
 
 class SettingsViewModel(
@@ -65,6 +72,8 @@ class SettingsViewModel(
     private val connectionManager: ServerConnectionManager,
     private val repository: SessionRepository,
     private val localServerManager: LocalServerManager,
+    private val localRuntime: LocalRuntime,
+    private val provisioner: EnvProvisioner,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SettingsUiState())
@@ -95,6 +104,16 @@ class SettingsViewModel(
         }
         viewModelScope.launch {
             localServerManager.state.collect { local -> _state.update { it.copy(localServer = local) } }
+        }
+        viewModelScope.launch {
+            provisioner.state.collect {
+                _state.update {
+                    it.copy(
+                        envInstalled = provisioner.isInstalled(),
+                        envVersion = provisioner.installedVersion(),
+                    )
+                }
+            }
         }
         _state.update {
             it.copy(
@@ -320,14 +339,34 @@ class SettingsViewModel(
     fun startLocalServer() {
         viewModelScope.launch {
             settingsRepository.update { it.copy(localServer = it.localServer.copy(enabled = true)) }
-            localServerManager.start(settingsRepository.current().localServer)
+            localRuntime.start()
         }
     }
 
     fun stopLocalServer() {
         viewModelScope.launch {
             settingsRepository.update { it.copy(localServer = it.localServer.copy(enabled = false)) }
-            localServerManager.stop()
+            localRuntime.stop()
+        }
+    }
+
+    fun setConnectionMode(mode: ConnectionMode) {
+        viewModelScope.launch {
+            settingsRepository.update { it.copy(connectionMode = mode) }
+            if (mode == ConnectionMode.LOCAL) {
+                localRuntime.start()
+                _state.update { it.copy(message = "Local mode: opencode runs on this phone") }
+            } else {
+                localRuntime.stop()
+                connectionManager.connect(force = true)
+                _state.update { it.copy(message = "Remote mode: using the configured server") }
+            }
+        }
+    }
+
+    fun setAutoRestart(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.update { it.copy(localServer = it.localServer.copy(autoRestart = enabled)) }
         }
     }
 
@@ -372,6 +411,8 @@ class SettingsViewModel(
                     connectionManager = container.connectionManager,
                     repository = container.sessionRepository,
                     localServerManager = container.localServerManager,
+                    localRuntime = container.localRuntime,
+                    provisioner = container.provisioner,
                 )
             }
         }

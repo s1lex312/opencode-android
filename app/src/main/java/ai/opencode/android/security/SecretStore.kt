@@ -24,13 +24,20 @@ interface SecretStore {
 
     fun token(): String?
 
+    /** Password generated for the in-app server; independent from the remote server password. */
+    fun localPassword(): String?
+
     fun setPassword(value: String?)
 
     fun setToken(value: String?)
 
+    fun setLocalPassword(value: String?)
+
     fun hasPassword(): Boolean = !password().isNullOrEmpty()
 
     fun hasToken(): Boolean = !token().isNullOrEmpty()
+
+    fun hasLocalPassword(): Boolean = !localPassword().isNullOrEmpty()
 
     fun clear()
 }
@@ -41,6 +48,7 @@ class EncryptedSecretStore(context: Context) : SecretStore {
     private val lock = Any()
     private var memoryPassword: String? = null
     private var memoryToken: String? = null
+    private var memoryLocalPassword: String? = null
     private var prefs: SharedPreferences? = null
 
     override val persistent: Boolean get() = prefs != null
@@ -73,6 +81,21 @@ class EncryptedSecretStore(context: Context) : SecretStore {
         prefs?.getString(KEY_TOKEN, null) ?: memoryToken
     }
 
+    override fun localPassword(): String? = synchronized(lock) {
+        prefs?.getString(KEY_LOCAL_PASSWORD, null) ?: memoryLocalPassword
+    }
+
+    override fun setLocalPassword(value: String?) = synchronized(lock) {
+        val stored = value?.takeIf { it.isNotEmpty() }
+        val editor = prefs?.edit()
+        if (editor != null) {
+            if (stored == null) editor.remove(KEY_LOCAL_PASSWORD) else editor.putString(KEY_LOCAL_PASSWORD, stored)
+            editor.apply()
+        } else {
+            memoryLocalPassword = stored
+        }
+    }
+
     override fun setPassword(value: String?) = synchronized(lock) {
         val stored = value?.takeIf { it.isNotEmpty() }
         val editor = prefs?.edit()
@@ -99,6 +122,7 @@ class EncryptedSecretStore(context: Context) : SecretStore {
         prefs?.edit()?.clear()?.apply()
         memoryPassword = null
         memoryToken = null
+        memoryLocalPassword = null
     }
 
     private companion object {
@@ -106,6 +130,7 @@ class EncryptedSecretStore(context: Context) : SecretStore {
         const val FILE_NAME = "opencode_secrets"
         const val KEY_PASSWORD = "server_password"
         const val KEY_TOKEN = "server_token"
+        const val KEY_LOCAL_PASSWORD = "local_server_password"
     }
 }
 
