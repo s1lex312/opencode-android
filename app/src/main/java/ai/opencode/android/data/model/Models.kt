@@ -105,7 +105,7 @@ data class ModelOption(
 }
 
 enum class ApiFlavor {
-    /** opencode 2.x `HttpApi`: `/api/*` paths, `{data: ...}` envelopes, `data`-carrying events. */
+    /** opencode 2.x `HttpApi`: `/api/...` paths, `{data: ...}` envelopes, `data`-carrying events. */
     V2,
 
     /** opencode 0.x/1.x REST surface: `/session`, `/event`, `{properties: ...}` events. */
