@@ -41,7 +41,7 @@ data class EmbeddedBundleState(
     /** Short label for the Setup screen. */
     val label: String
         get() = when (status) {
-            EmbeddedBundleStatus.EMBEDDED -> "embedded in this APK (offline)"
+            EmbeddedBundleStatus.EMBEDDED -> "embedded in this APK (offline, verified by APK signature)"
             EmbeddedBundleStatus.BROKEN_FULL -> "MISSING — this Full build was packaged without local-env.tar.gz"
             EmbeddedBundleStatus.LITE -> "not embedded — Lite build, download or import required"
         }

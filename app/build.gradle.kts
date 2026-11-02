@@ -18,8 +18,8 @@ android {
         applicationId = "ai.opencode.android"
         minSdk = 26
         targetSdk = 34
-        versionCode = 8
-        versionName = "1.1.5"
+        versionCode = 9
+        versionName = "1.1.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
@@ -270,6 +270,8 @@ tasks.register("prepareFullBundle") {
         }
         val sha = digest.digest().joinToString("") { "%02x".format(it) }
 
+        // No hash in the packaged manifest: aapt2 repackages the asset, so build-time bytes and
+        // APK bytes differ. Embedded bundles are trusted via the APK signature instead.
         fullBundleManifest.writeText(
             """
             {
@@ -277,9 +279,9 @@ tasks.register("prepareFullBundle") {
               "abi": "arm64-v8a",
               "url": "",
               "asset": "local-env.tar.gz",
-              "sha256": "$sha",
+              "sha256": "",
               "sizeBytes": ${fullBundleFile.length()},
-              "notes": "Embedded into the Full APK by ./gradlew :app:prepareFullBundle."
+              "notes": "Embedded into the Full APK by :app:prepareFullBundle; integrity comes from the APK signature."
             }
             """.trimIndent() + "\n",
         )

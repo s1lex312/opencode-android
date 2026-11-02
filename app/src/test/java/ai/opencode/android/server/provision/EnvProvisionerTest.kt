@@ -84,6 +84,45 @@ class EnvProvisionerTest {
     }
 
     @Test
+    fun `a stale hash never blocks an embedded (APK asset) bundle`() = runBlocking {
+        // aapt2 repackages the asset, so the build-time hash cannot match the bytes in the APK.
+        // The APK signature is the trust anchor here, not local-env.json.
+        val root = File(tempDir(), "env")
+        val bytes = bundle()
+        val stale = EnvManifest(
+            version = "1.1.6",
+            asset = "local-env.tar",
+            sha256 = Digests.sha256("some other bytes".toByteArray()),
+            sizeBytes = bytes.size.toLong(),
+        )
+        val provisioner = provisioner(root, BytesSource(bytes), stale)
+
+        val result = provisioner.provision(stale)
+
+        assertTrue(result is ProvisionResult.Ok)
+        assertTrue(provisioner.isInstalled())
+        assertEquals("1.1.6", provisioner.installedVersion())
+    }
+
+    @Test
+    fun `a wrong hash still blocks a user picked file`() = runBlocking {
+        val root = File(tempDir(), "env")
+        val bytes = bundle()
+        val picked = File(root.parentFile, "picked.tar.gz").apply { writeBytes(bytes) }
+        val manifest = EnvManifest(
+            version = "imported",
+            sha256 = Digests.sha256("different".toByteArray()),
+            sizeBytes = bytes.size.toLong(),
+        )
+        val provisioner = provisioner(root, null)
+
+        val result = provisioner.provision(manifest, FileArtifactSource(picked))
+
+        assertTrue(result is ProvisionResult.Err)
+        assertFalse(provisioner.isInstalled())
+    }
+
+    @Test
     fun `refuses downloads without a published hash`() = runBlocking {
         val root = File(tempDir(), "env")
         val bytes = bundle()

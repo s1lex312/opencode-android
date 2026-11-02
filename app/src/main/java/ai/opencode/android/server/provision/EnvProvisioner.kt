@@ -100,6 +100,13 @@ class EnvProvisioner(
                 },
             )
 
+        // Bytes that come straight out of the APK are covered by the APK signature, and aapt2
+        // rewrites the gzip wrapper while packaging (`local-env.tar.gz` becomes `local-env.tar`),
+        // so the SHA-256 computed at build time can never match the packaged bytes. Comparing it
+        // would reject a perfectly good Full build, so the hash check applies to downloads and
+        // user-picked files only.
+        val fromApkAsset = sourceOverride == null && !manifest.isDownload
+
         if (manifest.sizeBytes > 0 && !hasFreeSpace(manifest.sizeBytes * 3)) {
             return@withContext fail("Not enough free space. The environment needs about ${manifest.sizeBytes * 3 / 1_000_000} MB.")
         }
@@ -147,7 +154,13 @@ class EnvProvisioner(
                 message = "Verifying checksum",
             )
             val actualHash = Digests.toHex(digest.digest())
-            if (expectedHash != null && !Digests.matches(expectedHash, actualHash)) {
+            if (fromApkAsset) {
+                // Repackaged by aapt2: keep the digest for diagnostics, never fail on it.
+                _state.value = _state.value.copy(
+                    message = "Embedded bundle from the APK (sha256 ${actualHash.take(12)}…, trusted via APK signature)",
+                )
+            }
+            if (!fromApkAsset && expectedHash != null && !Digests.matches(expectedHash, actualHash)) {
                 archive.delete()
                 return@withContext fail(
                     "Checksum mismatch: expected ${expectedHash.take(12)}…, got ${actualHash.take(12)}…. " +
