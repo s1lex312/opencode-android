@@ -39,6 +39,20 @@ tar -xzf "$BUNDLE" -C "$WORK" proot proot-libs 2>/dev/null || tar -xzf "$BUNDLE"
 PROOT_BIN="$WORK/proot"
 [[ -f "$PROOT_BIN" ]] || { echo "::error title=proot missing::bundle has no proot binary"; exit 1; }
 
+# The Termux proot is dynamically linked against bionic: without its libraries the linker fails
+# with `library "libtalloc.so.2" not found: needed by main executable`.
+if [[ -z "$(ls -A "$WORK/proot-libs" 2>/dev/null)" ]]; then
+  echo "::error title=proot deps missing::the bundle has no proot-libs/*.so, proot could never link"
+  exit 1
+fi
+
+# Rewriting DT_NEEDED/DT_SONAME is mandatory, not best effort: without it the packaged proot
+# still asks the linker for `libtalloc.so.2`, which cannot exist inside jniLibs.
+if ! command -v patchelf >/dev/null 2>&1; then
+  echo "::error title=patchelf missing::install patchelf; the proot runtime cannot be repackaged"
+  exit 1
+fi
+
 LOADER=""
 for candidate in "$WORK"/proot-libs/loader* "$WORK"/loader* "$WORK"/proot-libs/*loader*; do
   if [[ -f "$candidate" ]]; then LOADER="$candidate"; break; fi
@@ -65,6 +79,9 @@ def canonical(name: str) -> str:
     return base if base.startswith("lib") else "lib" + base
 
 patchelf = shutil.which("patchelf")
+if not patchelf:
+    sys.exit("patchelf is required")
+
 def patch(*args: str) -> None:
     subprocess.run([patchelf, *args], check=True, stdout=subprocess.DEVNULL)
 
@@ -88,21 +105,17 @@ for lib in libs:
     used.add(target)
     mapping[lib.name] = target
 
-if not patchelf:
-    print("::warning title=patchelf missing::versioned bionic libraries keep their names")
-
-if patchelf:
-    for lib in libs:
-        if lib.name in mapping:
-            patch("--set-soname", mapping[lib.name], str(lib))
-    for binary in [proot, *[l for l in libs if l.name in mapping]]:
-        for old, new in mapping.items():
-            if old == new:
-                continue
-            try:
-                patch("--replace-needed", old, new, str(binary))
-            except subprocess.CalledProcessError:
-                pass  # the binary simply did not need that library
+for lib in libs:
+    if lib.name in mapping:
+        patch("--set-soname", mapping[lib.name], str(lib))
+for binary in [proot, *[l for l in libs if l.name in mapping]]:
+    for old, new in mapping.items():
+        if old == new:
+            continue
+        try:
+            patch("--replace-needed", old, new, str(binary))
+        except subprocess.CalledProcessError:
+            pass  # the binary simply did not need that library
 
 shutil.copy2(proot, out / "libproot.so")
 os.chmod(out / "libproot.so", 0o755)
@@ -120,6 +133,40 @@ for lib in libs:
     shutil.copy2(lib, out / target)
     os.chmod(out / target, 0o644)
     print(f"{target} <- {lib.name} ({lib.stat().st_size} bytes)")
+
+# ------------------------------------------------ dependency closure
+# Every DT_NEEDED that is not a system library must be shipped next to libproot.so, otherwise the
+# bionic linker fails on the device ("library X not found"). Fail the build here instead.
+SYSTEM_NEEDED = {
+    "libc.so", "libdl.so", "libm.so", "liblog.so", "libz.so", "libandroid.so",
+    "libstdc++.so", "libc++_shared.so", "libpthread.so", "librt.so", "libld-android.so",
+}
+
+def needed(path: pathlib.Path) -> list[str]:
+    out_ = subprocess.run([patchelf, "--print-needed", str(path)], capture_output=True, text=True)
+    return [line.strip() for line in out_.stdout.splitlines() if line.strip()]
+
+shipped = {p.name for p in out.iterdir() if p.is_file()}
+problems: list[str] = []
+# bionic/glibc names differ, so compare stems: `libc.so` matches `libc.so.6`, but `libtalloc.so.2`
+# does not match anything system-side and must therefore be rewritten.
+SYSTEM_STEMS = {name.split(".so")[0] for name in SYSTEM_NEEDED}
+
+for binary in sorted(shipped):
+    deps = needed(out / binary)
+    print(f"NEEDED {binary}: {', '.join(deps) if deps else '(static)'}")
+    for dep in deps:
+        if dep.split(".so")[0] in SYSTEM_STEMS:
+            continue
+        if re.search(r"\.so\.\d", dep):
+            problems.append(f"{binary} still needs the versioned name {dep} (patchelf failed)")
+        elif dep not in shipped:
+            problems.append(f"{binary} needs {dep}, which is not packaged")
+
+if problems:
+    print("::error title=unresolved proot dependencies::" + "; ".join(problems))
+    sys.exit(1)
+print(f"dependency closure ok ({len(shipped)} native files)")
 PY
 
 if command -v file >/dev/null 2>&1; then

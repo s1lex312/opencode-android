@@ -56,13 +56,20 @@ jobs:
             awk -v pkg="$1" 'BEGIN{RS="";FS="\n"} $1=="Package: "pkg {for(i=1;i<=NF;i++) if($i ~ /^Filename: /){sub("^Filename: ","",$i); print $i; exit}}' Packages | head -n1
           }
           mkdir -p debs termux
-          for pkg in proot libtalloc libandroid-support; do
+          # proot plus every library it links against. Packages that Termux does not publish are
+          # skipped (they are optional), but `proot` itself is mandatory.
+          for pkg in proot libtalloc libandroid-support libandroid-shmem libiconv libunistring libc++ ; do
             f="$(pick "$pkg")"
-            [ -n "$f" ] || { echo "::error title=termux package missing::no Filename for $pkg"; exit 1; }
+            if [ -z "$f" ]; then
+              echo "::notice title=termux package skipped::no Filename for $pkg"
+              continue
+            fi
             curl -fsSL "$BASE/$f" -o "debs/$pkg.deb"
             mkdir -p "termux/$pkg"
             ( cd "termux/$pkg" && ar x "../../debs/$pkg.deb" && tar xf data.tar.* )
           done
+          [ -n "$(find termux -type f -path '*bin/proot' | head -n1)" ] \
+            || { echo "::error title=termux package missing::proot was not downloaded"; exit 1; }
           PROOT_BIN="$(find termux -type f -path '*bin/proot' | head -n1)"
           file "$PROOT_BIN"
           file "$PROOT_BIN" | grep -qi 'aarch64' || { echo "::error title=wrong ABI::packaged proot is not arm64"; exit 1; }
@@ -73,6 +80,9 @@ jobs:
           # proot execs its loader, so it has to be executable too: ship it with the libs and let
           # extract-proot-jnilibs.sh put it next to libproot.so as libproot_loader.so.
           find termux -type f \( -name 'loader*' -o -path '*libexec/proot/*' \) -exec cp -a {} proot-libs/ \;
+          # A dynamically linked proot without its libraries cannot link on the device.
+          [ -n "$(ls -A proot-libs 2>/dev/null)" ] \
+            || { echo "::error title=no proot libs::the termux packages produced no usr/lib/*.so*"; exit 1; }
           ls -la proot-libs
 
       - name: Build bundle

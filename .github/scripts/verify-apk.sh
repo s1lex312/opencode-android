@@ -89,5 +89,44 @@ if [[ "$APK" == *full* ]]; then
     exit 1
   fi
   echo "proot runtime: lib/arm64-v8a/libproot.so"
+
+  # Every non-system library the packaged proot links against must ship in the APK. This is what
+  # broke 1.1.10: proot executed but the linker could not find libtalloc.so.2 on the device.
+  NEEDED_TMP="$(mktemp -d)"
+  unzip -p "$APK" lib/arm64-v8a/libproot.so > "$NEEDED_TMP/proot.so" 2>/dev/null || true
+  if command -v readelf >/dev/null 2>&1 && [ -s "$NEEDED_TMP/proot.so" ]; then
+    NEEDED="$(readelf -d "$NEEDED_TMP/proot.so" 2>/dev/null \
+      | awk '/NEEDED/ {gsub(/[\[\]]/, "", $NF); print $NF}' | sort -u)"
+    echo "proot NEEDED: $(printf '%s' "$NEEDED" | tr '\n' ' ')"
+    MISSING=""
+    UNPATCHED=""
+    for needed in $NEEDED; do
+      stem="${needed%%.so*}"
+      case "$stem" in
+        libc|libdl|libm|liblog|libz|libandroid|libstdc++|libc++_shared|libld-android|libpthread|librt) continue ;;
+      esac
+      case "$needed" in
+        *.so.[0-9]*)
+          # bionic resolves exact SONAMEs only: a versioned dependency cannot live in jniLibs.
+          UNPATCHED="$UNPATCHED $needed"
+          continue
+          ;;
+      esac
+      printf '%s\n' "$ENTRIES" | grep -Fxq "lib/arm64-v8a/$needed" || MISSING="$MISSING $needed"
+    done
+    if [ -n "$UNPATCHED" ]; then
+      echo "::error title=unpatched proot::libproot.so still asks for versioned names:$UNPATCHED (patchelf must rewrite DT_NEEDED)"
+      exit 1
+    fi
+    if [ -n "$MISSING" ]; then
+      printf 'lib entries: %s\n' "$(printf '%s\n' "$ENTRIES" | grep '^lib/' | tr '\n' ' ')"
+      echo "::error title=proot dependency missing::$APK does not ship:$MISSING"
+      exit 1
+    fi
+    echo "proot dependencies: all present"
+  else
+    echo "::warning title=no readelf::cannot verify proot dependencies of $APK"
+  fi
+  rm -rf "$NEEDED_TMP"
   echo "full: bundle present ($BUNDLE_BYTES bytes), variant ok"
 fi
