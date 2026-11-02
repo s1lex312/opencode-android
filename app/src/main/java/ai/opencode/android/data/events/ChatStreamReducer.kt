@@ -133,7 +133,10 @@ object ChatStreamReducer {
         val merged: MessagePart = when {
             existing is MessagePart.Text && incoming is MessagePart.Text -> {
                 val text = when {
-                    incoming.text.startsWith(existing.text) -> incoming.text
+                    // Server snapshot already contains the new chunk (cumulative parts).
+                    incoming.text.length > existing.text.length && incoming.text.startsWith(existing.text) ->
+                        incoming.text
+                    // Snapshot lags behind: append the explicit delta exactly once.
                     !delta.isNullOrEmpty() -> existing.text + delta
                     incoming.text.isEmpty() -> existing.text
                     else -> incoming.text

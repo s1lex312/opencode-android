@@ -56,17 +56,32 @@ jobs:
         run: |
           node -e '
             const fs = require("fs");
-            const files = ["unit-tests.log", "assemble-debug.log"].filter((f) => fs.existsSync(f));
+            const path = require("path");
             let out = "";
-            for (const f of files) {
+            const dir = "app/build/test-results/testDebugUnitTest";
+            if (fs.existsSync(dir)) {
+              for (const f of fs.readdirSync(dir).filter((x) => x.endsWith(".xml"))) {
+                const xml = fs.readFileSync(path.join(dir, f), "utf8");
+                const re = /<testcase[^>]*name="([^"]*)"[^>]*classname="([^"]*)"([\s\S]*?)<\/testcase>/g;
+                let m;
+                while ((m = re.exec(xml)) !== null) {
+                  const body = m[3];
+                  const fm = /<failure[^>]*message="([^"]*)"/.exec(body) ||
+                             /<failure[^>]*>([\s\S]*?)<\/failure>/.exec(body);
+                  if (fm) out += "FAILED " + m[2] + "." + m[1] + " :: " + String(fm[1]).slice(0, 800) + "\n";
+                }
+              }
+            }
+            for (const f of ["unit-tests.log", "assemble-debug.log"]) {
+              if (!fs.existsSync(f)) continue;
               const lines = fs.readFileSync(f, "utf8").split("\n");
               const errs = lines.filter((l) =>
-                /^e: |^e: file|error:|FAILURE: Build|Caused by:|What went wrong|Execution failed/.test(l));
-              out += "--- " + f + " ---\n" + errs.slice(0, 80).join("\n") + "\n";
+                /^e: |error:|FAILURE: Build|Caused by:|What went wrong|Execution failed/.test(l));
+              if (errs.length) out += "--- " + f + " ---\n" + errs.slice(0, 60).join("\n") + "\n";
             }
-            if (!out.trim()) out = "no matching error lines; inspect the uploaded build-logs artifact";
+            if (!out.trim()) out = "no matching failures";
             const escaped = out.replace(/%/g, "%25").replace(/\r/g, "").replace(/\n/g, "%0A");
-            console.log("::error title=Gradle failure::" + escaped.slice(0, 40000));
+            console.log("::error title=Build/test failure::" + escaped.slice(0, 50000));
           '
 
       - name: Upload build logs
