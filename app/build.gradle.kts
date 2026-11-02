@@ -1,5 +1,7 @@
 import java.security.MessageDigest
+import java.util.Collections
 import java.util.Properties
+import java.util.zip.ZipFile
 
 plugins {
     id("com.android.application")
@@ -176,8 +178,8 @@ tasks.matching { it.name.matches(Regex("assembleFull(Debug|Release)")) }.configu
         val apk = apkDir.listFiles().orEmpty().firstOrNull { it.extension == "apk" }
             ?: throw GradleException("Full build produced no APK in ${apkDir.path}")
 
-        java.util.zip.ZipFile(apk).use { zip ->
-            val assets = java.util.Collections.list(zip.entries())
+        ZipFile(apk).use { zip ->
+            val assets = Collections.list(zip.entries())
                 .map { it.name }
                 .filter { it.startsWith("assets/") }
             val bundle = zip.getEntry("assets/local-env.tar.gz")
