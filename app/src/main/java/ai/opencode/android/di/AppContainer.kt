@@ -62,12 +62,16 @@ class AppContainer(context: Context) {
      * of silently pretending to be a Lite build.
      */
     val embeddedBundleState: EmbeddedBundleState by lazy {
-        val probe = EnvConfig.probeEmbeddedBundle(appContext)
+        val assetName = EnvConfig.findBundleAsset(appContext)
+        val probe = EnvConfig.probeEmbeddedBundle(
+            appContext,
+            assetName ?: EnvManifest.DEFAULT_ASSET,
+        )
         val state = EmbeddedBundle.evaluate(
             EmbeddedBundleInputs(
                 flavor = BuildConfig.FLAVOR,
                 declaredEmbedded = BuildConfig.EMBEDDED_BUNDLE,
-                assetPresent = probe.present,
+                assetPresent = assetName != null,
                 assetSizeBytes = probe.sizeBytes,
             ),
         )

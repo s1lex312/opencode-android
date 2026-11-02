@@ -127,6 +127,23 @@ object EnvConfig {
         }
     }
 
+    /**
+     * Asset name that actually carries the bundle.
+     *
+     * Normally `local-env.tar.gz`, but packaging tools are allowed to rename entries; searching by
+     * suffix means a Full APK keeps working instead of silently degrading to the Lite experience.
+     */
+    fun findBundleAsset(
+        context: Context,
+        preferred: String = EnvManifest.DEFAULT_ASSET,
+    ): String? {
+        if (probeEmbeddedBundle(context, preferred).present) return preferred
+        val names = assetNames(context)
+        return names.firstOrNull { it == preferred }
+            ?: names.firstOrNull { it.endsWith(EnvManifest.DEFAULT_ASSET) }
+            ?: names.firstOrNull { it.endsWith(".tar.gz") }
+    }
+
     /** Top level asset names, used only for diagnostics when a Full build looks broken. */
     fun assetNames(context: Context): List<String> =
         runCatching { context.assets.list("")?.toList().orEmpty() }.getOrDefault(emptyList())
@@ -140,7 +157,8 @@ object EnvConfig {
             }
             return HttpArtifactSource(manifest.url, client, manifest.sizeBytes)
         }
-        return AssetArtifactSource(context, manifest.asset.ifBlank { EnvManifest.DEFAULT_ASSET })
+        val requested = manifest.asset.ifBlank { EnvManifest.DEFAULT_ASSET }
+        return AssetArtifactSource(context, findBundleAsset(context, requested) ?: requested)
     }
 
     /** Dedicated client: long downloads, no global timeouts, redirects allowed. */

@@ -18,8 +18,8 @@ android {
         applicationId = "ai.opencode.android"
         minSdk = 26
         targetSdk = 34
-        versionCode = 6
-        versionName = "1.1.3"
+        versionCode = 7
+        versionName = "1.1.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
@@ -97,6 +97,12 @@ android {
         buildConfig = true
     }
 
+    sourceSets {
+        // Be explicit: the Full flavour packages the environment from this directory. Implicit
+        // flavour source sets are easy to break with a rename, and a silent miss costs a release.
+        getByName("full").assets.srcDir("src/full/assets")
+    }
+
     androidResources {
         // The environment bundle is already gzip-compressed; storing it as-is keeps the Full APK
         // smaller (and aapt2 otherwise tries to deflate it again, costing minutes per build).
@@ -163,7 +169,14 @@ fun requireFullBundle(taskName: String) {
 
 /** Guards every task that packages Full assets (mergeFull*Assets → APK/resource processing). */
 tasks.matching { it.name.matches(Regex("mergeFull(Debug|Release)Assets")) }.configureEach {
-    doFirst { requireFullBundle(name) }
+    doFirst {
+        val dir = file("src/full/assets")
+        logger.lifecycle(
+            "full assets in ${dir.path}: " +
+                (dir.listFiles()?.joinToString { "${it.name}=${it.length()}B" } ?: "directory missing"),
+        )
+        requireFullBundle(name)
+    }
 }
 
 /**
