@@ -116,16 +116,7 @@ jobs:
       - name: Grant execute permission to Gradle wrapper
         run: chmod +x gradlew
 
-      - name: Package the proot runtime as native libraries
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y patchelf file
-          bash .github/scripts/extract-proot-jnilibs.sh \
-            app/src/full/assets/local-env.tar.gz \
-            app/src/full/jniLibs/arm64-v8a
-          ls -la app/src/full/jniLibs/arm64-v8a
-
+      # No proot step here: the Lite flavour ships no bundle and no jniLibs.
       - name: Unit tests
         run: ./gradlew --no-daemon --console=plain testLiteDebugUnitTest
 

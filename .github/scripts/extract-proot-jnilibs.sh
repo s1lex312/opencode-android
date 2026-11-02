@@ -11,13 +11,24 @@
 # names (`libtalloc.so.2`) cannot live in jniLibs, so their DT_SONAME/DT_NEEDED entries are
 # rewritten with `patchelf`; without patchelf the libraries are still copied (best effort).
 #
-# Usage: extract-proot-jnilibs.sh <bundle.tar.gz> <out jniLibs dir>
+# Usage: extract-proot-jnilibs.sh <bundle.tar.gz> <out jniLibs dir> [--allow-missing]
+#
+# Only the Full flavour ships a bundle. `--allow-missing` turns a missing bundle into a notice
+# instead of an error, so the script can be wired into a Lite-only build without breaking it.
 set -euo pipefail
 
-BUNDLE="${1:?usage: extract-proot-jnilibs.sh <bundle.tar.gz> <out-dir>}"
-OUT="${2:?usage: extract-proot-jnilibs.sh <bundle.tar.gz> <out-dir>}"
+BUNDLE="${1:?usage: extract-proot-jnilibs.sh <bundle.tar.gz> <out-dir> [--allow-missing]}"
+OUT="${2:?usage: extract-proot-jnilibs.sh <bundle.tar.gz> <out-dir> [--allow-missing]}"
+ALLOW_MISSING="${3:-}"
 
-[[ -f "$BUNDLE" ]] || { echo "::error title=proot missing::no bundle at $BUNDLE"; exit 1; }
+if [[ ! -f "$BUNDLE" ]]; then
+  if [[ "$ALLOW_MISSING" == "--allow-missing" ]]; then
+    echo "::notice title=no bundle::$(basename "$BUNDLE") is absent (Lite flavour), skipping the proot runtime"
+    exit 0
+  fi
+  echo "::error title=proot missing::no bundle at $BUNDLE"
+  exit 1
+fi
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
