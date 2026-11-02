@@ -175,7 +175,13 @@ jobs:
             echo "::error title=talloc build failed::$(tail -c 3000 /tmp/talloc.log | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
             exit 1
           fi
-          ls "$GITHUB_WORKSPACE/talloc-arm64/lib" | head
+          # proot is linked with -static, so a static libtalloc is required. waf may leave it
+          # in its build tree instead of installing it - copy it over if that is the case.
+          STATIC_LIB="$(find . "$GITHUB_WORKSPACE/talloc-arm64" -name 'libtalloc.a' 2>/dev/null | head -n 1 || true)"
+          if [ -n "$STATIC_LIB" ]; then
+            cp "$STATIC_LIB" "$GITHUB_WORKSPACE/talloc-arm64/lib/" || true
+          fi
+          ls -la "$GITHUB_WORKSPACE/talloc-arm64/lib"
 
       - name: Build static arm64 proot
         run: |
@@ -188,7 +194,11 @@ jobs:
           # WITHOUT_PYTHON drops the swig extension (it links the host libpython and
           # breaks cross/static builds); CROSS_COMPILE picks the aarch64 toolchain.
           export CFLAGS="-O2"
-          export LDFLAGS="-static"
+          export LDFLAGS="-static -L$GITHUB_WORKSPACE/talloc-arm64/lib"
+          if [ ! -f "$GITHUB_WORKSPACE/talloc-arm64/lib/libtalloc.a" ]; then
+            echo "::error title=no static talloc::libtalloc.a was not produced by the talloc build"
+            exit 1
+          fi
           if ! PKG_CONFIG_PATH="$GITHUB_WORKSPACE/talloc-arm64/lib/pkgconfig" \
                  make -j"$(nproc)" CROSS_COMPILE=aarch64-linux-gnu- WITHOUT_PYTHON=1 \
                  PKG_CONFIG=pkg-config \
