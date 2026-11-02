@@ -220,7 +220,8 @@ class V2Api(override val http: ServerHttp) : OpencodeApi {
                                 else -> ToolStatus.ERROR
                             },
                             input = obj.str("command"),
-                            output = obj.str("output"),
+                            // `output` is an object: {output: string, cursor, size}.
+                            output = obj.str("output", "output") ?: obj.str("output"),
                         ),
                     ),
                 ),
