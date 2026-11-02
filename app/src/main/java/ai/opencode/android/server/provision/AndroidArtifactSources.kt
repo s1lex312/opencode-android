@@ -98,20 +98,38 @@ object EnvConfig {
         return manifest
     }
 
+    /** Result of probing the APK for the bundled environment. */
+    data class EmbeddedProbe(val present: Boolean, val sizeBytes: Long)
+
     /**
-     * True when this APK really ships the bundle (the `full` flavor does, `lite` does not), so the
-     * UI can tell the user whether Local mode installs offline or needs a download/import.
+     * Looks for [assetName] inside this APK.
+     *
+     * Uncompressed assets (`noCompress`) can be opened by descriptor and report their real size;
+     * compressed ones only provide a stream, so the size falls back to `available()` (or 0).
      */
-    fun hasEmbeddedBundle(
+    fun probeEmbeddedBundle(
         context: Context,
         assetName: String = EnvManifest.DEFAULT_ASSET,
-    ): Boolean {
-        // Uncompressed assets can be opened by descriptor; compressed ones only as a stream.
-        val byDescriptor = runCatching { context.assets.openFd(assetName).use { it.length > 0 } }
-            .getOrDefault(false)
-        if (byDescriptor) return true
-        return runCatching { context.assets.open(assetName).use { true } }.getOrDefault(false)
+    ): EmbeddedProbe {
+        val byDescriptor = runCatching {
+            context.assets.openFd(assetName).use { it.declaredLength }
+        }.getOrNull()
+        if (byDescriptor != null) return EmbeddedProbe(present = true, sizeBytes = byDescriptor.coerceAtLeast(0L))
+
+        val stream = runCatching {
+            context.assets.open(assetName, android.content.res.AssetManager.ACCESS_STREAMING)
+        }.getOrNull() ?: return EmbeddedProbe(present = false, sizeBytes = 0L)
+        stream.use { opened ->
+            return EmbeddedProbe(
+                present = true,
+                sizeBytes = runCatching { opened.available().toLong() }.getOrDefault(0L),
+            )
+        }
     }
+
+    /** Top level asset names, used only for diagnostics when a Full build looks broken. */
+    fun assetNames(context: Context): List<String> =
+        runCatching { context.assets.list("")?.toList().orEmpty() }.getOrDefault(emptyList())
 
     fun source(context: Context, manifest: EnvManifest, client: OkHttpClient): ArtifactSource? {
         if (manifest.isDownload) {

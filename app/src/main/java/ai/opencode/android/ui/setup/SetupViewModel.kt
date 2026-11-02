@@ -42,8 +42,14 @@ data class SetupUiState(
     val loading: Boolean = true,
     /** `full` or `lite` (Gradle product flavor). */
     val flavor: String = "",
+    /** Build stamp shown in Setup, e.g. `full-debug 1.1.3-full-debug`. */
+    val buildLabel: String = "",
     /** True when the APK ships the bundle and Local mode can be installed without network. */
     val embeddedBundle: Boolean = false,
+    /** Human readable bundle source label ("embedded in this APK (offline)" / Lite hint). */
+    val embeddedBundleLabel: String = "",
+    /** Full build whose asset is missing or unreadable: a broken artifact, not a Lite build. */
+    val brokenFullBuild: Boolean = false,
     val mode: ConnectionMode = ConnectionMode.LOCAL,
     val provision: ProvisionState = ProvisionState(),
     val installedVersion: String? = null,
@@ -83,10 +89,16 @@ data class SetupUiState(
 class SetupViewModel(private val container: AppContainer) : ViewModel() {
 
     private val _state = MutableStateFlow(
-        SetupUiState(
-            flavor = container.flavor,
-            embeddedBundle = container.hasEmbeddedBundle,
-        ),
+        run {
+            val embedded = container.embeddedBundleState
+            SetupUiState(
+                flavor = container.flavor,
+                buildLabel = container.buildLabel,
+                embeddedBundle = embedded.isEmbedded,
+                embeddedBundleLabel = embedded.label,
+                brokenFullBuild = embedded.isBrokenFull,
+            )
+        },
     )
     val state: StateFlow<SetupUiState> = _state.asStateFlow()
 

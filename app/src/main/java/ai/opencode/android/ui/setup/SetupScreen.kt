@@ -182,16 +182,27 @@ private fun EnvironmentSection(state: SetupUiState, viewModel: SetupViewModel) {
         description = "proot + minimal root filesystem + the opencode server binary, installed into " +
             "the app's private storage. No root, no Termux, nothing outside the sandbox.",
     ) {
+        InfoRow("Build", state.buildLabel.ifBlank { state.flavor })
         InfoRow("Installed", state.installedVersion ?: "not installed")
         InfoRow("Bundle", "${state.effectiveManifest.version} · ${state.bundleSizeLabel}")
         InfoRow(
             "Bundle source",
             when {
-                state.embeddedBundle -> "${state.flavor.ifBlank { "full" }} build · embedded in this APK (offline)"
+                state.embeddedBundle -> state.embeddedBundleLabel
                 state.effectiveManifest.isDownload -> "downloaded from ${state.effectiveManifest.url}"
-                else -> "not embedded — Lite build, download or import required"
+                else -> state.embeddedBundleLabel.ifBlank { "not embedded" }
             },
         )
+
+        if (state.brokenFullBuild) {
+            Text(
+                text = "This is a Full build, but its environment bundle is missing from the APK. " +
+                    "The artifact is broken — please install the Full APK from the latest release " +
+                    "again, or use a bundle URL / imported file below.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
         InfoRow("On disk", state.sizeLabel)
         InfoRow("Free space", state.freeSpaceLabel)
         Text(
@@ -224,7 +235,7 @@ private fun EnvironmentSection(state: SetupUiState, viewModel: SetupViewModel) {
             )
         }
 
-        if (!state.embeddedBundle && !state.effectiveManifest.isDownload) {
+        if (!state.embeddedBundle && !state.brokenFullBuild && !state.effectiveManifest.isDownload) {
             Text(
                 text = "Environment not found in this APK. Enter a bundle URL below or import a .tar.gz " +
                     "file — or switch to Remote mode and connect to your own server.",
@@ -271,6 +282,9 @@ private fun SourceSection(state: SetupUiState, viewModel: SetupViewModel) {
         description = if (state.embeddedBundle) {
             "This build already contains the environment — nothing to download. You can still point " +
                 "it at a newer bundle published as https:// URL + SHA-256."
+        } else if (state.brokenFullBuild) {
+            "This Full build lost its bundle. Install a bundle file or paste an https:// URL + SHA-256 " +
+                "to recover without reinstalling."
         } else {
             "No environment in this APK (Lite build). Paste the https:// URL and the SHA-256 printed " +
                 "by build-rootfs.sh, or import a bundle file."

@@ -8,11 +8,16 @@ import ai.opencode.android.security.EncryptedSecretStore
 import ai.opencode.android.security.SecretStore
 import ai.opencode.android.server.LocalRuntime
 import ai.opencode.android.server.LocalServerManager
+import ai.opencode.android.server.provision.EmbeddedBundle
+import ai.opencode.android.server.provision.EmbeddedBundleInputs
+import ai.opencode.android.server.provision.EmbeddedBundleState
 import ai.opencode.android.server.provision.EnvConfig
+import ai.opencode.android.server.provision.EnvManifest
 import ai.opencode.android.server.provision.EnvPaths
 import ai.opencode.android.server.provision.EnvProvisioner
 import ai.opencode.android.settings.SettingsRepository
 import android.content.Context
+import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -46,8 +51,38 @@ class AppContainer(context: Context) {
     /** Gradle product flavor: `full` embeds the bundle, `lite` downloads/imports it. */
     val flavor: String get() = BuildConfig.FLAVOR
 
-    /** True when this APK ships `assets/local-env.tar.gz` (Full build). */
-    val hasEmbeddedBundle: Boolean get() = EnvConfig.hasEmbeddedBundle(appContext)
+    /** Human readable build stamp, e.g. `full-debug 1.1.3-full-debug`. */
+    val buildLabel: String get() = "${BuildConfig.FLAVOR}-${BuildConfig.BUILD_TYPE} ${BuildConfig.VERSION_NAME}"
+
+    /**
+     * Whether this APK carries the environment.
+     *
+     * The flavour is a **build-time** fact (`BuildConfig.EMBEDDED_BUNDLE`), while the asset probe is
+     * a runtime fact. A Full build whose asset cannot be read is reported as [BROKEN_FULL] instead
+     * of silently pretending to be a Lite build.
+     */
+    val embeddedBundleState: EmbeddedBundleState by lazy {
+        val probe = EnvConfig.probeEmbeddedBundle(appContext)
+        val state = EmbeddedBundle.evaluate(
+            EmbeddedBundleInputs(
+                flavor = BuildConfig.FLAVOR,
+                declaredEmbedded = BuildConfig.EMBEDDED_BUNDLE,
+                assetPresent = probe.present,
+                assetSizeBytes = probe.sizeBytes,
+            ),
+        )
+        if (state.isBrokenFull) {
+            Log.e(
+                "OpencodeEnv",
+                "Full build without a readable ${EnvManifest.DEFAULT_ASSET}; " +
+                    "assets present: ${EnvConfig.assetNames(appContext)}",
+            )
+        }
+        state
+    }
+
+    /** True when this APK ships and can read `assets/local-env.tar.gz`. */
+    val hasEmbeddedBundle: Boolean get() = embeddedBundleState.isEmbedded
 
     private val downloadClient by lazy { EnvConfig.downloadClient() }
 

@@ -30,22 +30,54 @@ if BT="$(ls -d "$SDK"/build-tools/* 2>/dev/null | sort -V | tail -n 1)" && [ -x 
   "$BT/aapt" dump badging "$APK" | head -n 6
 fi
 
-# The bundle must be stored, not recompressed, and must be inside the Full APK.
+# ---- Variant specific checks ------------------------------------------------------------------
+VERSION_LINE=""
+if BT="$(ls -d "$SDK"/build-tools/* 2>/dev/null | sort -V | tail -n 1)" && [ -x "$BT/aapt" ]; then
+  VERSION_LINE="$("$BT/aapt" dump badging "$APK" | head -n 1)"
+fi
+
+has_entry() {
+  printf '%s\n' "$ENTRIES" | grep -Fxq "$1"
+}
+
+entry_size() {
+  unzip -l "$APK" "$1" | awk 'NR==4 {print $1}'
+}
+
+echo "::notice title=APK contents::$APK ($SIZE bytes) entries=$(printf '%s\n' "$ENTRIES" | wc -l) bundle=$(entry_size assets/local-env.tar.gz | tr -d ' ') ${VERSION_LINE}"
+
 if [[ "$APK" == *lite* ]]; then
-  case "$ENTRIES" in
-    *assets/local-env.tar.gz*) echo "::error title=Lite APK contains a bundle::$APK must stay small"; exit 1 ;;
+  if has_entry 'assets/local-env.tar.gz'; then
+    echo "::error title=Lite APK contains a bundle::$APK must stay small"
+    exit 1
+  fi
+  case "$VERSION_LINE" in
+    *-lite-debug*|*-lite*) ;;
+    "") echo "::warning title=no aapt::cannot verify the variant of $APK" ;;
+    *) echo "::error title=wrong variant::$APK does not report a -lite version"; exit 1 ;;
   esac
+  echo "lite: no embedded bundle, variant ok"
 fi
 
 if [[ "$APK" == *full* ]]; then
-  BUNDLE_ENTRY="$(printf '%s\n' "$ENTRIES" | grep -i 'local-env' | head -n 1 || true)"
-  if [ -z "$BUNDLE_ENTRY" ]; then
-    echo "entries: $(printf '%s\n' "$ENTRIES" | wc -l)"
-    echo "sample: $(printf '%s\n' "$ENTRIES" | head -n 10 | tr '\n' ' ')"
+  # Exact entry name: `grep local-env` would also match the 294 byte local-env.json manifest and
+  # silently pass a Full APK that lost its 105 MB archive (that is exactly what happened in 1.1.2).
+  if ! has_entry 'assets/local-env.tar.gz'; then
     echo "assets: $(printf '%s\n' "$ENTRIES" | grep -c '^assets/' || true) entries"
-    echo "::error title=Full APK without bundle::$APK does not contain a local-env entry"
+    printf 'asset entries: %s\n' "$(printf '%s\n' "$ENTRIES" | grep '^assets/' | tr '\n' ' ')"
+    echo "::error title=Full APK without bundle::$APK has no assets/local-env.tar.gz entry"
     exit 1
   fi
-  echo "bundle entry: $BUNDLE_ENTRY"
-  echo "bundle entry size: $(unzip -l "$APK" "$BUNDLE_ENTRY" | awk 'NR==4 {print $1}')"
+  BUNDLE_BYTES="$(entry_size 'assets/local-env.tar.gz')"
+  echo "bundle entry: assets/local-env.tar.gz ($BUNDLE_BYTES bytes)"
+  if [ "${BUNDLE_BYTES:-0}" -lt 100000000 ]; then
+    echo "::error title=Full APK bundle too small::assets/local-env.tar.gz is only ${BUNDLE_BYTES:-0} bytes, expected ~105 MB"
+    exit 1
+  fi
+  case "$VERSION_LINE" in
+    *-full-debug*|*-full*) ;;
+    "") echo "::warning title=no aapt::cannot verify the variant of $APK" ;;
+    *) echo "::error title=wrong variant::$APK does not report a -full version"; exit 1 ;;
+  esac
+  echo "full: bundle present ($BUNDLE_BYTES bytes), variant ok"
 fi

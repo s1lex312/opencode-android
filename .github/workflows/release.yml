@@ -200,7 +200,16 @@ jobs:
         run: ./gradlew --no-daemon --console=plain testLiteDebugUnitTest
 
       - name: Assemble Full APK
-        run: ./gradlew --no-daemon --console=plain assembleFullDebug
+        run: |
+          set -o pipefail
+          if ! ./gradlew --no-daemon --console=plain assembleFullDebug 2>&1 | tee full-build.log; then
+            MSG="$(grep -E 'Full APK |does not contain|only [0-9]+ bytes|What went wrong|FAILURE: Build|> Task .*FAILED' full-build.log \
+              | tail -n 12 | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+            echo "::error title=Full APK build failed::${MSG}"
+            exit 1
+          fi
+          grep -E 'Full APK verified' full-build.log || true
+          echo "::notice title=Full APK bundled::$(grep -E 'Full APK verified' full-build.log | tail -n 1)"
 
       - name: Rename and checksum
         run: |
@@ -230,7 +239,8 @@ jobs:
   release:
     name: Publish release
     needs: [lite, full]
-    if: always() && needs.lite.result == 'success'
+    # Never publish a release whose Full APK is missing or broken: both variants must pass.
+    if: needs.lite.result == 'success' && needs.full.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -242,9 +252,7 @@ jobs:
           name: release-apk-lite
           path: release
 
-      - name: Download Full APK (optional)
-        id: full
-        continue-on-error: true
+      - name: Download Full APK
         uses: actions/download-artifact@v4
         with:
           name: release-apk-full
@@ -268,6 +276,10 @@ jobs:
           ( cd release && sha256sum opencode-android-*.apk opencode-env-*.tar.gz 2>/dev/null > SHA256SUMS.txt || true )
           ls -la release
           cat release/SHA256SUMS.txt
+          # Surface the exact sizes in the run summary: a "Full" APK below ~120 MB is a red flag.
+          FULL="$(stat -c%s release/opencode-android-full-*.apk)"
+          LITE="$(stat -c%s release/opencode-android-lite-*.apk)"
+          echo "::notice title=Release APKs::full=$FULL bytes, lite=$LITE bytes, tag=${VERSION}"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -300,6 +312,10 @@ jobs:
                импортируйте файл, либо переключитесь в Remote mode.
 
             Требования: Android 8.0+; для Local mode — arm64-устройство.
+
+            **Проверка варианта:** в приложении Setup → «Build» показывает, например,
+            `full-debug ${{ env.VERSION }}-full-debug`. Если там `lite`, установился не тот файл
+            (или установщик отклонил обновление — удалите старое приложение и поставьте Full заново).
 
             ### Дополнительно
             - `SHA256SUMS.txt` — контрольные суммы APK и bundle.
