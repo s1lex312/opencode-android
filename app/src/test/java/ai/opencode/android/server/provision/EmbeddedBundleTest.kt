@@ -2,6 +2,7 @@ package ai.opencode.android.server.provision
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -78,8 +79,8 @@ class EmbeddedBundleTest {
 
     @Test
     fun `the json manifest is never mistaken for the bundle`() {
-        assertEquals(null, EmbeddedBundle.findBundle(listOf("local-env.json")))
-        assertEquals(null, EmbeddedBundle.findBundle(emptyList()))
+        assertNull(EmbeddedBundle.findBundle(listOf("local-env.json")))
+        assertNull(EmbeddedBundle.findBundle(emptyList()))
     }
 
     @Test

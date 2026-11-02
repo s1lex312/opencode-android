@@ -8,6 +8,8 @@ import java.util.zip.GZIPOutputStream
 /** Builds small `.tar.gz` archives for tests (ustar headers, regular files, dirs, symlinks). */
 object TestTar {
 
+    private const val BLOCK = 512
+
     data class Entry(
         val name: String,
         val type: Char = '0',
@@ -36,6 +38,21 @@ object TestTar {
         val file = File(directory, name)
         file.writeBytes(build(*entries))
         return file
+    }
+
+    /** Plain (uncompressed) tar: ustar headers, file payloads, two zero blocks at the end. */
+    fun tar(entries: List<Entry>): ByteArray {
+        val out = ByteArrayOutputStream()
+        for (entry in entries) {
+            out.write(header(entry))
+            if (entry.data.isNotEmpty()) {
+                out.write(entry.data)
+                val padding = (BLOCK - (entry.data.size % BLOCK)) % BLOCK
+                if (padding > 0) out.write(ByteArray(padding))
+            }
+        }
+        out.write(ByteArray(BLOCK * 2))
+        return out.toByteArray()
     }
 
     private fun header(entry: Entry): ByteArray {
