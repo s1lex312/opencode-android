@@ -187,7 +187,7 @@ tasks.register("prepareFullBundle") {
             .firstOrNull { it.isFile }
             ?.readText()
             .orEmpty()
-        val version = Regex("\"version\"\s*:\s*\"([^\"]+)\"").find(manifestText)?.groupValues?.get(1)
+        val version = Regex("\"version\"\\s*:\\s*\"([^\"]+)\"").find(manifestText)?.groupValues?.get(1)
             ?: Regex("opencode-env-(.+)-arm64\\.tar\\.gz").find(bundle.name)?.groupValues?.get(1)
             ?: "unset"
         val digest = java.security.MessageDigest.getInstance("SHA-256")
