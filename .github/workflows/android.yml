@@ -187,6 +187,14 @@ jobs:
           if [ -n "$STATIC_LIB" ]; then
             cp "$STATIC_LIB" "$PREFIX/lib/" || true
           fi
+          # Standalone talloc builds only a shared object, so archive its own object files
+          # (talloc + the bundled replace/ util helpers) into a static library by hand.
+          if [ ! -f "$PREFIX/lib/libtalloc.a" ]; then
+            OBJS="$(find bin/default/lib/talloc bin/default/lib/replace -name '*.o' 2>/dev/null | tr '\n' ' ')"
+            echo "archiving talloc objects: $OBJS"
+            # shellcheck disable=SC2086
+            aarch64-linux-gnu-ar rcs "$PREFIX/lib/libtalloc.a" $OBJS
+          fi
           ls -la "$PREFIX/lib"
           if [ ! -f "$PREFIX/lib/libtalloc.a" ]; then
             echo "::error title=no static talloc::$(find . "$PREFIX" \( -name '*.a' -o -name 'libtalloc*' \) 2>/dev/null | head -n 30 | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
