@@ -19,7 +19,7 @@ jobs:
   build:
     name: Build debug APK
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -32,20 +32,34 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Accept Android SDK licenses
-        run: yes | sdkmanager --licenses > /dev/null || true
+      # ubuntu-latest ships the Android SDK (ANDROID_HOME + accepted licenses) with
+      # platform 34 and build-tools 34.0.0, which is exactly what this project targets.
 
       - name: Grant execute permission to Gradle wrapper
         run: chmod +x gradlew
 
       - name: Unit tests
-        run: ./gradlew --no-daemon testDebugUnitTest --stacktrace
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon --console=plain testDebugUnitTest --stacktrace 2>&1 | tee unit-tests.log
 
       - name: Assemble debug APK
-        run: ./gradlew --no-daemon assembleDebug --stacktrace
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon --console=plain assembleDebug --stacktrace 2>&1 | tee assemble-debug.log
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            unit-tests.log
+            assemble-debug.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload test reports
         if: always()
@@ -54,10 +68,13 @@ jobs:
           name: unit-test-reports
           path: app/build/reports/tests/**
           if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload debug APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: opencode-android-debug
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+          retention-days: 14
