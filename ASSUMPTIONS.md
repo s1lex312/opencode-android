@@ -205,8 +205,10 @@ Room не используется. Причины:
 * Решение: `proot` (и его `loader`, и его bionic-библиотеки) поставляются как нативные библиотеки
   в `jniLibs`, а `jniLibs { useLegacyPackaging = true }` заставляет установщик распаковать их в
   `nativeLibraryDir` — единственный каталог, откуда приложение может запускать бинарь.
-* Versioned-имена (`libtalloc.so.2`) в `jniLibs` недопустимы, поэтому `patchelf` переписывает
-  `DT_SONAME` и `DT_NEEDED` на канонические `lib*.so`; это делает
+* Versioned-имена (`libtalloc.so.2`) в `jniLibs` недопустимы: AGP пакует из `jniLibs` только
+  `*.so`, установщик распаковывает из APK только `lib*.so`, а zip не хранит симлинки — поэтому
+  вариант «положить рядом симлинк `libtalloc.so.2`» не работает в принципе. Имена переписываются
+  на канонические `lib*.so` в `DT_NEEDED`, `DT_SONAME` и `DT_VERNEED`; это делает
   `.github/scripts/extract-proot-jnilibs.sh` в CI (и `:app:prepareProotJniLibs` локально).
 * Приложение **никогда** не пишет в `nativeLibraryDir`: `EnvProvisioner` проверяет путь и падает,
   если цель установки оказалась внутри этого каталога.
@@ -217,14 +219,22 @@ Room не используется. Причины:
   распаковывает свой loader в `PROOT_TMP_DIR`, exec этого loader-а из app data будет запрещён;
   тогда нужен статический proot без отдельного loader-а.
 * Целостность зависимостей proot проверяется на трёх уровнях, чтобы «полурабочий» Full APK не мог
-  уйти в релиз: скрипт упаковки требует непустой `proot-libs/`, обязательный `patchelf` и
+  уйти в релиз: скрипт упаковки требует непустой `proot-libs/` и `readelf` и
   проверяет замыкание `DT_NEEDED` (все не-системные зависимости должны лежать рядом с
   `libproot.so`, а versioned-имена вроде `libtalloc.so.2` обязаны быть переписаны); Gradle-гард
   сверяет, что каждый файл из `src/full/jniLibs/arm64-v8a` реально попал в APK; `verify-apk.sh`
   читает `DT_NEEDED` уже из упакованного `libproot.so` и падает, если чего-то не хватает.
-* `patchelf` не всегда умеет править bionic-бинарники Termux и на статических файлах падает с
-  `cannot find section '.dynamic'`. Поэтому скрипт: (1) определяет статику через `readelf -d` и
-  полностью пропускает такие файлы; (2) на каждый `DT_NEEDED`/`DT_SONAME` сначала пробует
-  `patchelf` и проверяет код возврата **и** фактический результат через `readelf`; (3) при неудаче
-  делает прямой патч строкового пула `.dynstr` (`libtalloc.so.2` → `libtalloc.so\0\0`), не меняя
-  размер файла; (4) финально проверяет `readelf -d libproot.so` — versioned-имён быть не должно.
+* Почему 1.1.11–1.1.12 падали с `libproot.so still needs the versioned name libtalloc.so.2`:
+  Termux кладёт talloc обычным файлом `libtalloc.so.2.5.0` (SONAME `libtalloc.so.2`) плюс два
+  симлинка; `find -type f` симлинки отбрасывал, а скрипт искал зависимость по **имени файла**.
+  `libtalloc.so.2.5.0` ≠ `libtalloc.so.2`, поэтому патч `DT_NEEDED` у proot ни разу не вызывался —
+  ни `patchelf`, ни байт-патч тут были ни при чём.
+* С 1.1.13 скрипт: (1) строит замыкание зависимостей proot по `SONAME`, как динамический линкер,
+  и пакует только его (`libtalloc.so`, `libandroid-shmem.so`), остальное из `proot-libs/`
+  отбрасывает; (2) сам разбирает ELF (PT_DYNAMIC → DT_STRTAB/DT_STRSZ) и переписывает строки, на
+  которые ссылаются `DT_NEEDED`/`DT_SONAME`/`vn_file`, на месте внутри `.dynstr`
+  (`libtalloc.so.2` → `libtalloc.so\0\0`): ни одна секция и смещение не двигаются, на proot
+  меняются ровно 2 байта; `patchelf` не используется; (3) статические `loader`/`loader32` упаковывает
+  как `libproot_loader.so`/`libproot_loader32.so` по классу ELF; (4) независимо проверяет результат
+  через `readelf -d`: все не-системные `DT_NEEDED` упакованы под точным именем, `SONAME` каждой
+  библиотеки совпадает с её файлом, versioned-имён нет, все файлы — `lib*.so`.

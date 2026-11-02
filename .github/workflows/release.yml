@@ -48,42 +48,9 @@ jobs:
           sudo apt-get install -y file pkg-config
 
       - name: Fetch arm64 proot (Termux build) and its libraries
-        run: |
-          set -euo pipefail
-          BASE=https://packages.termux.dev/apt/termux-main
-          curl -fsSL "$BASE/dists/stable/main/binary-aarch64/Packages" -o Packages
-          pick() {
-            awk -v pkg="$1" 'BEGIN{RS="";FS="\n"} $1=="Package: "pkg {for(i=1;i<=NF;i++) if($i ~ /^Filename: /){sub("^Filename: ","",$i); print $i; exit}}' Packages | head -n1
-          }
-          mkdir -p debs termux
-          # proot plus every library it links against. Packages that Termux does not publish are
-          # skipped (they are optional), but `proot` itself is mandatory.
-          for pkg in proot libtalloc libandroid-support libandroid-shmem libiconv libunistring libc++ ; do
-            f="$(pick "$pkg")"
-            if [ -z "$f" ]; then
-              echo "::notice title=termux package skipped::no Filename for $pkg"
-              continue
-            fi
-            curl -fsSL "$BASE/$f" -o "debs/$pkg.deb"
-            mkdir -p "termux/$pkg"
-            ( cd "termux/$pkg" && ar x "../../debs/$pkg.deb" && tar xf data.tar.* )
-          done
-          [ -n "$(find termux -type f -path '*bin/proot' | head -n1)" ] \
-            || { echo "::error title=termux package missing::proot was not downloaded"; exit 1; }
-          PROOT_BIN="$(find termux -type f -path '*bin/proot' | head -n1)"
-          file "$PROOT_BIN"
-          file "$PROOT_BIN" | grep -qi 'aarch64' || { echo "::error title=wrong ABI::packaged proot is not arm64"; exit 1; }
-          cp "$PROOT_BIN" proot-aarch64
-          chmod 755 proot-aarch64
-          mkdir -p proot-libs
-          find termux -type f -path '*usr/lib/*' -name '*.so*' -exec cp -a {} proot-libs/ \;
-          # proot execs its loader, so it has to be executable too: ship it with the libs and let
-          # extract-proot-jnilibs.sh put it next to libproot.so as libproot_loader.so.
-          find termux -type f \( -name 'loader*' -o -path '*libexec/proot/*' \) -exec cp -a {} proot-libs/ \;
-          # A dynamically linked proot without its libraries cannot link on the device.
-          [ -n "$(ls -A proot-libs 2>/dev/null)" ] \
-            || { echo "::error title=no proot libs::the termux packages produced no usr/lib/*.so*"; exit 1; }
-          ls -la proot-libs
+        # proot plus the transitive closure of its Termux `Depends:`; libraries keep their SONAME
+        # symlinks and proot's loader/loader32 travel along (see the script header).
+        run: bash .github/scripts/fetch-termux-proot.sh .
 
       - name: Build bundle
         run: |
@@ -224,8 +191,9 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y patchelf binutils file
-          patchelf --version || echo "::notice title=patchelf missing::byte patching will be used"
+          # readelf verifies the in-place .dynstr rewrite; patchelf is not used (it cannot edit
+          # the Termux binaries without moving sections).
+          sudo apt-get install -y binutils file
           bash .github/scripts/extract-proot-jnilibs.sh \
             app/src/full/assets/local-env.tar.gz \
             app/src/full/jniLibs/arm64-v8a

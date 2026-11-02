@@ -46,6 +46,20 @@ class EnvPathsTest {
         assertNull(paths.prootBinary)
         assertNull(paths.nativeProot)
         assertNull(paths.nativeProotLoader)
+        assertNull(paths.nativeProotLoader32)
+    }
+
+    @Test
+    fun `finds both packaged loaders next to libproot`() {
+        val nativeLibDir = File(tempDir(), "lib/arm64").apply { mkdirs() }
+        File(nativeLibDir, "libproot.so").writeText("elf")
+        File(nativeLibDir, "libproot_loader.so").writeText("elf")
+        File(nativeLibDir, "libproot_loader32.so").writeText("elf")
+
+        val paths = EnvPaths(File(tempDir(), "opencode-env"), nativeLibDir)
+
+        assertEquals(File(nativeLibDir, "libproot_loader.so"), paths.nativeProotLoader)
+        assertEquals(File(nativeLibDir, "libproot_loader32.so"), paths.nativeProotLoader32)
     }
 
     @Test

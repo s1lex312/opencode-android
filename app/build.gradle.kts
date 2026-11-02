@@ -18,8 +18,8 @@ android {
         applicationId = "ai.opencode.android"
         minSdk = 26
         targetSdk = 34
-        versionCode = 15
-        versionName = "1.1.12"
+        versionCode = 16
+        versionName = "1.1.13"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
@@ -330,7 +330,7 @@ tasks.register("prepareFullBundle") {
  *
  * Android 10+ refuses `execve()` on files in the app data dir, so `proot` has to be packaged as a
  * native library and executed from `nativeLibraryDir`. See
- * `.github/scripts/extract-proot-jnilibs.sh` for the extraction/`patchelf` details.
+ * `.github/scripts/extract-proot-jnilibs.sh` for the extraction and DT_NEEDED rewrite details.
  */
 tasks.register("prepareProotJniLibs") {
     group = "build"

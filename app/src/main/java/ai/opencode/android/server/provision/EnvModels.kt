@@ -95,6 +95,9 @@ data class EnvPaths(val root: File, val nativeLibDir: File? = null) {
     /** Optional `libproot_loader.so`; proot execs its loader, so it must be executable too. */
     val nativeProotLoader: File? get() = nativeLibDir?.let { File(it, "libproot_loader.so") }?.takeIf { it.isFile }
 
+    /** Optional `libproot_loader32.so`, the loader proot uses for 32-bit ARM guests. */
+    val nativeProotLoader32: File? get() = nativeLibDir?.let { File(it, "libproot_loader32.so") }?.takeIf { it.isFile }
+
     /** Executable proot: the packaged one first (Android 10+), the extracted copy as a fallback. */
     val prootBinary: File? get() = nativeProot ?: prootFile.takeIf { it.isFile }
 

@@ -6,14 +6,23 @@
 # ship as `lib*.so` inside the APK are extracted by the package installer into
 # `applicationInfo.nativeLibraryDir`, a mount that *is* executable — the standard workaround.
 #
-# The script copies `proot` as `libproot.so`, a separate loader (if the bundle ships one) as
-# `libproot_loader.so`, and the shared libraries proot needs as `lib<name>.so`. Versioned bionic
-# names (`libtalloc.so.2`) cannot live in jniLibs, so DT_NEEDED/DT_SONAME are rewritten:
-#   1. `patchelf`, when it works;
-#   2. otherwise a direct `.dynstr` byte patch (`libtalloc.so.2` -> `libtalloc.so\0\0`), which keeps
-#      the string table layout intact — the standard Android hack for bionic binaries.
-# Static files (the loader usually is one) never reach `patchelf`: it aborts with
-# "cannot find section '.dynamic'" on them.
+# Output (only `lib*.so` names: AGP packages nothing else from jniLibs and the installer extracts
+# nothing else from the APK):
+#   libproot.so           the proot executable
+#   libproot_loader.so    its 64-bit loader (PROOT_LOADER), when the bundle ships one
+#   libproot_loader32.so  its 32-bit loader (PROOT_LOADER_32), when the bundle ships one
+#   lib<name>.so          every shared library proot transitively needs, nothing more
+#
+# Dependency resolution follows the dynamic linker, not file names: a DT_NEEDED entry is matched
+# against the SONAME of the files in `proot-libs/`. Termux ships talloc as the regular file
+# `libtalloc.so.2.5.0` (SONAME `libtalloc.so.2`) plus two symlinks that `find -type f` drops, so a
+# file-name lookup never connects proot's `libtalloc.so.2` to it — that is what broke 1.1.12.
+#
+# Versioned names cannot live in jniLibs, so `libtalloc.so.2` becomes `libtalloc.so` in proot's
+# DT_NEEDED, in talloc's own DT_SONAME and in any DT_VERNEED file reference. The rewrite is done in
+# place inside `.dynstr`, located through PT_DYNAMIC/DT_STRTAB: the new name is never longer than
+# the old one, so it is written over the old string and padded with NULs. No section, segment or
+# offset moves, which is exactly why this works on Termux binaries where patchelf does not.
 #
 # Usage: extract-proot-jnilibs.sh <bundle.tar.gz> <out jniLibs dir> [--allow-missing]
 #
@@ -34,14 +43,21 @@ if [[ ! -f "$BUNDLE" ]]; then
   exit 1
 fi
 
+if ! command -v readelf >/dev/null 2>&1; then
+  echo "::error title=readelf missing::install binutils; the proot runtime cannot be verified"
+  exit 1
+fi
+
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-# Only the runtime pieces; the rootfs itself stays in the APK assets.
-tar -xzf "$BUNDLE" -C "$WORK" proot proot-libs 2>/dev/null || tar -xzf "$BUNDLE" -C "$WORK"
+# Only the runtime pieces; the rootfs itself stays in the APK assets. build-rootfs.sh packs with
+# `-C bundle .`, so members are `./proot`; fall back to bare names, then to the whole archive.
+tar -xzf "$BUNDLE" -C "$WORK" ./proot ./proot-libs 2>/dev/null \
+  || tar -xzf "$BUNDLE" -C "$WORK" proot proot-libs 2>/dev/null \
+  || tar -xzf "$BUNDLE" -C "$WORK"
 
-PROOT_BIN="$WORK/proot"
-[[ -f "$PROOT_BIN" ]] || { echo "::error title=proot missing::bundle has no proot binary"; exit 1; }
+[[ -f "$WORK/proot" ]] || { echo "::error title=proot missing::bundle has no proot binary"; exit 1; }
 
 # The Termux proot is dynamically linked against bionic: without its libraries the linker fails
 # with `library "libtalloc.so.2" not found: needed by main executable`.
@@ -50,197 +66,281 @@ if [[ -z "$(ls -A "$WORK/proot-libs" 2>/dev/null)" ]]; then
   exit 1
 fi
 
-if ! command -v readelf >/dev/null 2>&1; then
-  echo "::error title=readelf missing::install binutils; the proot runtime cannot be verified"
-  exit 1
-fi
-if ! command -v patchelf >/dev/null 2>&1; then
-  echo "::notice title=patchelf missing::falling back to direct .dynstr byte patching"
-fi
-
-LOADER=""
-for candidate in "$WORK"/proot-libs/loader* "$WORK"/loader* "$WORK"/proot-libs/*loader*; do
-  if [[ -f "$candidate" ]]; then LOADER="$candidate"; break; fi
-done
-
 mkdir -p "$OUT"
+# Leftovers of an earlier run (e.g. a library proot no longer needs) must not reach the APK.
+find "$OUT" -maxdepth 1 \( -type f -o -type l \) -name 'lib*' -delete
 
-python3 - "$PROOT_BIN" "$WORK/proot-libs" "$OUT" "$LOADER" <<'PY'
-import os, pathlib, re, shutil, subprocess, sys
+python3 - "$WORK" "$OUT" <<'PY'
+import os, pathlib, re, shutil, struct, subprocess, sys
 
-proot = pathlib.Path(sys.argv[1])
-libdir = pathlib.Path(sys.argv[2]) if sys.argv[2] else None
-out = pathlib.Path(sys.argv[3])
-loader = pathlib.Path(sys.argv[4]) if len(sys.argv) > 4 and sys.argv[4] else None
+work = pathlib.Path(sys.argv[1])
+out = pathlib.Path(sys.argv[2])
+proot = work / "proot"
+libdir = work / "proot-libs"
 
-# Libraries that always come from the system: never ship them, never rewrite their names.
+# Libraries the device provides: never ship them, never rewrite their names. Compared by stem so a
+# glibc-style `libc.so.6` is recognised too. libc++_shared.so is NOT here: it is an NDK library
+# that has to travel with whoever needs it.
 SYSTEM = {
     "libc.so", "libdl.so", "libm.so", "liblog.so", "libz.so", "libandroid.so",
-    "libstdc++.so", "libc++_shared.so", "libpthread.so", "librt.so", "libld-android.so",
+    "libstdc++.so", "libpthread.so", "librt.so", "libld-android.so",
 }
-# bionic names SONAMEs without versions, but glibc-built helpers (and our own test fixtures) may
-# carry e.g. `libc.so.6`; compare stems when deciding whether a dependency is a system one.
 SYSTEM_STEMS = {name.split(".so")[0] for name in SYSTEM}
+RESERVED = {"libproot.so", "libproot_loader.so", "libproot_loader32.so"}
 
-patchelf = shutil.which("patchelf")
+PT_LOAD, PT_DYNAMIC = 1, 2
+DT_NULL, DT_NEEDED, DT_STRTAB, DT_STRSZ, DT_SONAME = 0, 1, 5, 10, 14
+DT_VERNEED, DT_VERNEEDNUM = 0x6FFFFFFE, 0x6FFFFFFF
+
 
 def log(message: str) -> None:
     print(message, flush=True)
 
-def elf_dynamic(path: pathlib.Path) -> str:
-    """`readelf -d` output, or "" when the file has no .dynamic (static binary)."""
-    result = subprocess.run(["readelf", "-d", str(path)], capture_output=True, text=True)
-    return result.stdout if result.returncode == 0 and "Dynamic section" in result.stdout else ""
 
-def needed(path: pathlib.Path) -> list[str]:
-    return re.findall(r"\(NEEDED\).*?\[(.+?)\]", elf_dynamic(path))
+def is_system(name: str) -> bool:
+    return name.split(".so")[0] in SYSTEM_STEMS
 
-def soname(path: pathlib.Path) -> str | None:
-    match = re.search(r"\(SONAME\).*?\[(.+?)\]", elf_dynamic(path))
-    return match.group(1) if match else None
-
-def replace_dynstr(path: pathlib.Path, old: str, new: str) -> None:
-    """Patch a NUL-terminated string in `.dynstr` in place, keeping the table length identical."""
-    if len(new) > len(old):
-        raise ValueError(f"{path.name}: {old} -> {new} does not fit")
-    raw = path.read_bytes()
-    needle = old.encode() + b"\0"
-    replacement = new.encode() + b"\0" * (len(needle) - len(new.encode()))
-    if needle not in raw:
-        raise RuntimeError(f"{path.name}: '{old}' is not present in the string table")
-    path.write_bytes(raw.replace(needle, replacement))
-
-PATCH_PROBLEMS: list[str] = []
-
-def patch_needed(path: pathlib.Path, old: str, new: str) -> None:
-    if old == new:
-        return
-    if patchelf:
-        result = subprocess.run(
-            [patchelf, "--replace-needed", old, new, str(path)],
-            capture_output=True, text=True,
-        )
-        if result.returncode == 0 and old not in needed(path) and new in needed(path):
-            log(f"    patchelf   {path.name}: DT_NEEDED {old} -> {new}")
-            return
-        detail = (result.stderr or result.stdout or "").strip().splitlines()
-        log(f"    patchelf failed on {path.name} ({old}): {detail[0] if detail else 'exit ' + str(result.returncode)}")
-    try:
-        replace_dynstr(path, old, new)
-        log(f"    byte patch {path.name}: DT_NEEDED {old} -> {new}")
-    except Exception as error:  # noqa: BLE001 - reported below, never a traceback in CI logs
-        PATCH_PROBLEMS.append(f"{path.name}: cannot rewrite DT_NEEDED {old} ({error})")
-
-def patch_soname(path: pathlib.Path, new: str) -> None:
-    current = soname(path)
-    if current is None or current == new:
-        return
-    if patchelf:
-        result = subprocess.run(
-            [patchelf, "--set-soname", new, str(path)],
-            capture_output=True, text=True,
-        )
-        if result.returncode == 0 and soname(path) == new:
-            log(f"    patchelf   {path.name}: SONAME {current} -> {new}")
-            return
-        detail = (result.stderr or result.stdout or "").strip().splitlines()
-        log(f"    patchelf failed on {path.name} (SONAME): {detail[0] if detail else 'exit ' + str(result.returncode)}")
-    try:
-        replace_dynstr(path, current, new)
-        log(f"    byte patch {path.name}: SONAME {current} -> {new}")
-    except Exception as error:  # noqa: BLE001
-        # DT_SONAME only affects de-duplicated loads; the linker looks the file name up from
-        # DT_NEEDED, so a stale SONAME is survivable — surface it, do not fail the build.
-        log(f"    notice      {path.name}: keeping SONAME {current} ({error})")
 
 def canonical(name: str) -> str:
-    base = re.sub(r"\.so(\..*)?$", ".so", name)
-    return base if base.startswith("lib") else "lib" + base
+    """`libtalloc.so.2.5.0` / `libtalloc.so.2` -> `libtalloc.so`: the only shape jniLibs accepts."""
+    base = re.sub(r"\.so(\..*)?$", "", name)
+    base = base if base.startswith("lib") else "lib" + base
+    return base + ".so"
 
-loader_name = loader.name if loader is not None else None
-libs = []
-if libdir is not None and libdir.is_dir():
-    # The loader is packaged on its own (as libproot_loader.so): never treat it as a shared library.
-    libs = sorted(
-        p for p in libdir.iterdir()
-        if p.is_file() and not p.is_symlink() and p.name != loader_name
-    )
 
-mapping: dict[str, str] = {}
-used: set[str] = set()
-for lib in libs:
-    if lib.name in SYSTEM:
-        continue
-    target = canonical(lib.name)
-    while target in used or target in SYSTEM:
-        target = target[:-3] + "_x.so"
-    used.add(target)
-    mapping[lib.name] = target
+class Elf:
+    """Just enough of an ELF parser to find and rewrite the dynamic string table in place."""
 
-# ---------------------------------------------------------------- rewriting
-log("rewriting bionic names for jniLibs:")
-for lib in libs:
-    if lib.name not in mapping:
-        continue
-    if not elf_dynamic(lib):
-        log(f"    static      {lib.name}: skipped (no .dynamic section)")
-        continue
-    patch_soname(lib, mapping[lib.name])
+    def __init__(self, path: pathlib.Path):
+        self.path = path
+        self.data = bytearray(path.read_bytes())
+        if self.data[:4] != b"\x7fELF":
+            raise ValueError(f"{path.name} is not an ELF file")
+        self.bits = {1: 32, 2: 64}[self.data[4]]
+        self.endian = {1: "<", 2: ">"}[self.data[5]]
+        e = self.endian
+        if self.bits == 64:
+            phoff, = struct.unpack_from(e + "Q", self.data, 0x20)
+            phentsize, phnum = struct.unpack_from(e + "HH", self.data, 0x36)
+            phdr_fmt, dyn_fmt = e + "IIQQQQQQ", e + "qQ"
+        else:
+            phoff, = struct.unpack_from(e + "I", self.data, 0x1C)
+            phentsize, phnum = struct.unpack_from(e + "HH", self.data, 0x2A)
+            phdr_fmt, dyn_fmt = e + "IIIIIIII", e + "iI"
 
-binaries = [proot, *[l for l in libs if l.name in mapping]]
-for binary in binaries:
-    if not elf_dynamic(binary):
-        log(f"    static      {binary.name}: skipped (no .dynamic section)")
-        continue
-    for old, new in mapping.items():
-        if old in needed(binary):
-            patch_needed(binary, old, new)
+        self.loads: list[tuple[int, int, int]] = []  # (vaddr, offset, filesz)
+        dynamic = None
+        for i in range(phnum):
+            fields = struct.unpack_from(phdr_fmt, self.data, phoff + i * phentsize)
+            if self.bits == 64:
+                p_type, _flags, p_offset, p_vaddr, _paddr, p_filesz = fields[:6]
+            else:
+                p_type, p_offset, p_vaddr, _paddr, p_filesz = fields[:5]
+            if p_type == PT_LOAD:
+                self.loads.append((p_vaddr, p_offset, p_filesz))
+            elif p_type == PT_DYNAMIC:
+                dynamic = (p_offset, p_filesz)
 
-# ---------------------------------------------------------------- copy
-shutil.copy2(proot, out / "libproot.so")
-os.chmod(out / "libproot.so", 0o755)
-log(f"libproot.so        <- {proot.name} ({proot.stat().st_size} bytes)")
+        self.dyn: list[tuple[int, int]] = []
+        if dynamic is not None:
+            size = struct.calcsize(dyn_fmt)
+            offset, filesz = dynamic
+            for pos in range(offset, offset + filesz - size + 1, size):
+                tag, value = struct.unpack_from(dyn_fmt, self.data, pos)
+                if tag == DT_NULL:
+                    break
+                self.dyn.append((tag, value))
 
-if loader is not None:
-    shutil.copy2(loader, out / "libproot_loader.so")
-    os.chmod(out / "libproot_loader.so", 0o755)
-    kind = "dynamic" if elf_dynamic(loader) else "static"
-    log(f"libproot_loader.so <- {loader.name} ({loader.stat().st_size} bytes, {kind})")
+        self.strtab = self.strsz = None
+        if self.dyn:
+            self.strtab = self.file_offset(self.tag(DT_STRTAB))
+            self.strsz = self.tag(DT_STRSZ)
+            if self.strtab is None or self.strsz is None:
+                raise ValueError(f"{path.name}: .dynamic has no usable DT_STRTAB/DT_STRSZ")
 
-for lib in libs:
-    target = mapping.get(lib.name)
-    if target is None:
-        continue
-    shutil.copy2(lib, out / target)
-    os.chmod(out / target, 0o644)
-    log(f"{target} <- {lib.name} ({lib.stat().st_size} bytes)")
+    @property
+    def dynamic(self) -> bool:
+        return bool(self.dyn)
 
-# ---------------------------------------------------------------- verification
-# Every DT_NEEDED that is not a system library must be shipped next to libproot.so, and no versioned
-# bionic name may survive: the device linker resolves exact SONAMEs only.
-shipped = {p.name for p in out.iterdir() if p.is_file()}
+    def tag(self, wanted: int):
+        return next((value for tag, value in self.dyn if tag == wanted), None)
+
+    def file_offset(self, vaddr):
+        if vaddr is None:
+            return None
+        for start, offset, filesz in self.loads:
+            if start <= vaddr < start + filesz:
+                return vaddr - start + offset
+        return None
+
+    def string(self, index: int) -> str:
+        start = self.strtab + index
+        end = self.data.index(b"\0", start, self.strtab + self.strsz)
+        return self.data[start:end].decode()
+
+    def string_refs(self) -> list[tuple[str, int]]:
+        """(kind, strtab index) of every name the dynamic linker matches: NEEDED, SONAME, verneed."""
+        refs = [("NEEDED", v) for t, v in self.dyn if t == DT_NEEDED]
+        refs += [("SONAME", v) for t, v in self.dyn if t == DT_SONAME]
+        verneed, count = self.file_offset(self.tag(DT_VERNEED)), self.tag(DT_VERNEEDNUM) or 0
+        while verneed is not None and count > 0:
+            _version, _cnt, vn_file, _aux, vn_next = struct.unpack_from(self.endian + "HHIII", self.data, verneed)
+            refs.append(("VERNEED", vn_file))
+            count -= 1
+            verneed = verneed + vn_next if vn_next else None
+        return refs
+
+    def needed(self) -> list[str]:
+        return [self.string(v) for t, v in self.dyn if t == DT_NEEDED]
+
+    def soname(self):
+        index = self.tag(DT_SONAME)
+        return None if index is None else self.string(index)
+
+    def rename(self, renames: dict[str, str]) -> list[str]:
+        changes = []
+        for kind, index in self.string_refs():
+            old = self.string(index)
+            new = renames.get(old)
+            if new is None or new == old:
+                continue
+            if len(new) > len(old):
+                raise ValueError(f"{self.path.name}: {old} -> {new} does not fit in .dynstr")
+            start = self.strtab + index
+            self.data[start:start + len(old)] = new.encode() + b"\0" * (len(old) - len(new))
+            changes.append(f"{kind} {old} -> {new}")
+        return changes
+
+    def save(self, target: pathlib.Path, mode: int) -> None:
+        target.write_bytes(bytes(self.data))
+        os.chmod(target, mode)
+
+
+def readelf(path: pathlib.Path) -> tuple[list[str], str | None]:
+    """NEEDED/SONAME as binutils sees them: an independent check of the Python rewrite."""
+    result = subprocess.run(["readelf", "-d", str(path)], capture_output=True, text=True)
+    text = result.stdout if result.returncode == 0 else ""
+    sonames = re.findall(r"\(SONAME\).*?\[(.+?)\]", text)
+    return re.findall(r"\(NEEDED\).*?\[(.+?)\]", text), (sonames[0] if sonames else None)
+
+
 problems: list[str] = []
-for name in sorted(shipped):
-    path = out / name
-    if not elf_dynamic(path):
-        log(f"NEEDED {name}: (static)")
-        continue
-    deps = needed(path)
-    log(f"NEEDED {name}: {', '.join(deps) if deps else '(none)'}")
-    for dep in deps:
-        if dep.split(".so")[0] in SYSTEM_STEMS:
-            continue
-        if re.search(r"\.so\.\d", dep):
-            problems.append(f"{name} still needs the versioned name {dep} (patching failed)")
-        elif dep not in shipped:
-            problems.append(f"{name} needs {dep}, which is not packaged")
 
-problems.extend(PATCH_PROBLEMS)
+# ---------------------------------------------------------------- inventory
+candidates = sorted(p for p in libdir.iterdir() if p.is_file()) if libdir.is_dir() else []
+loaders: dict[int, Elf] = {}
+providers: dict[str, Elf] = {}
+parsed: dict[pathlib.Path, Elf] = {}  # one object per real file, whatever symlinks point at it
+for path in sorted({*candidates, *(p for p in work.iterdir() if p.is_file() and "loader" in p.name)}):
+    real = path.resolve()
+    try:
+        elf = parsed[real] if real in parsed else parsed.setdefault(real, Elf(real))
+    except (ValueError, KeyError, struct.error) as error:
+        log(f"    skipped     {path.name}: {error}")
+        continue
+    if "loader" in path.name and not path.name.endswith(".so") and ".so." not in path.name:
+        # Prefer the canonical `loader` / `loader32` names when a bundle carries several.
+        if elf.bits not in loaders or path.name in ("loader", "loader32"):
+            loaders[elf.bits] = elf
+        continue
+    if not elf.dynamic:
+        log(f"    skipped     {path.name}: static, not a shared library")
+        continue
+    # Every name the linker could ask for: the file, its symlink alias and its SONAME.
+    for name in {path.name, elf.path.name, elf.soname() or path.name}:
+        providers.setdefault(name, elf)
+
+
+def provider_for(dependency: str):
+    if dependency in providers:
+        return providers[dependency]
+    wanted = canonical(dependency)
+    return next((elf for name, elf in providers.items() if canonical(name) == wanted), None)
+
+
+# ---------------------------------------------------------------- closure
+main = Elf(proot)
+if not main.dynamic:
+    log("proot is static: nothing to resolve")
+shipped: dict[pathlib.Path, tuple[Elf, str]] = {}
+renames: dict[str, str] = {}
+queue = list(main.needed())
+seen: set[str] = set()
+while queue:
+    dependency = queue.pop(0)
+    if dependency in seen or is_system(dependency):
+        continue
+    seen.add(dependency)
+    elf = provider_for(dependency)
+    if elf is None:
+        problems.append(f"{dependency} is needed but missing from proot-libs/")
+        continue
+    target = canonical(elf.soname() or elf.path.name)
+    if target in RESERVED:
+        problems.append(f"{elf.path.name} would be packaged as reserved name {target}")
+        continue
+    clash = next((other for other, name in shipped.values() if name == target and other is not elf), None)
+    if clash is not None:
+        problems.append(f"{elf.path.name} and {clash.path.name} both map to {target}")
+        continue
+    if elf.path not in shipped:
+        shipped[elf.path] = (elf, target)
+        queue.extend(elf.needed())
+    renames[dependency] = target
+    if elf.soname():
+        renames[elf.soname()] = target
+
+log("dependency closure of proot (resolved by SONAME):")
+for elf, target in shipped.values():
+    log(f"    {target:<24} <- {elf.path.name} (SONAME {elf.soname() or '-'})")
+used = set(shipped) | {e.path for e in loaders.values()}
+unused = sorted(p.name for p in candidates if p.resolve() not in used)
+if unused:
+    log(f"    not needed by proot, not packaged: {', '.join(unused)}")
+
+# ---------------------------------------------------------------- rewrite + copy
+log("rewriting versioned names in .dynstr:")
+outputs: list[tuple[Elf, str, int]] = [(main, "libproot.so", 0o755)]
+outputs += [(elf, target, 0o644) for elf, target in shipped.values()]
+if 64 in loaders:
+    outputs.append((loaders[64], "libproot_loader.so", 0o755))
+if 32 in loaders:
+    outputs.append((loaders[32], "libproot_loader32.so", 0o755))
+for elf, name, mode in outputs:
+    if elf.dynamic:
+        try:
+            for change in elf.rename(renames):
+                log(f"    {name}: {change}")
+        except ValueError as error:
+            problems.append(str(error))
+    elf.save(out / name, mode)
+    kind = "dynamic" if elf.dynamic else "static"
+    log(f"{name:<22} <- {elf.path.name} ({len(elf.data)} bytes, ELF{elf.bits}, {kind})")
+
+# ---------------------------------------------------------------- verification (binutils)
+# Every DT_NEEDED that is not a system library must be shipped under exactly that name, every
+# shipped library must answer to its file name, and no versioned bionic name may survive.
+packaged = {p.name for p in out.iterdir() if p.is_file()}
+for name in sorted(packaged):
+    if not re.fullmatch(r"lib[^/]*\.so", name):
+        problems.append(f"{name} is not a lib*.so name; AGP and the installer would drop it")
+    needs, soname = readelf(out / name)
+    log(f"NEEDED {name}: {', '.join(needs) if needs else '(none)'}" + (f"  SONAME {soname}" if soname else ""))
+    for dependency in needs:
+        if is_system(dependency):
+            continue
+        if re.search(r"\.so\.\d", dependency):
+            problems.append(f"{name} still needs the versioned name {dependency}")
+        elif dependency not in packaged:
+            problems.append(f"{name} needs {dependency}, which is not packaged")
+    if soname is not None and name != "libproot.so" and soname != name:
+        problems.append(f"{name} carries SONAME {soname}; the linker would not match it to DT_NEEDED")
+
 if problems:
     log("::error title=unresolved proot dependencies::" + "; ".join(problems))
     sys.exit(1)
 
-log(f"dependency closure ok ({len(shipped)} native files)")
+log(f"dependency closure ok ({len(packaged)} native files)")
 PY
 
 # The packaged runtime must really be an ELF, otherwise the release would ship a broken APK.
@@ -256,7 +356,7 @@ while IFS= read -r dep; do
   [ -n "$dep" ] || continue
   case "$dep" in
     # system libraries, whatever their naming scheme
-    libc.so*|libdl.so*|libm.so*|liblog.so*|libz.so*|libandroid.so*|libstdc++.so*|libc++_shared.so*|libpthread.so*|librt.so*|libld-android.so*) continue ;;
+    libc.so*|libdl.so*|libm.so*|liblog.so*|libz.so*|libandroid.so*|libstdc++.so*|libpthread.so*|librt.so*|libld-android.so*) continue ;;
   esac
   case "$dep" in
     *.so.[0-9]*) VERSIONED="$VERSIONED $dep" ;;
@@ -268,6 +368,6 @@ if [ -n "$VERSIONED" ]; then
 fi
 
 if command -v file >/dev/null 2>&1; then
-  file "$OUT"/libproot*.so || true
+  file "$OUT"/lib*.so || true
 fi
 ls -la "$OUT"

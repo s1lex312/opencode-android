@@ -103,7 +103,7 @@ if [[ "$APK" == *full* ]]; then
     for needed in $NEEDED; do
       stem="${needed%%.so*}"
       case "$stem" in
-        libc|libdl|libm|liblog|libz|libandroid|libstdc++|libc++_shared|libld-android|libpthread|librt) continue ;;
+        libc|libdl|libm|liblog|libz|libandroid|libstdc++|libld-android|libpthread|librt) continue ;;
       esac
       case "$needed" in
         *.so.[0-9]*)
@@ -115,7 +115,7 @@ if [[ "$APK" == *full* ]]; then
       printf '%s\n' "$ENTRIES" | grep -Fxq "lib/arm64-v8a/$needed" || MISSING="$MISSING $needed"
     done
     if [ -n "$UNPATCHED" ]; then
-      echo "::error title=unpatched proot::libproot.so still asks for versioned names:$UNPATCHED (patchelf must rewrite DT_NEEDED)"
+      echo "::error title=unpatched proot::libproot.so still asks for versioned names:$UNPATCHED (extract-proot-jnilibs.sh must rewrite DT_NEEDED)"
       exit 1
     fi
     if [ -n "$MISSING" ]; then

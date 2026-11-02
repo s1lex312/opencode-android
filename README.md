@@ -92,8 +92,12 @@ Compose Material 3, шифрованное хранилище секретов, 
    он поставляется как нативная библиотека — `app/src/full/jniLibs/arm64-v8a/libproot.so` — и
    запускается из `applicationInfo.nativeLibraryDir`. Этот каталог заполняет
    `.github/scripts/extract-proot-jnilibs.sh` (его вызывают `:app:prepareFullBundle` и релизный
-   workflow); `proot-libs/*.so` там же, с переписанными через `patchelf` именами и `DT_NEEDED`,
-   а `loader` (если он есть) — как `libproot_loader.so` + `PROOT_LOADER`.
+   workflow). Рядом кладётся только то, что proot реально тянет по `DT_NEEDED` (зависимости
+   ищутся по `SONAME`, а не по имени файла): сейчас это `libtalloc.so` и `libandroid-shmem.so`.
+   Версионное `libtalloc.so.2` переписывается в `libtalloc.so` прямо в `.dynstr` (`DT_NEEDED`
+   у proot, `DT_SONAME` у talloc) без сдвига секций — ни `patchelf`, ни `lief` не нужны.
+   `loader`/`loader32` едут как `libproot_loader.so`/`libproot_loader32.so` и передаются через
+   `PROOT_LOADER`/`PROOT_LOADER_32`.
 3. Нажмите **Start** (или просто вернитесь к сессиям — сервер поднимется сам). Через несколько
    секунд появится `Running (healthy)` и список сессий.
 4. Создайте сессию и общайтесь с агентом: ответы стримятся, инструменты показываются карточками,
@@ -217,7 +221,11 @@ CI (`.github/workflows/android.yml`) — для разработчиков; го
 2. **Rootfs packaging (stub)** — собирает и проверяет bundle-пайплайн и манифест (быстро, всегда);
 3. **Rootfs arm64 bundle** — собирает настоящий arm64 bundle (Termux `proot` + `proot-libs` +
    ubuntu-base 22.04 arm64 + standalone `opencode`) и выкладывает артефакт `rootfs-arm64-bundle`;
-   помечен `continue-on-error`, потому что зависит от внешних URL.
+   помечен `continue-on-error`, потому что зависит от внешних URL;
+4. **proot runtime as jniLibs** — на каждый push качает Termux `proot` с зависимостями
+   (`.github/scripts/fetch-termux-proot.sh`), собирает вокруг него bundle и прогоняет
+   `extract-proot-jnilibs.sh`: сломанная переупаковка proot видна до тега, а не в релизном прогоне.
+   Артефакт `proot-jnilibs-arm64` — ровно те `lib*.so`, что попадут в Full APK.
 
 ## Ограничения
 

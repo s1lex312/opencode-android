@@ -280,6 +280,9 @@ class LocalServerManager(
             paths.nativeProotLoader?.let { loader ->
                 builder.environment()["PROOT_LOADER"] = loader.absolutePath
             }
+            paths.nativeProotLoader32?.let { loader ->
+                builder.environment()["PROOT_LOADER_32"] = loader.absolutePath
+            }
             // Dynamically linked proot (Termux/bionic build) needs its libs: nativeLibraryDir first,
             // then the copy extracted from the bundle.
             val libDirs = paths.prootLibraryDirs().map { it.absolutePath }
