@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sessions_title">opencode</string>
+    <string name="sessions_on_this_phone">На этом телефоне</string>
+    <string name="sessions_new_chat">Новый чат</string>
+    <string name="sessions_search_hint">Поиск по чатам</string>
+    <string name="sessions_untitled">Чат без названия</string>
+    <string name="sessions_actions">Действия с чатом</string>
+    <string name="sessions_group_today">Сегодня</string>
+    <string name="sessions_group_yesterday">Вчера</string>
+    <string name="sessions_group_week">Последние 7 дней</string>
+    <string name="sessions_group_older">Раньше</string>
+    <string name="sessions_working">Работает…</string>
+
+    <string name="sessions_empty_title">Начните первый разговор</string>
+    <string name="sessions_empty_body">Попросите opencode разобраться в проекте, исправить баг или написать код.</string>
+    <string name="sessions_offline_title">Пока нет подключения</string>
+    <string name="sessions_offline_body_local">opencode работает прямо на телефоне. Запустите локальный сервер, чтобы начать.</string>
+    <string name="sessions_offline_body_remote">Подключитесь к серверу opencode на компьютере или VPS в настройках.</string>
+    <string name="sessions_open_settings">Открыть настройки</string>
+    <string name="sessions_no_match">Нет чатов по запросу «%1$s»</string>
+    <string name="sessions_cached">Нет связи: показаны сохранённые чаты</string>
+
+    <string name="sessions_providers_title">Подключите AI-провайдера</string>
+    <string name="sessions_providers_body">opencode нужна модель для работы. Добавьте OpenCode Go, Anthropic, OpenAI или любого другого провайдера за минуту.</string>
+    <string name="sessions_providers_action">Выбрать провайдера</string>
+
+    <string name="sessions_local_setup">Завершите настройку, чтобы запускать opencode на телефоне</string>
+    <string name="sessions_local_failed">Локальный сервер остановился: %1$s</string>
+    <string name="sessions_local_failed_unknown">неизвестная ошибка</string>
+    <string name="sessions_local_starting">Запускается локальный сервер…</string>
+    <string name="sessions_local_stopped">Локальный сервер не запущен</string>
+    <string name="sessions_open_setup">Открыть настройку</string>
+
+    <string name="sessions_delete_title">Удалить этот чат?</string>
+    <string name="sessions_delete_body">«%1$s» и все его сообщения будут удалены с сервера. Отменить это нельзя.</string>
+</resources>

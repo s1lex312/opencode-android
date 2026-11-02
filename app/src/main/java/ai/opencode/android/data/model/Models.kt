@@ -104,6 +104,16 @@ data class ModelOption(
     val label: String get() = if (name.isBlank() || name == modelID) modelID else "$name · $modelID"
 }
 
+/** A selectable agent (`build`, `plan`, custom ones) as listed by the server. */
+data class AgentOption(
+    val name: String,
+    val description: String? = null,
+    /** `primary`, `subagent` or `all`; only primary/all agents can drive a conversation. */
+    val mode: String? = null,
+) {
+    val selectable: Boolean get() = mode == null || mode == "primary" || mode == "all"
+}
+
 enum class ApiFlavor {
     /** opencode 2.x `HttpApi`: `/api/...` paths, `{data: ...}` envelopes, `data`-carrying events. */
     V2,

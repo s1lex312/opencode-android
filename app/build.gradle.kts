@@ -18,8 +18,8 @@ android {
         applicationId = "ai.opencode.android"
         minSdk = 26
         targetSdk = 34
-        versionCode = 16
-        versionName = "1.1.13"
+        versionCode = 17
+        versionName = "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
@@ -111,6 +111,9 @@ android {
         // The environment bundle is already gzip-compressed; storing it as-is keeps the Full APK
         // smaller (and aapt2 otherwise tries to deflate it again, costing minutes per build).
         noCompress += "tar.gz"
+        // Android 13+ lists the app's interface languages in system settings from this config
+        // (generated from the values-* folders; the default locale is in res/resources.properties).
+        generateLocaleConfig = true
     }
 
     packaging {
@@ -388,6 +391,8 @@ dependencies {
     androidTestImplementation(composeBom)
 
     implementation("androidx.core:core-ktx:1.13.1")
+    // Per-app interface language on Android 8–12 (AppCompatDelegate.setApplicationLocales).
+    implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")

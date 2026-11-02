@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ai.opencode.android.server.provision.EmbeddedBundleTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-11-02T18:48:56" hostname="DESKTOP-BSVTNJD" time="0.004">
+  <properties/>
+  <testcase name="bundle present in a lite build is still usable" classname="ai.opencode.android.server.provision.EmbeddedBundleTest" time="0.002"/>
+  <testcase name="truncated tar asset is found" classname="ai.opencode.android.server.provision.EmbeddedBundleTest" time="0.0"/>
+  <testcase name="full build with readable asset is embedded" classname="ai.opencode.android.server.provision.EmbeddedBundleTest" time="0.001"/>
+  <testcase name="exact name wins over the truncated one" classname="ai.opencode.android.server.provision.EmbeddedBundleTest" time="0.0"/>
+  <testcase name="probe without a known size still counts as present" classname="ai.opencode.android.server.provision.EmbeddedBundleTest" time="0.0"/>
+  <testcase name="lite build without asset reports lite" classname="ai.opencode.android.server.provision.EmbeddedBundleTest" time="0.0"/>
+  <testcase name="the json manifest is never mistaken for the bundle" classname="ai.opencode.android.server.provision.EmbeddedBundleTest" time="0.001"/>
+  <testcase name="full build without the asset is broken, never lite" classname="ai.opencode.android.server.provision.EmbeddedBundleTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

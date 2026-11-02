@@ -1,31 +1,38 @@
 package ai.opencode.android.ui.setup
 
+import ai.opencode.android.R
 import ai.opencode.android.di.AppContainer
 import ai.opencode.android.server.LocalRuntimeState
 import ai.opencode.android.server.LocalServerState
+import ai.opencode.android.server.provision.EmbeddedBundleStatus
 import ai.opencode.android.server.provision.EnvConfig
 import ai.opencode.android.server.provision.EnvManifest
 import ai.opencode.android.server.provision.FileArtifactSource
 import ai.opencode.android.server.provision.ProvisionResult
 import ai.opencode.android.server.provision.ProvisionState
 import ai.opencode.android.settings.ConnectionMode
+import ai.opencode.android.ui.text.UiText
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import android.net.Uri
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 import java.security.MessageDigest
 
-/** Human readable byte size used by the setup screen. */
+/**
+ * Human readable byte size with English units. The Setup screen formats sizes with the platform
+ * `Formatter` (localised); this stays for diagnostics and callers outside composition.
+ */
 internal fun formatBytes(bytes: Long): String {
     if (bytes <= 0) return "—"
     val units = listOf("B", "KB", "MB", "GB")
@@ -38,20 +45,45 @@ internal fun formatBytes(bytes: Long): String {
     return if (unit == 0) "$bytes ${units[0]}" else String.format(java.util.Locale.US, "%.1f %s", value, units[unit])
 }
 
+/** Visual state of one step of the setup stepper. */
+enum class StepStatus { PENDING, ACTIVE, DONE, WARNING, ERROR }
+
+/** The single main call to action of the Setup screen, derived from the current state. */
+enum class SetupPrimaryAction {
+    /** Install from the embedded bundle or the configured URL. */
+    INSTALL,
+
+    /** Lite build without a URL: the only way forward is importing a bundle file. */
+    CHOOSE_FILE,
+
+    /** Installation is running; the button shows progress and is disabled. */
+    INSTALLING,
+
+    /** The environment is installed but the server is not running. */
+    START,
+
+    /** The server is booting or shutting down; disabled. */
+    WORKING,
+
+    /** Installed, but the app is in Remote mode: switch to this phone. */
+    USE_LOCAL,
+
+    /** Everything is up: leave the screen. */
+    DONE,
+}
+
 data class SetupUiState(
     val loading: Boolean = true,
     /** `full` or `lite` (Gradle product flavor). */
     val flavor: String = "",
     /** Build stamp shown in Setup, e.g. `full-debug 1.1.3-full-debug`. */
     val buildLabel: String = "",
-    /** True when the APK ships the bundle and Local mode can be installed without network. */
-    val embeddedBundle: Boolean = false,
-    /** Human readable bundle source label ("embedded in this APK (offline)" / Lite hint). */
-    val embeddedBundleLabel: String = "",
-    /** Full build whose asset is missing or unreadable: a broken artifact, not a Lite build. */
-    val brokenFullBuild: Boolean = false,
+    /** Whether and how this APK carries the environment bundle. */
+    val bundleStatus: EmbeddedBundleStatus = EmbeddedBundleStatus.LITE,
     val mode: ConnectionMode = ConnectionMode.LOCAL,
     val provision: ProvisionState = ProvisionState(),
+    /** True while a user-picked file is being copied and installed (labels the progress). */
+    val importing: Boolean = false,
     val installedVersion: String? = null,
     val manifest: EnvManifest = EnvManifest(),
     val effectiveManifest: EnvManifest = EnvManifest(),
@@ -60,45 +92,106 @@ data class SetupUiState(
     val freeSpaceBytes: Long = 0,
     val draftUrl: String = "",
     val draftSha: String = "",
+    val draftVersion: String = "",
     val server: LocalServerState = LocalServerState(),
     val runtime: LocalRuntimeState = LocalRuntimeState(),
-    val passwordSet: Boolean = false,
-    val notificationsGranted: Boolean = false,
-    val ignoringBatteryOptimizations: Boolean = false,
-    val message: String? = null,
+    val notificationsGranted: Boolean = true,
+    val ignoringBatteryOptimizations: Boolean = true,
+    val message: UiText? = null,
     val logs: List<String> = emptyList(),
 ) {
-    val busy: Boolean get() = provision.busy
+    /** True when the APK ships the bundle and Local mode can be installed without network. */
+    val embeddedBundle: Boolean get() = bundleStatus == EmbeddedBundleStatus.EMBEDDED
+
+    /** Full build whose asset is missing or unreadable: a broken artifact, not a Lite build. */
+    val brokenFullBuild: Boolean get() = bundleStatus == EmbeddedBundleStatus.BROKEN_FULL
+
+    /** Installing, or copying a picked file before the installation starts. */
+    val busy: Boolean get() = provision.busy || importing
     val installed: Boolean get() = installedVersion != null
     val progressPercent: Int get() = (provision.progress * 100).toInt().coerceIn(0, 100)
-    val sizeLabel: String get() = formatBytes(envSizeBytes)
-    val freeSpaceLabel: String get() = formatBytes(freeSpaceBytes)
-    val bundleSizeLabel: String get() = formatBytes(effectiveManifest.sizeBytes)
 
     /** `full`: the environment ships inside the APK; `lite`: nothing embedded. */
     val isFullBuild: Boolean get() = embeddedBundle || flavor == "full"
 
     /** Can the Install button start without the user providing a URL or a file? */
     val canInstallFromEmbeddedOrUrl: Boolean get() = embeddedBundle || effectiveManifest.isDownload
+
+    /** A user-provided download URL overrides the bundle inside the APK. */
+    val usesCustomSource: Boolean get() = effectiveManifest.isDownload
+
+    /** Downloads must be https:// (or a loopback file server), see `EnvConfig.source`. */
+    val draftUrlValid: Boolean
+        get() = draftUrl.isBlank() || draftUrl.trim().let { it.startsWith("https://") || it.startsWith("http://127.0.0.1") }
+
+    /** Accepts the hash with or without `:`/space separators, in either case. */
+    val draftShaValid: Boolean
+        get() = draftSha.isBlank() || SHA_PATTERN.matches(draftSha.replace(":", "").replace(" ", ""))
+
+    /** A URL without a hash would be refused by the provisioner, so it cannot be saved either. */
+    val canSaveSource: Boolean
+        get() = draftUrlValid && draftShaValid && (draftUrl.isBlank() || draftSha.isNotBlank())
+
+    val checkStep: StepStatus
+        get() = when {
+            provision.phase == ProvisionState.Phase.CHECKING -> StepStatus.ACTIVE
+            installed -> StepStatus.DONE
+            brokenFullBuild && !effectiveManifest.isDownload -> StepStatus.ERROR
+            canInstallFromEmbeddedOrUrl -> StepStatus.DONE
+            else -> StepStatus.WARNING
+        }
+
+    val installStep: StepStatus
+        get() = when {
+            busy -> StepStatus.ACTIVE
+            provision.phase == ProvisionState.Phase.FAILED -> StepStatus.ERROR
+            installed -> StepStatus.DONE
+            else -> StepStatus.PENDING
+        }
+
+    val serverStep: StepStatus
+        get() = when {
+            !installed -> StepStatus.PENDING
+            server.phase == LocalServerState.Phase.READY -> if (server.healthy) StepStatus.DONE else StepStatus.WARNING
+            server.phase == LocalServerState.Phase.STARTING ||
+                server.phase == LocalServerState.Phase.STOPPING ||
+                runtime.starting -> StepStatus.ACTIVE
+            server.phase == LocalServerState.Phase.FAILED || runtime.lastError != null -> StepStatus.ERROR
+            else -> StepStatus.PENDING
+        }
+
+    val primaryAction: SetupPrimaryAction
+        get() = when {
+            busy -> SetupPrimaryAction.INSTALLING
+            !installed -> if (canInstallFromEmbeddedOrUrl) SetupPrimaryAction.INSTALL else SetupPrimaryAction.CHOOSE_FILE
+            mode == ConnectionMode.REMOTE -> SetupPrimaryAction.USE_LOCAL
+            server.phase == LocalServerState.Phase.READY -> SetupPrimaryAction.DONE
+            server.phase == LocalServerState.Phase.STARTING ||
+                server.phase == LocalServerState.Phase.STOPPING ||
+                runtime.starting -> SetupPrimaryAction.WORKING
+            else -> SetupPrimaryAction.START
+        }
+
+    private companion object {
+        val SHA_PATTERN = Regex("[0-9a-fA-F]{64}")
+    }
 }
+
+/** Raised when a picked file is obviously not an environment bundle. */
+private class BundleTooSmallException : IOException("The picked file is too small to be a bundle")
 
 /**
  * Drives the first-run experience: install the environment, start the server, handle retries and
- * expose diagnostics (paths, sizes, logs).
+ * expose diagnostics (paths, sizes, a short log preview).
  */
 class SetupViewModel(private val container: AppContainer) : ViewModel() {
 
     private val _state = MutableStateFlow(
-        run {
-            val embedded = container.embeddedBundleState
-            SetupUiState(
-                flavor = container.flavor,
-                buildLabel = container.buildLabel,
-                embeddedBundle = embedded.isEmbedded,
-                embeddedBundleLabel = embedded.label,
-                brokenFullBuild = embedded.isBrokenFull,
-            )
-        },
+        SetupUiState(
+            flavor = container.flavor,
+            buildLabel = container.buildLabel,
+            bundleStatus = container.embeddedBundleState.status,
+        ),
     )
     val state: StateFlow<SetupUiState> = _state.asStateFlow()
 
@@ -126,6 +219,7 @@ class SetupViewModel(private val container: AppContainer) : ViewModel() {
                         base.copy(
                             draftUrl = settings.localServer.artifactUrl,
                             draftSha = settings.localServer.artifactSha256,
+                            draftVersion = settings.localServer.artifactVersion,
                         )
                     }
                 }
@@ -137,7 +231,6 @@ class SetupViewModel(private val container: AppContainer) : ViewModel() {
                     it.copy(
                         provision = provision,
                         installedVersion = container.provisioner.installedVersion(),
-                        passwordSet = container.secretStore.hasLocalPassword(),
                     )
                 }
             }
@@ -153,33 +246,35 @@ class SetupViewModel(private val container: AppContainer) : ViewModel() {
         refreshDiskUsage()
     }
 
+    /** Measures the installed environment off the main thread (walking the rootfs takes a while). */
     fun refreshDiskUsage() {
-        val paths = container.envPaths
-        val size = runCatching { paths.totalSizeBytes() }.getOrDefault(0L)
-        val free = runCatching { paths.root.parentFile?.usableSpace ?: 0L }.getOrDefault(0L)
-        _state.update { it.copy(envPath = paths.root.absolutePath, envSizeBytes = size, freeSpaceBytes = free) }
+        viewModelScope.launch {
+            val paths = container.envPaths
+            val (size, free) = withContext(Dispatchers.IO) {
+                val size = runCatching { paths.totalSizeBytes() }.getOrDefault(0L)
+                val free = runCatching { paths.root.parentFile?.usableSpace ?: 0L }.getOrDefault(0L)
+                size to free
+            }
+            _state.update { it.copy(envPath = paths.root.absolutePath, envSizeBytes = size, freeSpaceBytes = free) }
+        }
     }
 
     fun install() {
-        if (_state.value.provision.busy) return
+        if (_state.value.busy) return
         viewModelScope.launch {
             val settings = runCatching { container.settingsRepository.current() }.getOrNull() ?: return@launch
             val manifest = EnvConfig.effective(assetManifest, settings.localServer)
             if (!container.hasEmbeddedBundle && !manifest.isDownload) {
-                _state.update {
-                    it.copy(message = "No environment in this APK — enter a bundle URL or import a .tar.gz file")
-                }
+                _state.update { it.copy(message = UiText.of(R.string.setup_msg_no_source)) }
                 return@launch
             }
-            val result = container.provisioner.provision(manifest)
-            when (result) {
+            when (val result = container.provisioner.provision(manifest)) {
                 is ProvisionResult.Ok -> {
-                    _state.update { it.copy(message = "Environment ${result.version} installed") }
-                    refreshDiskUsage()
+                    _state.update { it.copy(message = UiText.of(R.string.setup_msg_installed, result.version)) }
                     if (settings.isLocalMode) container.restartLocalServerService()
                 }
 
-                is ProvisionResult.Err -> _state.update { it.copy(message = result.message) }
+                is ProvisionResult.Err -> _state.update { it.copy(message = UiText.raw(result.message)) }
             }
             refreshDiskUsage()
         }
@@ -187,34 +282,42 @@ class SetupViewModel(private val container: AppContainer) : ViewModel() {
 
     /** Installs a bundle the user picked with the system file picker (works offline, no URL). */
     fun installFromFile(uri: Uri) {
-        if (_state.value.provision.busy) return
+        if (_state.value.busy) return
         viewModelScope.launch {
-            _state.update { it.copy(message = "Importing the selected bundle…") }
-            val imported = runCatching { copyToPrivateStorage(uri) }.getOrNull()
-            if (imported == null) {
-                _state.update { it.copy(message = "Cannot read the selected file") }
-                return@launch
-            }
-            val hash = runCatching { sha256(imported) }.getOrNull()
-            if (hash == null) {
-                _state.update { it.copy(message = "Cannot compute the SHA-256 of the selected file") }
-                return@launch
-            }
-            val manifest = EnvManifest(
-                version = "imported",
-                asset = "",
-                sha256 = hash,
-                sizeBytes = imported.length(),
-            )
-            when (val result = container.provisioner.provision(manifest, FileArtifactSource(imported))) {
-                is ProvisionResult.Ok -> {
-                    _state.update { it.copy(message = "Environment ${result.version} installed") }
-                    container.restartLocalServerService()
+            _state.update { it.copy(importing = true, message = UiText.of(R.string.setup_msg_importing)) }
+            try {
+                val imported = runCatching { copyToPrivateStorage(uri) }.getOrElse { error ->
+                    val text = if (error is BundleTooSmallException) {
+                        R.string.setup_msg_import_too_small
+                    } else {
+                        R.string.setup_msg_import_unreadable
+                    }
+                    _state.update { it.copy(message = UiText.of(text)) }
+                    return@launch
                 }
+                val hash = runCatching { sha256(imported) }.getOrNull()
+                if (hash == null) {
+                    _state.update { it.copy(message = UiText.of(R.string.setup_msg_import_hash_failed)) }
+                    return@launch
+                }
+                val manifest = EnvManifest(
+                    version = "imported",
+                    asset = "",
+                    sha256 = hash,
+                    sizeBytes = imported.length(),
+                )
+                when (val result = container.provisioner.provision(manifest, FileArtifactSource(imported))) {
+                    is ProvisionResult.Ok -> {
+                        _state.update { it.copy(message = UiText.of(R.string.setup_msg_installed, result.version)) }
+                        container.restartLocalServerService()
+                    }
 
-                is ProvisionResult.Err -> _state.update { it.copy(message = result.message) }
+                    is ProvisionResult.Err -> _state.update { it.copy(message = UiText.raw(result.message)) }
+                }
+                refreshDiskUsage()
+            } finally {
+                _state.update { it.copy(importing = false) }
             }
-            refreshDiskUsage()
         }
     }
 
@@ -222,11 +325,14 @@ class SetupViewModel(private val container: AppContainer) : ViewModel() {
         val target = File(container.envPaths.downloadDir, "imported-bundle.tar.gz")
         target.parentFile?.mkdirs()
         val input = container.context.contentResolver.openInputStream(uri)
-            ?: error("The picked file cannot be opened")
+            ?: throw IOException("The picked file cannot be opened")
         input.use { source ->
             target.outputStream().use { sink -> source.copyTo(sink, 64 * 1024) }
         }
-        if (target.length() < 1_000_000L) error("The picked file is too small to be a bundle")
+        if (target.length() < MIN_BUNDLE_BYTES) {
+            target.delete()
+            throw BundleTooSmallException()
+        }
         target
     }
 
@@ -249,24 +355,26 @@ class SetupViewModel(private val container: AppContainer) : ViewModel() {
             val cleared = container.provisioner.clear()
             refreshDiskUsage()
             _state.update {
-                it.copy(message = if (cleared) "Environment removed" else "Some files could not be removed")
+                it.copy(
+                    message = UiText.of(if (cleared) R.string.setup_msg_removed else R.string.setup_msg_remove_partial),
+                )
             }
         }
     }
 
     fun startServer() {
         container.startLocalServerService()
-        _state.update { it.copy(message = "Starting the local server…") }
+        _state.update { it.copy(message = UiText.of(R.string.setup_msg_starting)) }
     }
 
     fun stopServer() {
         container.stopLocalServerService()
-        _state.update { it.copy(message = "Local server stopped") }
+        _state.update { it.copy(message = UiText.of(R.string.setup_msg_stopped)) }
     }
 
     fun restartServer() {
         container.restartLocalServerService()
-        _state.update { it.copy(message = "Restarting the local server…") }
+        _state.update { it.copy(message = UiText.of(R.string.setup_msg_restarting)) }
     }
 
     fun setMode(mode: ConnectionMode) {
@@ -279,7 +387,11 @@ class SetupViewModel(private val container: AppContainer) : ViewModel() {
                 container.connectionManager.connect(force = true)
             }
             _state.update {
-                it.copy(message = if (mode == ConnectionMode.LOCAL) "Local mode: everything runs on this phone" else "Remote mode: using the configured server")
+                it.copy(
+                    message = UiText.of(
+                        if (mode == ConnectionMode.LOCAL) R.string.setup_msg_mode_local else R.string.setup_msg_mode_remote,
+                    ),
+                )
             }
         }
     }
@@ -288,28 +400,46 @@ class SetupViewModel(private val container: AppContainer) : ViewModel() {
 
     fun onShaChange(value: String) = _state.update { it.copy(draftSha = value.trim()) }
 
+    fun onVersionChange(value: String) = _state.update { it.copy(draftVersion = value) }
+
     fun saveArtifactSource() {
         val current = _state.value
+        if (!current.canSaveSource) return
         viewModelScope.launch {
             container.settingsRepository.update { settings ->
                 settings.copy(
                     localServer = settings.localServer.copy(
                         artifactUrl = current.draftUrl.trim(),
                         artifactSha256 = current.draftSha.trim(),
+                        artifactVersion = current.draftVersion.trim(),
                     ),
                 )
             }
-            _state.update { it.copy(message = "Artifact source saved") }
+            _state.update { it.copy(message = UiText.of(R.string.setup_msg_source_saved)) }
         }
     }
 
-    fun clearLogs() {
-        container.localServerManager.clearLogs()
-        _state.update { it.copy(logs = emptyList()) }
-    }
-
-    fun refreshLogs() {
-        _state.update { it.copy(logs = container.localServerManager.logLines(200)) }
+    /** Forgets the custom URL/hash/version so the bundle inside the APK is used again. */
+    fun resetArtifactSource() {
+        viewModelScope.launch {
+            container.settingsRepository.update { settings ->
+                settings.copy(
+                    localServer = settings.localServer.copy(
+                        artifactUrl = "",
+                        artifactSha256 = "",
+                        artifactVersion = "",
+                    ),
+                )
+            }
+            _state.update {
+                it.copy(
+                    draftUrl = "",
+                    draftSha = "",
+                    draftVersion = "",
+                    message = UiText.of(R.string.setup_msg_source_reset),
+                )
+            }
+        }
     }
 
     fun setNotificationsGranted(granted: Boolean) = _state.update { it.copy(notificationsGranted = granted) }
@@ -319,11 +449,11 @@ class SetupViewModel(private val container: AppContainer) : ViewModel() {
     fun dismissMessage() = _state.update { it.copy(message = null) }
 
     companion object {
-        private const val LOG_PREVIEW_LINES = 40
+        private const val LOG_PREVIEW_LINES = 5
+        private const val MIN_BUNDLE_BYTES = 1_000_000L
 
         fun factory(container: AppContainer): ViewModelProvider.Factory = viewModelFactory {
             initializer { SetupViewModel(container) }
         }
-
     }
 }

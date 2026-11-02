@@ -1,5 +1,7 @@
 package ai.opencode.android.ui.logs
 
+import androidx.compose.ui.res.stringResource
+import ai.opencode.android.R
 import ai.opencode.android.di.AppContainer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -46,18 +48,18 @@ fun LogsScreen(container: AppContainer, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Server log") },
+                title = { Text(stringResource(R.string.logs_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
                     }
                 },
                 actions = {
                     IconButton(onClick = viewModel::refresh) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Reload from disk")
+                        Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.logs_reload))
                     }
                     IconButton(onClick = viewModel::clear) {
-                        Icon(Icons.Default.Delete, contentDescription = "Clear log")
+                        Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.logs_clear))
                     }
                 },
             )
@@ -65,14 +67,14 @@ fun LogsScreen(container: AppContainer, onBack: () -> Unit) {
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
             Text(
-                text = "${state.logPath}${if (state.fromFile) " (from disk)" else " (live)"}",
+                text = stringResource(if (state.fromFile) R.string.logs_from_disk else R.string.logs_live, state.logPath),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
             )
             if (state.lines.isEmpty()) {
                 Text(
-                    text = "No log output yet. Start the server to see its output here.",
+                    text = stringResource(R.string.logs_empty),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(16.dp),

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ai.opencode.android.server.HealthProbeTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-11-02T18:48:56" hostname="DESKTOP-BSVTNJD" time="0.006">
+  <properties/>
+  <testcase name="no answer means down" classname="ai.opencode.android.server.HealthProbeTest" time="0.005"/>
+  <testcase name="root endpoint is the primary probe" classname="ai.opencode.android.server.HealthProbeTest" time="0.001"/>
+  <testcase name="falls back to api endpoints" classname="ai.opencode.android.server.HealthProbeTest" time="0.0"/>
+  <testcase name="5xx answers are not healthy" classname="ai.opencode.android.server.HealthProbeTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

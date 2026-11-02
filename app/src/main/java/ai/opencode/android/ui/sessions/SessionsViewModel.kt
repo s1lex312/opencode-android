@@ -32,10 +32,10 @@ data class SessionsUiState(
     val error: String? = null,
     val connected: Boolean = false,
     val connecting: Boolean = false,
-    val connectionStatus: String = "Not connected",
     val connectionHint: String? = null,
     val serverLabel: String = "",
-    val serverFlavor: String? = null,
+    /** Connected, but the server has no usable model: nudge the user towards Providers. */
+    val noProviders: Boolean = false,
     val fromCache: Boolean = false,
     val pendingOpenSessionId: String? = null,
     val connection: ConnectionState = ConnectionState.Idle,
@@ -100,8 +100,7 @@ class SessionsViewModel(
             when {
                 // LOCAL: the foreground service starts the server and connects when it is healthy.
                 local -> if (!provisioner.isInstalled()) _state.update { it.copy(loading = false) }
-                settings.autoConnect -> connection.connect()
-                !connection.isConnected -> _state.update { it.copy(loading = false) }
+                else -> connection.connect()
             }
         }
     }
@@ -134,6 +133,14 @@ class SessionsViewModel(
 
                 is ApiResult.Err -> _state.update { it.copy(error = result.message) }
             }
+        }
+    }
+
+    /** Re-checks the model catalogue, e.g. after returning from the Providers screen. */
+    fun checkProviders() {
+        viewModelScope.launch {
+            val models = repository.models()
+            _state.update { it.copy(noProviders = models is ApiResult.Ok && models.value.none { model -> !model.disabled }) }
         }
     }
 
@@ -182,17 +189,16 @@ class SessionsViewModel(
                         connection = state,
                         connected = state is ConnectionState.Connected,
                         connecting = state is ConnectionState.Connecting || state is ConnectionState.Reconnecting,
-                        connectionStatus = state.describe(),
                         connectionHint = (state as? ConnectionState.Failed)?.hint,
-                        serverFlavor = (state as? ConnectionState.Connected)?.info?.flavor?.let { flavor ->
-                            if (flavor == ai.opencode.android.data.model.ApiFlavor.V2) "API v2" else "legacy API"
-                        },
                         serverLabel = (state as? ConnectionState.Connected)?.baseUrl ?: it.serverLabel,
                         error = (state as? ConnectionState.Failed)?.message ?: it.error,
                     )
                 }
                 when (state) {
-                    is ConnectionState.Connected -> load(showSpinner = _state.value.sessions.isEmpty())
+                    is ConnectionState.Connected -> {
+                        load(showSpinner = _state.value.sessions.isEmpty())
+                        checkProviders()
+                    }
                     is ConnectionState.Idle, is ConnectionState.Failed ->
                         _state.update { it.copy(loading = false, refreshing = false) }
                     else -> Unit
@@ -227,12 +233,4 @@ class SessionsViewModel(
             }
         }
     }
-}
-
-private fun ConnectionState.describe(): String = when (this) {
-    is ConnectionState.Idle -> "Not connected"
-    is ConnectionState.Connecting -> "Connecting…"
-    is ConnectionState.Connected -> "Connected"
-    is ConnectionState.Reconnecting -> "Reconnecting (attempt $attempt)…"
-    is ConnectionState.Failed -> "Connection failed"
 }

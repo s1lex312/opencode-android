@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="diff_title">Изменения</string>
+    <string name="diff_reload">Обновить изменения</string>
+    <string name="diff_loading">Загрузка изменений…</string>
+    <string name="diff_empty_title">Изменений пока нет</string>
+    <string name="diff_empty_body">Когда opencode правит файлы, изменения этого чата появляются здесь.</string>
+    <string name="diff_binary">Бинарный файл, текстового diff нет.</string>
+    <string name="diff_no_patch">Сервер не вернул патч для этого файла.</string>
+    <string name="diff_subtitle_empty">Файлы, изменённые в этом чате</string>
+    <plurals name="diff_files_changed">
+        <item quantity="one">Изменён %d файл</item>
+        <item quantity="few">Изменено %d файла</item>
+        <item quantity="many">Изменено %d файлов</item>
+        <item quantity="other">Изменено %d файла</item>
+    </plurals>
+    <string name="diff_status_added">добавлен</string>
+    <string name="diff_status_deleted">удалён</string>
+    <string name="diff_status_modified">изменён</string>
+    <string name="diff_unparsed">Патч не удалось разобрать как unified diff; ниже исходный текст.</string>
+
+    <string name="logs_title">Журнал сервера</string>
+    <string name="logs_reload">Перечитать с диска</string>
+    <string name="logs_clear">Очистить журнал</string>
+    <string name="logs_from_disk">%1$s (с диска)</string>
+    <string name="logs_live">%1$s (в реальном времени)</string>
+    <string name="logs_empty">Журнал пуст. Запустите сервер, чтобы увидеть его вывод.</string>
+
+    <string name="notification_channel_description">Состояние сервера opencode на этом телефоне</string>
+    <string name="notification_starting">Запуск сервера opencode…</string>
+    <string name="notification_restarting">Перезапуск сервера opencode…</string>
+    <string name="notification_stopping">Остановка сервера opencode…</string>
+    <string name="notification_listening">Слушает 127.0.0.1:%1$d</string>
+    <string name="notification_setup_required">Нужна настройка: откройте приложение</string>
+    <string name="notification_restart">Перезапустить</string>
+</resources>

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Shared actions -->
+    <string name="action_ok">OK</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_retry">Retry</string>
+    <string name="action_dismiss">Dismiss</string>
+    <string name="action_back">Back</string>
+    <string name="action_save">Save</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_close">Close</string>
+    <string name="action_copy">Copy</string>
+    <string name="action_reload">Reload</string>
+    <string name="action_search">Search</string>
+    <string name="action_clear">Clear</string>
+    <string name="action_connect">Connect</string>
+    <string name="action_disconnect">Disconnect</string>
+    <string name="action_settings">Settings</string>
+    <string name="action_start">Start</string>
+    <string name="action_stop">Stop</string>
+
+    <!-- Shared states -->
+    <string name="state_loading">Loading…</string>
+    <string name="copied_to_clipboard">Copied to clipboard</string>
+
+    <!-- Connection state labels (badge, subtitles) -->
+    <string name="connection_connected">Connected</string>
+    <string name="connection_connecting">Connecting</string>
+    <string name="connection_reconnecting">Reconnecting</string>
+    <string name="connection_offline">Offline</string>
+
+    <!-- Relative time -->
+    <string name="time_just_now">just now</string>
+    <plurals name="time_minutes_ago">
+        <item quantity="one">%d min ago</item>
+        <item quantity="other">%d min ago</item>
+    </plurals>
+    <plurals name="time_hours_ago">
+        <item quantity="one">%d h ago</item>
+        <item quantity="other">%d h ago</item>
+    </plurals>
+    <plurals name="time_days_ago">
+        <item quantity="one">yesterday</item>
+        <item quantity="other">%d days ago</item>
+    </plurals>
+</resources>

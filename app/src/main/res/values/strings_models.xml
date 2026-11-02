@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="models_title">Choose a model</string>
+    <string name="models_search_hint">Search models</string>
+    <string name="models_server_default">Server default</string>
+    <string name="models_server_default_hint">Let opencode pick its configured default model</string>
+    <string name="models_empty_title">No models yet</string>
+    <string name="models_empty_message">Connect an AI provider such as OpenCode Go, Anthropic or OpenAI and its models will appear here.</string>
+    <string name="models_no_match">Nothing matches “%1$s”</string>
+    <string name="models_manage_providers">Manage providers</string>
+    <string name="models_disabled">disabled</string>
+    <string name="models_selected">Selected</string>
+</resources>

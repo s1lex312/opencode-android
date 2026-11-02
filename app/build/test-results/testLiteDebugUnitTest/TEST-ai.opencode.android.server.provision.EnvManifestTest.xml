@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ai.opencode.android.server.provision.EnvManifestTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-11-02T18:48:56" hostname="DESKTOP-BSVTNJD" time="0.017">
+  <properties/>
+  <testcase name="blank sha is treated as missing" classname="ai.opencode.android.server.provision.EnvManifestTest" time="0.002"/>
+  <testcase name="returns null for garbage" classname="ai.opencode.android.server.provision.EnvManifestTest" time="0.002"/>
+  <testcase name="parses the shipped manifest" classname="ai.opencode.android.server.provision.EnvManifestTest" time="0.001"/>
+  <testcase name="encode round trips" classname="ai.opencode.android.server.provision.EnvManifestTest" time="0.012"/>
+  <testcase name="accepts snake_case size and unknown fields" classname="ai.opencode.android.server.provision.EnvManifestTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

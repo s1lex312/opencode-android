@@ -54,14 +54,14 @@ class LocalServerService : Service() {
             }
 
             ACTION_RESTART -> {
-                startForeground(NOTIFICATION_ID, buildNotification("Restarting opencode server…", indeterminate = true))
+                startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.notification_restarting), indeterminate = true))
                 container.localRuntime.restart()
                 observeIfNeeded()
                 return START_STICKY
             }
         }
 
-        startForeground(NOTIFICATION_ID, buildNotification("Starting opencode server…", indeterminate = true))
+        startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.notification_starting), indeterminate = true))
         observeIfNeeded()
 
         // Idempotent: generates the password, checks the environment, starts proot and connects.
@@ -97,7 +97,7 @@ class LocalServerService : Service() {
         scope.launch {
             container.localRuntime.state.collect { runtime ->
                 if (runtime.needsSetup) {
-                    updateNotification(buildNotification("Setup required: open the app to install", indeterminate = false))
+                    updateNotification(buildNotification(getString(R.string.notification_setup_required), indeterminate = false))
                     stopSelf()
                 }
             }
@@ -111,7 +111,7 @@ class LocalServerService : Service() {
                         sawProgress = true
                         updateNotification(
                             buildNotification(
-                                state.message ?: "Starting opencode server…",
+                                state.message ?: getString(R.string.notification_starting),
                                 indeterminate = true,
                             ),
                         )
@@ -121,14 +121,14 @@ class LocalServerService : Service() {
                         sawProgress = true
                         updateNotification(
                             buildNotification(
-                                state.message ?: "Listening on 127.0.0.1:${state.port}",
+                                state.message ?: getString(R.string.notification_listening, state.port),
                                 indeterminate = false,
                             ),
                         )
                     }
 
                     LocalServerState.Phase.STOPPING ->
-                        updateNotification(buildNotification("Stopping opencode server…", indeterminate = true))
+                        updateNotification(buildNotification(getString(R.string.notification_stopping), indeterminate = true))
 
                     LocalServerState.Phase.FAILED -> {
                         updateNotification(
@@ -152,7 +152,7 @@ class LocalServerService : Service() {
             getString(R.string.notification_channel_local_server),
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = "Status of the opencode server running on this device"
+            description = getString(R.string.notification_channel_description)
             setShowBadge(false)
         }
         manager.createNotificationChannel(channel)
@@ -185,8 +185,8 @@ class LocalServerService : Service() {
             .setOnlyAlertOnce(true)
             .setProgress(0, 0, indeterminate)
             .setContentIntent(openIntent)
-            .addAction(0, "Restart", restartIntent)
-            .addAction(0, "Stop", stopIntent)
+            .addAction(0, getString(R.string.notification_restart), restartIntent)
+            .addAction(0, getString(R.string.action_stop), stopIntent)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()

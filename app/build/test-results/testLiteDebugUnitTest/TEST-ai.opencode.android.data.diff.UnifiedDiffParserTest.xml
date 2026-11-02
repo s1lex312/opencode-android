@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ai.opencode.android.data.diff.UnifiedDiffParserTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-11-02T18:48:56" hostname="DESKTOP-BSVTNJD" time="0.041">
+  <properties/>
+  <testcase name="handles CRLF input" classname="ai.opencode.android.data.diff.UnifiedDiffParserTest" time="0.035"/>
+  <testcase name="keeps no-newline markers as notes" classname="ai.opencode.android.data.diff.UnifiedDiffParserTest" time="0.001"/>
+  <testcase name="never throws on garbage input" classname="ai.opencode.android.data.diff.UnifiedDiffParserTest" time="0.0"/>
+  <testcase name="parses a single git-style file with correct counters and line numbers" classname="ai.opencode.android.data.diff.UnifiedDiffParserTest" time="0.002"/>
+  <testcase name="empty patch yields nothing" classname="ai.opencode.android.data.diff.UnifiedDiffParserTest" time="0.0"/>
+  <testcase name="splits multiple files in one patch" classname="ai.opencode.android.data.diff.UnifiedDiffParserTest" time="0.001"/>
+  <testcase name="detects binary patches" classname="ai.opencode.android.data.diff.UnifiedDiffParserTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -126,7 +126,7 @@ class LocalServerManager(
     // ------------------------------------------------------------------ supervision
 
     private suspend fun supervise(settings: LocalServerSettings) {
-        val policy = RestartPolicy(maxRestarts = settings.maxRestarts.coerceIn(0, 20))
+        val policy = RestartPolicy(maxRestarts = LocalServerSettings.MAX_RESTARTS)
         val port = settings.port.takeIf { it in 1..65535 } ?: DEFAULT_PORT
         var restarts = 0
 
@@ -191,10 +191,6 @@ class LocalServerManager(
                     StopReason.Unhealthy -> appendLog("Health check failed repeatedly; restarting the server")
                 }
 
-                if (!settings.autoRestart) {
-                    fail("Server stopped. Automatic restart is disabled in Settings.")
-                    return
-                }
                 if (!policy.shouldRestart(restarts)) {
                     fail("Server stopped ${restarts + 1} time(s); giving up. Check the log and restart manually.")
                     return
@@ -225,7 +221,6 @@ class LocalServerManager(
         // Android 10+ forbids executing files from the app's data dir, so a Full install runs
         // `libproot.so` from nativeLibraryDir; the extracted copy stays as a fallback.
         val proot = paths.prootBinary
-            ?: File(settings.prootPath).takeIf { settings.prootPath.isNotBlank() && it.isFile }
         if (proot == null || !proot.isFile) {
             fail("proot binary is missing from the environment. Reinstall it from Setup.")
             return null

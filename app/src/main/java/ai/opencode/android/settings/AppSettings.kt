@@ -15,22 +15,47 @@ enum class AuthMode { NONE, BASIC, BEARER }
  */
 enum class ConnectionMode { LOCAL, REMOTE }
 
+/** Light/dark selection. [SYSTEM] follows the device setting. */
+enum class ThemeMode { SYSTEM, LIGHT, DARK }
+
+/**
+ * Accent families. [DYNAMIC] is Material You (wallpaper colours, Android 12+); on older devices it
+ * falls back to [OPENCODE].
+ */
+enum class ThemePalette { OPENCODE, DYNAMIC, EMERALD, AMBER, VIOLET, ROSE }
+
+/** Relative size of chat text. */
+enum class TextScale(val factor: Float) { SMALL(0.9f), DEFAULT(1f), LARGE(1.15f) }
+
+data class AppearanceSettings(
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val palette: ThemePalette = ThemePalette.OPENCODE,
+    /** True black surfaces in dark mode (OLED). */
+    val pureBlack: Boolean = false,
+    val chatTextScale: TextScale = TextScale.DEFAULT,
+)
+
 data class LocalServerSettings(
     /** Start the local server automatically when the app opens. */
     val enabled: Boolean = true,
-    val port: Int = 4096,
-    val serverCommand: String = "opencode serve --hostname 127.0.0.1 --port {port}",
-    /** Advanced overrides; empty means "use the provisioned environment". */
-    val rootfsPath: String = "",
-    val prootPath: String = "",
+    val port: Int = DEFAULT_PORT,
     /** Bundle location; empty means "read local-env.tar.gz from APK assets". */
     val artifactUrl: String = "",
     val artifactSha256: String = "",
     val artifactVersion: String = "",
-    val autoRestart: Boolean = true,
-    val maxRestarts: Int = 5,
 ) {
     val url: String get() = "http://127.0.0.1:${port}"
+
+    /** `opencode serve` bound to loopback only; `{port}` is substituted at launch. */
+    val serverCommand: String get() = SERVER_COMMAND
+
+    companion object {
+        const val DEFAULT_PORT = 4096
+        const val SERVER_COMMAND = "opencode serve --hostname 127.0.0.1 --port {port}"
+
+        /** The supervisor restarts a crashed server with backoff, at most this many times. */
+        const val MAX_RESTARTS = 5
+    }
 }
 
 /**
@@ -41,15 +66,15 @@ data class AppSettings(
     val connectionMode: ConnectionMode = ConnectionMode.LOCAL,
     val serverUrl: String = DEFAULT_SERVER_URL,
     val authMode: AuthMode = AuthMode.NONE,
-    val username: String = "opencode",
+    val username: String = DEFAULT_USERNAME,
     val allowPrivateNetworkCleartext: Boolean = true,
-    val autoConnect: Boolean = true,
     val model: ModelRef? = null,
+    /** Agent used for new prompts; blank means the server default (usually `build`). */
     val agent: String = "",
     val permissionPolicy: PermissionPolicy = PermissionPolicy.ASK,
-    val requestTimeoutSeconds: Int = 300,
     val lastSessionId: String? = null,
     val localServer: LocalServerSettings = LocalServerSettings(),
+    val appearance: AppearanceSettings = AppearanceSettings(),
 ) {
     /** True when the configured address passes the cleartext policy. */
     val serverUrlValid: Boolean
@@ -63,11 +88,16 @@ data class AppSettings(
         get() = if (connectionMode == ConnectionMode.LOCAL) AuthMode.BASIC else authMode
 
     val effectiveUsername: String
-        get() = if (connectionMode == ConnectionMode.LOCAL) "opencode" else username
+        get() = if (connectionMode == ConnectionMode.LOCAL) DEFAULT_USERNAME else username
 
     val isLocalMode: Boolean get() = connectionMode == ConnectionMode.LOCAL
 
+    /** Long prompts can take minutes before the first byte; SSE has no read timeout at all. */
+    val requestTimeoutSeconds: Int get() = REQUEST_TIMEOUT_SECONDS
+
     companion object {
         const val DEFAULT_SERVER_URL = "http://127.0.0.1:4096"
+        const val DEFAULT_USERNAME = "opencode"
+        const val REQUEST_TIMEOUT_SECONDS = 300
     }
 }

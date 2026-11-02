@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<incidents format="6" by="lint 8.5.2" type="conditional_incidents">
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 34">
+        <fix-replace
+            description="Delete tools:targetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:app*liteDebug*MAIN*sourceProvider*0*manifest*0}"
+                startOffset="1320"
+                endOffset="1340"/>
+        </fix-replace>
+        <location
+            file="${:app*liteDebug*MAIN*sourceProvider*0*manifest*0}"
+            line="27"
+            column="9"
+            startOffset="1320"
+            endLine="27"
+            endColumn="29"
+            endOffset="1340"/>
+        <map>
+            <condition minGE="fffffffe00000000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 27">
+        <fix-replace
+            description="Delete tools:targetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:app*liteDebug*MAIN*sourceProvider*0*resDir*0}/values/themes.xml"
+                startOffset="753"
+                endOffset="773"/>
+        </fix-replace>
+        <location
+            file="${:app*liteDebug*MAIN*sourceProvider*0*resDir*0}/values/themes.xml"
+            line="12"
+            column="62"
+            startOffset="753"
+            endLine="12"
+            endColumn="82"
+            endOffset="773"/>
+        <map>
+            <condition minGE="fffffffffc000000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="NotificationPermission"
+        severity="error"
+        message="When targeting Android 13 or higher, posting a permission requires holding the `POST_NOTIFICATIONS` permission">
+        <fix-data missing="android.permission.POST_NOTIFICATIONS"/>
+        <location
+            file="${:app*liteDebug*MAIN*sourceProvider*0*javaDir*0}/ai/opencode/android/server/LocalServerService.kt"
+            line="197"
+            column="23"
+            startOffset="7770"
+            endLine="197"
+            endColumn="68"
+            endOffset="7815"/>
+    </incident>
+
+    <incident
+        id="BatteryLife"
+        severity="warning"
+        message="Use of `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` violates the Play Store Content Policy regarding acceptable use cases, as described in https://developer.android.com/training/monitoring-device-state/doze-standby.html">
+        <location
+            file="${:app*liteDebug*MAIN*sourceProvider*0*javaDir*0}/ai/opencode/android/ui/setup/SetupScreen.kt"
+            line="1191"
+            column="35"
+            startOffset="52473"
+            endLine="1191"
+            endColumn="78"
+            endOffset="52516"/>
+        <map>
+            <condition targetGE="23"/>
+        </map>
+    </incident>
+
+</incidents>

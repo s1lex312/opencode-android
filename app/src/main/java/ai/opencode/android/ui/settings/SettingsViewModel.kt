@@ -1,16 +1,15 @@
 package ai.opencode.android.ui.settings
 
+import ai.opencode.android.R
+import ai.opencode.android.data.model.ApiFlavor
 import ai.opencode.android.data.model.ConnectionState
-import ai.opencode.android.data.model.ModelOption
-import ai.opencode.android.data.model.ModelRef
-import ai.opencode.android.data.model.PermissionPolicy
 import ai.opencode.android.data.repo.ApiResult
 import ai.opencode.android.data.repo.ServerConnectionManager
-import ai.opencode.android.data.repo.SessionRepository
 import ai.opencode.android.di.AppContainer
 import ai.opencode.android.security.NetworkPolicy
 import ai.opencode.android.security.SecretStore
 import ai.opencode.android.server.LocalRuntime
+import ai.opencode.android.server.LocalRuntimeState
 import ai.opencode.android.server.LocalServerManager
 import ai.opencode.android.server.LocalServerState
 import ai.opencode.android.server.provision.EnvProvisioner
@@ -18,59 +17,66 @@ import ai.opencode.android.settings.AppSettings
 import ai.opencode.android.settings.AuthMode
 import ai.opencode.android.settings.ConnectionMode
 import ai.opencode.android.settings.SettingsRepository
+import ai.opencode.android.ui.text.UiText
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
+/** Outcome of the "Test" button, shown inline under the remote server form. */
+data class ConnectionTestResult(val ok: Boolean, val text: UiText)
+
+/**
+ * State behind the settings hub and the Connection screen.
+ *
+ * The password/token drafts live here (in memory only) rather than in `rememberSaveable`, so a
+ * half-typed secret survives rotation without ever being written into the saved-instance Bundle.
+ */
 data class SettingsUiState(
     val loading: Boolean = true,
     val settings: AppSettings = AppSettings(),
+    val connection: ConnectionState = ConnectionState.Idle,
+    val localServer: LocalServerState = LocalServerState(),
+    val runtime: LocalRuntimeState = LocalRuntimeState(),
+    /** False until the installed environment has been looked up on disk. */
+    val envChecked: Boolean = false,
+    val envVersion: String? = null,
     val draftServerUrl: String = AppSettings.DEFAULT_SERVER_URL,
-    val draftUsername: String = "opencode",
-    val draftAgent: String = "",
-    val draftRootfs: String = "",
-    val draftProot: String = "",
-    val draftPort: String = "4096",
-    val draftCommand: String = "",
-    val urlError: String? = null,
-    val message: String? = null,
+    val draftUsername: String = AppSettings.DEFAULT_USERNAME,
+    val draftPassword: String = "",
+    val draftToken: String = "",
+    val urlError: UiText? = null,
     val passwordSet: Boolean = false,
     val tokenSet: Boolean = false,
     val secretsPersistent: Boolean = true,
-    val models: List<ModelOption> = emptyList(),
-    val modelsLoading: Boolean = false,
-    val modelsError: String? = null,
-    val modelsLoaded: Boolean = false,
     val testing: Boolean = false,
-    val testMessage: String? = null,
-    val testOk: Boolean = false,
-    val connectionStatus: String = "",
-    val localServer: LocalServerState = LocalServerState(),
-    val envInstalled: Boolean = false,
-    val envVersion: String? = null,
+    val testResult: ConnectionTestResult? = null,
+    /** One-shot confirmation shown as a snackbar, then cleared with [SettingsViewModel.dismissMessage]. */
+    val message: UiText? = null,
 ) {
     val authMode: AuthMode get() = settings.authMode
-    val permissionPolicy: PermissionPolicy get() = settings.permissionPolicy
-    val selectedModel: ModelRef? get() = settings.model
-    val allowLanCleartext: Boolean get() = settings.allowPrivateNetworkCleartext
-    val autoConnect: Boolean get() = settings.autoConnect
-    val localEnabled: Boolean get() = settings.localServer.enabled
     val connectionMode: ConnectionMode get() = settings.connectionMode
     val isLocalMode: Boolean get() = settings.isLocalMode
+    val allowLanCleartext: Boolean get() = settings.allowPrivateNetworkCleartext
+    val envInstalled: Boolean get() = envVersion != null
+    val hasStoredSecrets: Boolean get() = passwordSet || tokenSet
+
+    override fun toString(): String =
+        "SettingsUiState(mode=$connectionMode, connection=$connection, url=$draftServerUrl, testing=$testing)"
 }
 
 class SettingsViewModel(
     private val settingsRepository: SettingsRepository,
     private val secretStore: SecretStore,
     private val connectionManager: ServerConnectionManager,
-    private val repository: SessionRepository,
     private val localServerManager: LocalServerManager,
     private val localRuntime: LocalRuntime,
     private val provisioner: EnvProvisioner,
@@ -80,262 +86,48 @@ class SettingsViewModel(
     val state: StateFlow<SettingsUiState> = _state.asStateFlow()
 
     private var draftsInitialised = false
-    private var modelsRequested = false
 
     init {
         viewModelScope.launch {
             settingsRepository.settings.collect { settings -> applySettings(settings) }
         }
         viewModelScope.launch {
-            connectionManager.state.collect { connection ->
-                _state.update {
-                    it.copy(
-                        connectionStatus = when (connection) {
-                            is ConnectionState.Idle -> "Not connected"
-                            is ConnectionState.Connecting -> "Connecting…"
-                            is ConnectionState.Connected -> "Connected to ${connection.baseUrl}"
-                            is ConnectionState.Reconnecting -> "Reconnecting…"
-                            is ConnectionState.Failed -> "Failed: ${connection.message}"
-                        },
-                    )
-                }
-                if (connection is ConnectionState.Connected && !modelsRequested) loadModels()
-            }
+            connectionManager.state.collect { connection -> _state.update { it.copy(connection = connection) } }
         }
         viewModelScope.launch {
             localServerManager.state.collect { local -> _state.update { it.copy(localServer = local) } }
         }
         viewModelScope.launch {
+            localRuntime.state.collect { runtime -> _state.update { it.copy(runtime = runtime) } }
+        }
+        viewModelScope.launch {
             provisioner.state.collect {
-                _state.update {
-                    it.copy(
-                        envInstalled = provisioner.isInstalled(),
-                        envVersion = provisioner.installedVersion(),
-                    )
-                }
+                // installedVersion() validates files on disk; keep that off the main thread.
+                val version = withContext(Dispatchers.IO) { provisioner.installedVersion() }
+                _state.update { it.copy(envChecked = true, envVersion = version) }
             }
         }
-        _state.update {
-            it.copy(
-                passwordSet = secretStore.hasPassword(),
-                tokenSet = secretStore.hasToken(),
-                secretsPersistent = secretStore.persistent,
-            )
-        }
+        refreshSecretFlags()
     }
 
-    // ------------------------------------------------------------------ connection
+    // ------------------------------------------------------------------ mode & local server
 
-    fun onServerUrlChange(value: String) {
-        _state.update { it.copy(draftServerUrl = value, urlError = null) }
-    }
-
-    fun onUsernameChange(value: String) {
-        _state.update { it.copy(draftUsername = value) }
-    }
-
-    fun onAgentChange(value: String) {
-        _state.update { it.copy(draftAgent = value) }
-    }
-
-    fun saveConnection() {
-        val current = _state.value
-        val policy = NetworkPolicy.normalize(current.draftServerUrl, current.settings.allowPrivateNetworkCleartext)
-        if (policy is NetworkPolicy.Result.Rejected) {
-            _state.update { it.copy(urlError = policy.reason) }
-            return
-        }
-        val allowed = policy as NetworkPolicy.Result.Allowed
+    fun setConnectionMode(mode: ConnectionMode) {
+        if (_state.value.connectionMode == mode && !_state.value.loading) return
         viewModelScope.launch {
-            settingsRepository.update {
-                it.copy(
-                    serverUrl = allowed.url,
-                    username = current.draftUsername.ifBlank { "opencode" },
-                    agent = current.draftAgent.trim(),
-                )
-            }
-            _state.update {
-                it.copy(
-                    urlError = null,
-                    message = "Connection settings saved",
-                    draftServerUrl = allowed.url,
-                )
-            }
-            connectionManager.connect(force = true)
-        }
-    }
-
-    fun setAuthMode(mode: AuthMode) {
-        viewModelScope.launch {
-            settingsRepository.update { it.copy(authMode = mode) }
-            _state.update { it.copy(message = "Authentication mode: ${mode.name.lowercase()}") }
-        }
-    }
-
-    fun savePassword(value: String) {
-        secretStore.setPassword(value)
-        _state.update {
-            it.copy(
-                passwordSet = secretStore.hasPassword(),
-                message = if (value.isBlank()) "Password cleared" else "Password stored in encrypted storage",
-            )
-        }
-    }
-
-    fun saveToken(value: String) {
-        secretStore.setToken(value)
-        _state.update {
-            it.copy(
-                tokenSet = secretStore.hasToken(),
-                message = if (value.isBlank()) "Token cleared" else "Token stored in encrypted storage",
-            )
-        }
-    }
-
-    fun clearSecrets() {
-        secretStore.clear()
-        _state.update {
-            it.copy(passwordSet = false, tokenSet = false, message = "Stored credentials cleared")
-        }
-    }
-
-    fun setAllowLanCleartext(enabled: Boolean) {
-        viewModelScope.launch {
-            settingsRepository.update { it.copy(allowPrivateNetworkCleartext = enabled) }
-            val draft = _state.value.draftServerUrl
-            val policy = NetworkPolicy.normalize(draft, enabled)
-            _state.update {
-                it.copy(urlError = (policy as? NetworkPolicy.Result.Rejected)?.reason)
+            settingsRepository.update { it.copy(connectionMode = mode) }
+            if (mode == ConnectionMode.LOCAL) {
+                localRuntime.start()
+                _state.update { it.copy(message = UiText.of(R.string.settings_msg_mode_local)) }
+            } else {
+                localRuntime.stop()
+                connectionManager.connect(force = true)
+                _state.update { it.copy(message = UiText.of(R.string.settings_msg_mode_remote)) }
             }
         }
     }
 
-    fun setAutoConnect(enabled: Boolean) {
-        viewModelScope.launch { settingsRepository.update { it.copy(autoConnect = enabled) } }
-    }
-
-    fun setPermissionPolicy(policy: PermissionPolicy) {
-        viewModelScope.launch {
-            settingsRepository.update { it.copy(permissionPolicy = policy) }
-            _state.update { it.copy(message = "Permission policy: ${policy.name.lowercase()}") }
-        }
-    }
-
-    fun testConnection() {
-        if (_state.value.testing) return
-        _state.update { it.copy(testing = true, testMessage = null) }
-        viewModelScope.launch {
-            val current = _state.value
-            val policy = NetworkPolicy.normalize(current.draftServerUrl, current.settings.allowPrivateNetworkCleartext)
-            if (policy is NetworkPolicy.Result.Rejected) {
-                _state.update { it.copy(testing = false, testOk = false, testMessage = policy.reason) }
-                return@launch
-            }
-            val allowed = policy as NetworkPolicy.Result.Allowed
-            val draftSettings = current.settings.copy(serverUrl = allowed.url)
-            when (
-                val result = connectionManager.testConnection(
-                    settings = draftSettings,
-                    password = secretStore.password(),
-                    token = secretStore.token(),
-                )
-            ) {
-                is ApiResult.Ok -> {
-                    val version = result.value.version?.let { " v$it" } ?: ""
-                    val flavor = if (result.value.flavor == ai.opencode.android.data.model.ApiFlavor.V2) "API v2" else "legacy API"
-                    _state.update {
-                        it.copy(
-                            testing = false,
-                            testOk = true,
-                            testMessage = "Reachable: opencode$version ($flavor)",
-                        )
-                    }
-                }
-
-                is ApiResult.Err -> _state.update {
-                    it.copy(testing = false, testOk = false, testMessage = result.message)
-                }
-            }
-        }
-    }
-
-    // ------------------------------------------------------------------ models
-
-    fun loadModels() {
-        if (_state.value.modelsLoading) return
-        modelsRequested = true
-        _state.update { it.copy(modelsLoading = true, modelsError = null) }
-        viewModelScope.launch {
-            when (val result = repository.models()) {
-                is ApiResult.Ok -> _state.update {
-                    it.copy(
-                        modelsLoading = false,
-                        modelsLoaded = true,
-                        models = result.value,
-                        modelsError = null,
-                    )
-                }
-
-                is ApiResult.Err -> _state.update {
-                    it.copy(modelsLoading = false, modelsLoaded = true, modelsError = result.message)
-                }
-            }
-        }
-    }
-
-    fun selectModel(option: ModelOption) {
-        viewModelScope.launch {
-            settingsRepository.update {
-                it.copy(model = ModelRef(option.providerID, option.modelID))
-            }
-            _state.update { it.copy(message = "Model set to ${option.modelID}") }
-        }
-    }
-
-    fun clearModel() {
-        viewModelScope.launch {
-            settingsRepository.update { it.copy(model = null) }
-            _state.update { it.copy(message = "Using the server default model") }
-        }
-    }
-
-    // ------------------------------------------------------------------ local server
-
-    fun onRootfsChange(value: String) = _state.update { it.copy(draftRootfs = value) }
-
-    fun onProotChange(value: String) = _state.update { it.copy(draftProot = value) }
-
-    fun onPortChange(value: String) = _state.update { it.copy(draftPort = value.filter { ch -> ch.isDigit() }.take(5)) }
-
-    fun onCommandChange(value: String) = _state.update { it.copy(draftCommand = value) }
-
-    fun saveLocalServerSettings() {
-        val current = _state.value
-        val port = current.draftPort.toIntOrNull()?.takeIf { it in 1..65535 } ?: 4096
-        viewModelScope.launch {
-            settingsRepository.update { settings ->
-                settings.copy(
-                    localServer = settings.localServer.copy(
-                        rootfsPath = current.draftRootfs.trim(),
-                        prootPath = current.draftProot.trim(),
-                        port = port,
-                        serverCommand = current.draftCommand.ifBlank {
-                            "opencode serve --hostname 127.0.0.1 --port {port}"
-                        },
-                    ),
-                )
-            }
-            _state.update { it.copy(draftPort = port.toString(), message = "Local server settings saved") }
-        }
-    }
-
-    fun setLocalServerEnabled(enabled: Boolean) {
-        viewModelScope.launch {
-            settingsRepository.update { it.copy(localServer = it.localServer.copy(enabled = enabled)) }
-        }
-    }
-
-    /** Called by the UI after the notification permission (if needed) was granted. */
+    /** Called by the UI after the notification permission (if needed) was requested. */
     fun startLocalServer() {
         viewModelScope.launch {
             settingsRepository.update { it.copy(localServer = it.localServer.copy(enabled = true)) }
@@ -350,51 +142,164 @@ class SettingsViewModel(
         }
     }
 
-    fun setConnectionMode(mode: ConnectionMode) {
+    // ------------------------------------------------------------------ remote server form
+
+    fun onServerUrlChange(value: String) {
+        _state.update { it.copy(draftServerUrl = value, urlError = null, testResult = null) }
+    }
+
+    fun onUsernameChange(value: String) {
+        _state.update { it.copy(draftUsername = value, testResult = null) }
+    }
+
+    fun onPasswordChange(value: String) {
+        _state.update { it.copy(draftPassword = value, testResult = null) }
+    }
+
+    fun onTokenChange(value: String) {
+        _state.update { it.copy(draftToken = value, testResult = null) }
+    }
+
+    fun setAuthMode(mode: AuthMode) {
+        _state.update { it.copy(testResult = null) }
+        viewModelScope.launch { settingsRepository.update { it.copy(authMode = mode) } }
+    }
+
+    fun setAllowLanCleartext(enabled: Boolean) {
         viewModelScope.launch {
-            settingsRepository.update { it.copy(connectionMode = mode) }
-            if (mode == ConnectionMode.LOCAL) {
-                localRuntime.start()
-                _state.update { it.copy(message = "Local mode: opencode runs on this phone") }
-            } else {
-                localRuntime.stop()
-                connectionManager.connect(force = true)
-                _state.update { it.copy(message = "Remote mode: using the configured server") }
+            settingsRepository.update { it.copy(allowPrivateNetworkCleartext = enabled) }
+            val draft = _state.value.draftServerUrl
+            if (draft.isBlank()) return@launch
+            val rejected = NetworkPolicy.normalize(draft, enabled) as? NetworkPolicy.Result.Rejected
+            _state.update { it.copy(urlError = rejected?.let { reason -> UiText.raw(reason.reason) }) }
+        }
+    }
+
+    /**
+     * Validates the address, stores the typed secret for the selected auth mode, persists the form
+     * and reconnects. Returns false (and flags the field) when the address is rejected.
+     */
+    fun saveConnection(): Boolean {
+        val current = _state.value
+        val allowed = validatedUrl(current) ?: return false
+        when (current.authMode) {
+            AuthMode.BASIC -> if (current.draftPassword.isNotEmpty()) secretStore.setPassword(current.draftPassword)
+            AuthMode.BEARER -> if (current.draftToken.isNotEmpty()) secretStore.setToken(current.draftToken)
+            AuthMode.NONE -> Unit
+        }
+        _state.update {
+            it.copy(
+                draftServerUrl = allowed.url,
+                draftPassword = "",
+                draftToken = "",
+                urlError = null,
+                passwordSet = secretStore.hasPassword(),
+                tokenSet = secretStore.hasToken(),
+                message = UiText.of(R.string.settings_msg_saved, allowed.host),
+            )
+        }
+        viewModelScope.launch {
+            settingsRepository.update {
+                it.copy(
+                    serverUrl = allowed.url,
+                    username = current.draftUsername.trim().ifBlank { AppSettings.DEFAULT_USERNAME },
+                )
+            }
+            connectionManager.connect(force = true)
+        }
+        return true
+    }
+
+    /** One-shot health check of the form as typed, without touching the live connection. */
+    fun testConnection() {
+        val current = _state.value
+        if (current.testing) return
+        val allowed = validatedUrl(current) ?: return
+        _state.update { it.copy(testing = true, testResult = null) }
+        viewModelScope.launch {
+            val draftSettings = current.settings.copy(
+                connectionMode = ConnectionMode.REMOTE,
+                serverUrl = allowed.url,
+                username = current.draftUsername.trim().ifBlank { AppSettings.DEFAULT_USERNAME },
+            )
+            val result = connectionManager.testConnection(
+                settings = draftSettings,
+                password = current.draftPassword.ifEmpty { secretStore.password() },
+                token = current.draftToken.ifEmpty { secretStore.token() },
+            )
+            val outcome = when (result) {
+                is ApiResult.Ok -> {
+                    val api = UiText.of(
+                        if (result.value.flavor == ApiFlavor.V2) R.string.settings_api_v2 else R.string.settings_api_legacy,
+                    )
+                    val version = result.value.version
+                    ConnectionTestResult(
+                        ok = true,
+                        text = if (version.isNullOrBlank()) {
+                            UiText.of(R.string.settings_test_ok_unknown_version, api)
+                        } else {
+                            UiText.of(R.string.settings_test_ok, version, api)
+                        },
+                    )
+                }
+
+                is ApiResult.Err -> ConnectionTestResult(ok = false, text = UiText.raw(result.message))
+            }
+            _state.update { it.copy(testing = false, testResult = outcome) }
+        }
+    }
+
+    /** Forgets the remote server password and token; the built-in server's own password is kept. */
+    fun clearCredentials() {
+        secretStore.setPassword(null)
+        secretStore.setToken(null)
+        _state.update {
+            it.copy(
+                draftPassword = "",
+                draftToken = "",
+                passwordSet = secretStore.hasPassword(),
+                tokenSet = secretStore.hasToken(),
+                message = UiText.of(R.string.settings_msg_credentials_cleared),
+            )
+        }
+    }
+
+    // ------------------------------------------------------------------ misc
+
+    fun dismissMessage() = _state.update { it.copy(message = null) }
+
+    private fun validatedUrl(current: SettingsUiState): NetworkPolicy.Result.Allowed? {
+        if (current.draftServerUrl.isBlank()) {
+            _state.update { it.copy(urlError = UiText.of(R.string.settings_remote_url_empty)) }
+            return null
+        }
+        return when (val policy = NetworkPolicy.normalize(current.draftServerUrl, current.allowLanCleartext)) {
+            is NetworkPolicy.Result.Allowed -> policy
+            is NetworkPolicy.Result.Rejected -> {
+                _state.update { it.copy(urlError = UiText.raw(policy.reason)) }
+                null
             }
         }
     }
 
-    fun setAutoRestart(enabled: Boolean) {
-        viewModelScope.launch {
-            settingsRepository.update { it.copy(localServer = it.localServer.copy(autoRestart = enabled)) }
-        }
-    }
-
-    fun clearLocalServerLogs() = localServerManager.clearLogs()
-
-    // ------------------------------------------------------------------ misc
-
-    fun dismissMessage() = _state.update { it.copy(message = null, testMessage = null) }
-
-    private fun applySettings(settings: AppSettings) {
-        _state.update { current ->
-            val updated = current.copy(
-                settings = settings,
-                loading = false,
+    private fun refreshSecretFlags() {
+        _state.update {
+            it.copy(
                 passwordSet = secretStore.hasPassword(),
                 tokenSet = secretStore.hasToken(),
                 secretsPersistent = secretStore.persistent,
             )
+        }
+    }
+
+    private fun applySettings(settings: AppSettings) {
+        _state.update { current ->
+            val updated = current.copy(settings = settings, loading = false)
             if (!draftsInitialised) {
                 draftsInitialised = true
                 updated.copy(
                     draftServerUrl = settings.serverUrl,
                     draftUsername = settings.username,
-                    draftAgent = settings.agent,
-                    draftRootfs = settings.localServer.rootfsPath,
-                    draftProot = settings.localServer.prootPath,
-                    draftPort = settings.localServer.port.toString(),
-                    draftCommand = settings.localServer.serverCommand,
                 )
             } else {
                 updated
@@ -409,7 +314,6 @@ class SettingsViewModel(
                     settingsRepository = container.settingsRepository,
                     secretStore = container.secretStore,
                     connectionManager = container.connectionManager,
-                    repository = container.sessionRepository,
                     localServerManager = container.localServerManager,
                     localRuntime = container.localRuntime,
                     provisioner = container.provisioner,

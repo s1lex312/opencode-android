@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_untitled">New chat</string>
+    <string name="chat_assistant_name">opencode</string>
+    <string name="chat_status_connected">Ready</string>
+    <string name="chat_status_working">Working…</string>
+    <string name="chat_status_offline">Offline</string>
+    <string name="chat_diff">Changes</string>
+    <string name="chat_more">More options</string>
+    <string name="chat_input_hint">Ask opencode anything…</string>
+    <string name="chat_send">Send</string>
+    <string name="chat_waiting_server">Waiting for the server…</string>
+    <string name="chat_working">opencode is working…</string>
+    <string name="chat_thinking">Thinking…</string>
+    <string name="chat_reasoning">Thought process</string>
+    <string name="chat_expand">Expand</string>
+    <string name="chat_collapse">Collapse</string>
+    <string name="chat_scroll_bottom">Jump to latest</string>
+    <string name="chat_model_default">Default model</string>
+    <string name="chat_agent_default">Default agent</string>
+    <string name="chat_choose_agent">Agent</string>
+
+    <string name="chat_empty_title">What are we building?</string>
+    <string name="chat_empty_body">opencode can read the project, run commands and edit files. Try one of these:</string>
+    <string name="chat_suggestion_explain">Explain how this project is structured</string>
+    <string name="chat_suggestion_bug">Find and fix a bug in the code</string>
+    <string name="chat_suggestion_tests">Write tests for the main module</string>
+
+    <string name="chat_tool_input">Input</string>
+    <string name="chat_tool_output">Output</string>
+    <string name="chat_tool_no_payload">No details were captured for this step.</string>
+    <string name="chat_tool_queued">Queued</string>
+    <string name="chat_tool_running">Running</string>
+    <string name="chat_tool_done">Done</string>
+    <string name="chat_tool_failed">Failed</string>
+
+    <string name="chat_permission_title">opencode needs your permission</string>
+    <string name="chat_permission_more">and %1$d more</string>
+    <string name="chat_permission_allow">Allow once</string>
+    <string name="chat_permission_deny">Deny</string>
+    <string name="chat_permission_always">Always allow this</string>
+    <plurals name="chat_permission_queue">
+        <item quantity="one">%d more request is waiting</item>
+        <item quantity="other">%d more requests are waiting</item>
+    </plurals>
+</resources>

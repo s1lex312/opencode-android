@@ -1,24 +1,51 @@
 package ai.opencode.android
 
 import ai.opencode.android.di.AppContainer
+import ai.opencode.android.server.LocalServerService
+import ai.opencode.android.settings.AppearanceSettings
 import ai.opencode.android.ui.navigation.OpencodeNavHost
 import ai.opencode.android.ui.theme.OpencodeTheme
-import ai.opencode.android.server.LocalServerService
+import ai.opencode.android.ui.theme.isDark
+import android.graphics.Color
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
-class MainActivity : ComponentActivity() {
+/**
+ * AppCompatActivity (not ComponentActivity) because per-app languages on Android 12 and older are
+ * applied by AppCompat's delegate; on 13+ the platform LocaleManager does it.
+ */
+class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
         val container: AppContainer = (application as OpencodeApp).container
+        // One synchronous DataStore read so the first frame already has the chosen theme instead
+        // of flashing the system one.
+        val initialAppearance = runBlocking {
+            runCatching { container.settingsRepository.current().appearance }.getOrDefault(AppearanceSettings())
+        }
+        val appearanceFlow = container.settingsRepository.settings.map { it.appearance }.distinctUntilChanged()
+        enableEdgeToEdge()
         setContent {
-            OpencodeTheme {
+            val appearance by appearanceFlow.collectAsStateWithLifecycle(initialValue = initialAppearance)
+            val dark = appearance.isDark()
+            DisposableEffect(dark) {
+                val style = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT) { dark }
+                enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+                onDispose {}
+            }
+            OpencodeTheme(appearance = appearance) {
                 OpencodeNavHost(container = container)
             }
         }

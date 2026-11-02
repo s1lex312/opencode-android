@@ -1,5 +1,7 @@
 package ai.opencode.android.ui.diff
 
+import androidx.compose.ui.res.stringResource
+import ai.opencode.android.R
 import ai.opencode.android.data.diff.DiffFile
 import ai.opencode.android.data.diff.DiffHunk
 import ai.opencode.android.data.diff.DiffLineKind
@@ -70,12 +72,13 @@ fun DiffScreen(container: AppContainer, sessionId: String, onBack: () -> Unit) {
             TopAppBar(
                 title = {
                     Column {
-                        Text("Changes", style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.diff_title), style = MaterialTheme.typography.titleMedium)
                         Text(
                             text = if (state.files.isEmpty()) {
-                                "unified diff of this session"
+                                stringResource(R.string.diff_subtitle_empty)
                             } else {
-                                "${state.files.size} file(s) changed"
+                                androidx.compose.ui.platform.LocalContext.current.resources
+                                    .getQuantityString(R.plurals.diff_files_changed, state.files.size, state.files.size)
                             },
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -84,12 +87,12 @@ fun DiffScreen(container: AppContainer, sessionId: String, onBack: () -> Unit) {
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
                     }
                 },
                 actions = {
                     IconButton(onClick = viewModel::load) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Reload diff")
+                        Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.diff_reload))
                     }
                 },
             )
@@ -98,16 +101,15 @@ fun DiffScreen(container: AppContainer, sessionId: String, onBack: () -> Unit) {
         Box(Modifier.padding(padding).fillMaxSize()) {
             AdaptiveContent(maxWidth = 1100.dp) {
                 when {
-                    state.loading && state.files.isEmpty() -> LoadingIndicator("Loading diff…")
+                    state.loading && state.files.isEmpty() -> LoadingIndicator(stringResource(R.string.diff_loading))
                     state.error != null && state.files.isEmpty() -> ErrorCard(
                         message = state.error.orEmpty(),
                         onRetry = viewModel::load,
                     )
 
                     state.files.isEmpty() -> EmptyState(
-                        title = "No changes yet",
-                        message = "When the agent edits files, the unified diff of the session shows up here. " +
-                            "Diffs are produced per turn by the server.",
+                        title = stringResource(R.string.diff_empty_title),
+                        message = stringResource(R.string.diff_empty_body),
                     )
 
                     else -> LazyColumn(
@@ -167,7 +169,7 @@ private fun DiffFileCard(file: DiffFileView) {
                 Spacer(Modifier.width(4.dp))
                 Icon(
                     imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = if (expanded) "Collapse" else "Expand",
+                    contentDescription = stringResource(if (expanded) R.string.chat_collapse else R.string.chat_expand),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp),
                 )
@@ -177,7 +179,7 @@ private fun DiffFileCard(file: DiffFileView) {
                 Column(Modifier.fillMaxWidth()) {
                     if (file.parsed.isBinary) {
                         Text(
-                            text = "Binary file — no textual diff available.",
+                            text = stringResource(R.string.diff_binary),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(12.dp),
@@ -186,9 +188,9 @@ private fun DiffFileCard(file: DiffFileView) {
                     if (file.parsed.hunks.isEmpty() && !file.parsed.isBinary) {
                         Text(
                             text = if (file.rawPatch.isBlank()) {
-                                "The server returned no patch for this file."
+                                stringResource(R.string.diff_no_patch)
                             } else {
-                                "Patch could not be parsed as unified diff; raw content below."
+                                stringResource(R.string.diff_unparsed)
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -211,9 +213,9 @@ private fun DiffFileCard(file: DiffFileView) {
 private fun StatusChip(status: String) {
     val palette = diffPalette()
     val (label, color) = when (status.lowercase()) {
-        "added" -> "added" to palette.addedText
-        "deleted" -> "deleted" to palette.removedText
-        else -> "modified" to palette.hunkText
+        "added" -> stringResource(R.string.diff_status_added) to palette.addedText
+        "deleted" -> stringResource(R.string.diff_status_deleted) to palette.removedText
+        else -> stringResource(R.string.diff_status_modified) to palette.hunkText
     }
     Surface(
         color = color.copy(alpha = 0.14f),

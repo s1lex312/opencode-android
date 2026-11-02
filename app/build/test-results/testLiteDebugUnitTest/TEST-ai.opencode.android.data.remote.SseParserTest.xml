@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ai.opencode.android.data.remote.SseParserTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-11-02T18:48:56" hostname="DESKTOP-BSVTNJD" time="0.003">
+  <properties/>
+  <testcase name="flush emits buffered event without trailing blank line" classname="ai.opencode.android.data.remote.SseParserTest" time="0.001"/>
+  <testcase name="carries the last event id across frames" classname="ai.opencode.android.data.remote.SseParserTest" time="0.001"/>
+  <testcase name="handles value without leading space and without colon" classname="ai.opencode.android.data.remote.SseParserTest" time="0.0"/>
+  <testcase name="ignores heartbeat comments and retry hints" classname="ai.opencode.android.data.remote.SseParserTest" time="0.0"/>
+  <testcase name="joins multi-line data with newlines" classname="ai.opencode.android.data.remote.SseParserTest" time="0.0"/>
+  <testcase name="dispatches a simple data frame on blank line" classname="ai.opencode.android.data.remote.SseParserTest" time="0.001"/>
+  <testcase name="reset clears partial state" classname="ai.opencode.android.data.remote.SseParserTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

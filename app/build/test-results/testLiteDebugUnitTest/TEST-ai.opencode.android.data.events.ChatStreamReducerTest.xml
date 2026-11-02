@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ai.opencode.android.data.events.ChatStreamReducerTest" tests="11" skipped="0" failures="0" errors="0" timestamp="2026-11-02T18:48:56" hostname="DESKTOP-BSVTNJD" time="0.031">
+  <properties/>
+  <testcase name="message upsert does not drop already streamed parts" classname="ai.opencode.android.data.events.ChatStreamReducerTest" time="0.019"/>
+  <testcase name="legacy delta appends when the snapshot lags" classname="ai.opencode.android.data.events.ChatStreamReducerTest" time="0.001"/>
+  <testcase name="completed text is authoritative" classname="ai.opencode.android.data.events.ChatStreamReducerTest" time="0.003"/>
+  <testcase name="events for other sessions are ignored" classname="ai.opencode.android.data.events.ChatStreamReducerTest" time="0.0"/>
+  <testcase name="status events do not change the transcript" classname="ai.opencode.android.data.events.ChatStreamReducerTest" time="0.001"/>
+  <testcase name="tool lifecycle is merged into one card" classname="ai.opencode.android.data.events.ChatStreamReducerTest" time="0.003"/>
+  <testcase name="tool failure keeps the input" classname="ai.opencode.android.data.events.ChatStreamReducerTest" time="0.001"/>
+  <testcase name="legacy cumulative text part replaces the optimistic tail" classname="ai.opencode.android.data.events.ChatStreamReducerTest" time="0.0"/>
+  <testcase name="creates the assistant message when the event arrives first" classname="ai.opencode.android.data.events.ChatStreamReducerTest" time="0.001"/>
+  <testcase name="appends text deltas to the same part" classname="ai.opencode.android.data.events.ChatStreamReducerTest" time="0.0"/>
+  <testcase name="part removal and message removal work" classname="ai.opencode.android.data.events.ChatStreamReducerTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

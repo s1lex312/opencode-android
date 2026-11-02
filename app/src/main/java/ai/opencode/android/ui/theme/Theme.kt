@@ -1,79 +1,262 @@
 package ai.opencode.android.ui.theme
 
+import ai.opencode.android.settings.AppearanceSettings
+import ai.opencode.android.settings.ThemeMode
+import ai.opencode.android.settings.ThemePalette
+import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
-/**
- * opencode's terminal-inspired palette: near-black surfaces, cyan accents, warm error red.
- * Dynamic colour (Material You) is intentionally not used so the app keeps its identity and
- * diff colours stay predictable.
- */
-private val DarkColors = darkColorScheme(
-    primary = Color(0xFF7DD3FC),
-    onPrimary = Color(0xFF04222F),
-    primaryContainer = Color(0xFF0B3A52),
-    onPrimaryContainer = Color(0xFFD3EEFF),
-    secondary = Color(0xFF9AB4C8),
-    onSecondary = Color(0xFF0B1B24),
-    secondaryContainer = Color(0xFF1D2C36),
-    onSecondaryContainer = Color(0xFFD6E6F2),
-    tertiary = Color(0xFFB4C7A1),
-    background = Color(0xFF0B0D10),
-    onBackground = Color(0xFFE7EBF0),
-    surface = Color(0xFF12151A),
-    onSurface = Color(0xFFE7EBF0),
-    surfaceVariant = Color(0xFF1B2027),
-    onSurfaceVariant = Color(0xFFAEB9C6),
-    surfaceContainer = Color(0xFF141920),
-    surfaceContainerHigh = Color(0xFF1A2028),
-    outline = Color(0xFF39414B),
-    outlineVariant = Color(0xFF262D35),
-    error = Color(0xFFFFB4AB),
-    onError = Color(0xFF3A0908),
-    errorContainer = Color(0xFF4B1512),
-    onErrorContainer = Color(0xFFFFDAD6),
-)
+/** Whether the resolved theme is dark (user choice applied, not just the system setting). */
+val LocalDarkTheme = staticCompositionLocalOf { false }
 
-private val LightColors = lightColorScheme(
-    primary = Color(0xFF00658C),
-    onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFFC7E7F8),
-    onPrimaryContainer = Color(0xFF001E2C),
-    secondary = Color(0xFF4C6272),
-    onSecondary = Color(0xFFFFFFFF),
-    secondaryContainer = Color(0xFFD0E4F4),
-    onSecondaryContainer = Color(0xFF071E2B),
-    background = Color(0xFFF7F9FB),
-    onBackground = Color(0xFF161C21),
-    surface = Color(0xFFFFFFFF),
-    onSurface = Color(0xFF161C21),
-    surfaceVariant = Color(0xFFE7EDF3),
-    onSurfaceVariant = Color(0xFF44515D),
-    outline = Color(0xFF74828F),
-    outlineVariant = Color(0xFFCBD5DE),
-    error = Color(0xFFB3261E),
-    onError = Color(0xFFFFFFFF),
-    errorContainer = Color(0xFFF9DEDC),
-    onErrorContainer = Color(0xFF410E0B),
-)
+/** Multiplier for chat message text, from Settings → Appearance. */
+val LocalChatTextScale = staticCompositionLocalOf { 1f }
+
+/** True when the device can render [ThemePalette.DYNAMIC] (Material You, Android 12+). */
+val dynamicColorAvailable: Boolean get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+
+@Composable
+fun AppearanceSettings.isDark(): Boolean = when (themeMode) {
+    ThemeMode.SYSTEM -> isSystemInDarkTheme()
+    ThemeMode.LIGHT -> false
+    ThemeMode.DARK -> true
+}
 
 @Composable
 fun OpencodeTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    appearance: AppearanceSettings = AppearanceSettings(),
     content: @Composable () -> Unit,
 ) {
-    MaterialTheme(
-        colorScheme = if (darkTheme) DarkColors else LightColors,
-        typography = Typography(),
-        content = content,
+    val dark = appearance.isDark()
+    val context = LocalContext.current
+    val colors = remember(dark, appearance.palette, appearance.pureBlack) {
+        val base = when {
+            appearance.palette == ThemePalette.DYNAMIC && dynamicColorAvailable ->
+                if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+
+            else -> schemeFor(accentFor(appearance.palette), dark)
+        }
+        if (dark && appearance.pureBlack) base.pureBlack() else base
+    }
+    CompositionLocalProvider(
+        LocalDarkTheme provides dark,
+        LocalChatTextScale provides appearance.chatTextScale.factor,
+    ) {
+        MaterialTheme(
+            colorScheme = colors,
+            typography = OpencodeTypography,
+            shapes = OpencodeShapes,
+            content = content,
+        )
+    }
+}
+
+/** The swatch shown for a palette in the appearance picker (its dark-mode primary). */
+fun paletteSwatch(palette: ThemePalette, dark: Boolean): Color =
+    if (dark) accentFor(palette).dark.primary else accentFor(palette).light.primary
+
+// ---------------------------------------------------------------------------------- palettes
+
+private data class AccentTones(
+    val primary: Color,
+    val onPrimary: Color,
+    val primaryContainer: Color,
+    val onPrimaryContainer: Color,
+    val secondary: Color,
+    val onSecondary: Color,
+    val secondaryContainer: Color,
+    val onSecondaryContainer: Color,
+    val tertiary: Color,
+    val onTertiary: Color,
+    val tertiaryContainer: Color,
+    val onTertiaryContainer: Color,
+)
+
+private data class Accent(val light: AccentTones, val dark: AccentTones)
+
+private val Opencode = Accent(
+    light = AccentTones(
+        Color(0xFF00658C), Color.White, Color(0xFFC7E7F8), Color(0xFF001E2C),
+        Color(0xFF4C6272), Color.White, Color(0xFFD0E4F4), Color(0xFF071E2B),
+        Color(0xFF4F6538), Color.White, Color(0xFFD1EBB2), Color(0xFF0D2000),
+    ),
+    dark = AccentTones(
+        Color(0xFF7DD3FC), Color(0xFF04222F), Color(0xFF0B3A52), Color(0xFFD3EEFF),
+        Color(0xFF9AB4C8), Color(0xFF0B1B24), Color(0xFF1D2C36), Color(0xFFD6E6F2),
+        Color(0xFFB4C7A1), Color(0xFF1F3311), Color(0xFF354A27), Color(0xFFD0E8BB),
+    ),
+)
+
+private val Emerald = Accent(
+    light = AccentTones(
+        Color(0xFF006C45), Color.White, Color(0xFF8BF8C0), Color(0xFF002113),
+        Color(0xFF4E6355), Color.White, Color(0xFFD0E8D8), Color(0xFF0B1F14),
+        Color(0xFF3B6470), Color.White, Color(0xFFBEE9F8), Color(0xFF001F26),
+    ),
+    dark = AccentTones(
+        Color(0xFF6EDBA5), Color(0xFF00391F), Color(0xFF005231), Color(0xFF8BF8C0),
+        Color(0xFFB4CCBC), Color(0xFF203529), Color(0xFF364B3F), Color(0xFFD0E8D8),
+        Color(0xFFA3CDDB), Color(0xFF033640), Color(0xFF214C57), Color(0xFFBEE9F8),
+    ),
+)
+
+private val Amber = Accent(
+    light = AccentTones(
+        Color(0xFF845400), Color.White, Color(0xFFFFDDB6), Color(0xFF2A1800),
+        Color(0xFF6F5B40), Color.White, Color(0xFFFADEBC), Color(0xFF271904),
+        Color(0xFF516440), Color.White, Color(0xFFD4EABB), Color(0xFF0F2004),
+    ),
+    dark = AccentTones(
+        Color(0xFFFFB95C), Color(0xFF462A00), Color(0xFF643F00), Color(0xFFFFDDB6),
+        Color(0xFFDDC2A1), Color(0xFF3E2D16), Color(0xFF56432A), Color(0xFFFADEBC),
+        Color(0xFFB8CEA1), Color(0xFF243516), Color(0xFF3A4C2A), Color(0xFFD4EABB),
+    ),
+)
+
+private val Violet = Accent(
+    light = AccentTones(
+        Color(0xFF65558F), Color.White, Color(0xFFE9DDFF), Color(0xFF201047),
+        Color(0xFF625B71), Color.White, Color(0xFFE8DEF8), Color(0xFF1E192B),
+        Color(0xFF7E5260), Color.White, Color(0xFFFFD9E3), Color(0xFF31101D),
+    ),
+    dark = AccentTones(
+        Color(0xFFCFBDFE), Color(0xFF36275D), Color(0xFF4D3D75), Color(0xFFE9DDFF),
+        Color(0xFFCBC2DB), Color(0xFF332D41), Color(0xFF4A4458), Color(0xFFE8DEF8),
+        Color(0xFFEFB8C8), Color(0xFF4A2532), Color(0xFF633B48), Color(0xFFFFD9E3),
+    ),
+)
+
+private val Rose = Accent(
+    light = AccentTones(
+        Color(0xFF8E4955), Color.White, Color(0xFFFFD9DD), Color(0xFF3B0714),
+        Color(0xFF75565A), Color.White, Color(0xFFFFD9DD), Color(0xFF2C1518),
+        Color(0xFF7B5733), Color.White, Color(0xFFFFDDB4), Color(0xFF2D1600),
+    ),
+    dark = AccentTones(
+        Color(0xFFFFB2BC), Color(0xFF561D29), Color(0xFF72333F), Color(0xFFFFD9DD),
+        Color(0xFFE5BDC1), Color(0xFF43292D), Color(0xFF5C3F43), Color(0xFFFFD9DD),
+        Color(0xFFEBC08A), Color(0xFF452B02), Color(0xFF5F4116), Color(0xFFFFDDB4),
+    ),
+)
+
+private fun accentFor(palette: ThemePalette): Accent = when (palette) {
+    ThemePalette.OPENCODE, ThemePalette.DYNAMIC -> Opencode
+    ThemePalette.EMERALD -> Emerald
+    ThemePalette.AMBER -> Amber
+    ThemePalette.VIOLET -> Violet
+    ThemePalette.ROSE -> Rose
+}
+
+/** Neutral surfaces are shared by every accent: cool greys that keep code and diffs readable. */
+private fun schemeFor(accent: Accent, dark: Boolean): ColorScheme {
+    if (dark) {
+        val t = accent.dark
+        return darkColorScheme(
+            primary = t.primary, onPrimary = t.onPrimary,
+            primaryContainer = t.primaryContainer, onPrimaryContainer = t.onPrimaryContainer,
+            inversePrimary = accent.light.primary,
+            secondary = t.secondary, onSecondary = t.onSecondary,
+            secondaryContainer = t.secondaryContainer, onSecondaryContainer = t.onSecondaryContainer,
+            tertiary = t.tertiary, onTertiary = t.onTertiary,
+            tertiaryContainer = t.tertiaryContainer, onTertiaryContainer = t.onTertiaryContainer,
+            background = Color(0xFF0E1014), onBackground = Color(0xFFE3E7EC),
+            surface = Color(0xFF0E1014), onSurface = Color(0xFFE3E7EC),
+            surfaceVariant = Color(0xFF1E232A), onSurfaceVariant = Color(0xFFB0BAC5),
+            surfaceTint = t.primary,
+            inverseSurface = Color(0xFFE3E7EC), inverseOnSurface = Color(0xFF1B1E22),
+            error = Color(0xFFFFB4AB), onError = Color(0xFF690005),
+            errorContainer = Color(0xFF93000A), onErrorContainer = Color(0xFFFFDAD6),
+            outline = Color(0xFF5B646E), outlineVariant = Color(0xFF2E353D),
+            scrim = Color.Black,
+            surfaceBright = Color(0xFF33383F), surfaceDim = Color(0xFF0E1014),
+            surfaceContainerLowest = Color(0xFF090B0E), surfaceContainerLow = Color(0xFF14171C),
+            surfaceContainer = Color(0xFF181C21), surfaceContainerHigh = Color(0xFF22272D),
+            surfaceContainerHighest = Color(0xFF2D3238),
+        )
+    }
+    val t = accent.light
+    return lightColorScheme(
+        primary = t.primary, onPrimary = t.onPrimary,
+        primaryContainer = t.primaryContainer, onPrimaryContainer = t.onPrimaryContainer,
+        inversePrimary = accent.dark.primary,
+        secondary = t.secondary, onSecondary = t.onSecondary,
+        secondaryContainer = t.secondaryContainer, onSecondaryContainer = t.onSecondaryContainer,
+        tertiary = t.tertiary, onTertiary = t.onTertiary,
+        tertiaryContainer = t.tertiaryContainer, onTertiaryContainer = t.onTertiaryContainer,
+        background = Color(0xFFF8FAFC), onBackground = Color(0xFF171C21),
+        surface = Color(0xFFF8FAFC), onSurface = Color(0xFF171C21),
+        surfaceVariant = Color(0xFFDFE5EB), onSurfaceVariant = Color(0xFF424B55),
+        surfaceTint = t.primary,
+        inverseSurface = Color(0xFF2C3136), inverseOnSurface = Color(0xFFEEF1F4),
+        error = Color(0xFFBA1A1A), onError = Color.White,
+        errorContainer = Color(0xFFFFDAD6), onErrorContainer = Color(0xFF410002),
+        outline = Color(0xFF727C86), outlineVariant = Color(0xFFC2CAD2),
+        scrim = Color.Black,
+        surfaceBright = Color(0xFFF8FAFC), surfaceDim = Color(0xFFD7DCE1),
+        surfaceContainerLowest = Color.White, surfaceContainerLow = Color(0xFFF1F4F7),
+        surfaceContainer = Color(0xFFEBEEF2), surfaceContainerHigh = Color(0xFFE5E9ED),
+        surfaceContainerHighest = Color(0xFFDFE3E8),
     )
 }
+
+/** OLED variant: true black canvas, containers lifted just enough to stay distinguishable. */
+private fun ColorScheme.pureBlack(): ColorScheme = copy(
+    background = Color.Black,
+    surface = Color.Black,
+    surfaceDim = Color.Black,
+    surfaceContainerLowest = Color.Black,
+    surfaceContainerLow = Color(0xFF0A0B0D),
+    surfaceContainer = Color(0xFF101215),
+    surfaceContainerHigh = Color(0xFF181B1F),
+    surfaceContainerHighest = Color(0xFF202429),
+    surfaceVariant = Color(0xFF181B1F),
+)
+
+// ---------------------------------------------------------------------------------- type & shape
+
+private val DefaultTypography = Typography()
+
+val OpencodeTypography = Typography(
+    displaySmall = DefaultTypography.displaySmall.copy(fontWeight = FontWeight.SemiBold),
+    headlineLarge = DefaultTypography.headlineLarge.copy(fontWeight = FontWeight.SemiBold),
+    headlineMedium = DefaultTypography.headlineMedium.copy(fontWeight = FontWeight.SemiBold),
+    headlineSmall = DefaultTypography.headlineSmall.copy(fontWeight = FontWeight.SemiBold),
+    titleLarge = DefaultTypography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+    titleMedium = DefaultTypography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+    titleSmall = DefaultTypography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+    bodyLarge = DefaultTypography.bodyLarge.copy(lineHeight = 24.sp),
+    bodyMedium = DefaultTypography.bodyMedium.copy(lineHeight = 21.sp),
+    labelLarge = DefaultTypography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+)
+
+val OpencodeShapes = Shapes(
+    extraSmall = RoundedCornerShape(6.dp),
+    small = RoundedCornerShape(10.dp),
+    medium = RoundedCornerShape(16.dp),
+    large = RoundedCornerShape(24.dp),
+    extraLarge = RoundedCornerShape(32.dp),
+)
+
+// ---------------------------------------------------------------------------------- diff colours
 
 data class DiffPalette(
     val addedBackground: Color,
@@ -87,7 +270,7 @@ data class DiffPalette(
 
 @Composable
 @ReadOnlyComposable
-fun diffPalette(): DiffPalette = if (isSystemInDarkTheme()) {
+fun diffPalette(): DiffPalette = if (LocalDarkTheme.current) {
     DiffPalette(
         addedBackground = Color(0xFF122B1D),
         addedText = Color(0xFF9BE9A8),
@@ -107,4 +290,10 @@ fun diffPalette(): DiffPalette = if (isSystemInDarkTheme()) {
         hunkText = Color(0xFF0B4F6C),
         noteText = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+}
+
+/** Semantic status colours that read well on both themes (connection dots, health). */
+object StatusColors {
+    val ok = Color(0xFF3FB27F)
+    val warn = Color(0xFFE0A63A)
 }

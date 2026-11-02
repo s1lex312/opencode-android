@@ -90,6 +90,15 @@ class ServerHttp(
         execute(Request.Builder().url(url(path, query)).patch(requestBody).build())
     }
 
+    suspend fun putJson(
+        path: String,
+        body: JsonElement? = null,
+        query: Map<String, String> = emptyMap(),
+    ): JsonElement? = withContext(Dispatchers.IO) {
+        val requestBody = (body?.toString() ?: "{}").toRequestBody(jsonMediaType)
+        execute(Request.Builder().url(url(path, query)).put(requestBody).build())
+    }
+
     suspend fun deleteJson(path: String, query: Map<String, String> = emptyMap()): JsonElement? =
         withContext(Dispatchers.IO) { execute(Request.Builder().url(url(path, query)).delete().build()) }
 

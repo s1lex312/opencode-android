@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ai.opencode.android.server.provision.EnvPathsTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-11-02T18:48:56" hostname="DESKTOP-BSVTNJD" time="0.018">
+  <properties/>
+  <testcase name="finds both packaged loaders next to libproot" classname="ai.opencode.android.server.provision.EnvPathsTest" time="0.003"/>
+  <testcase name="falls back to the extracted copy on older devices" classname="ai.opencode.android.server.provision.EnvPathsTest" time="0.003"/>
+  <testcase name="prefers the proot packaged in the APK" classname="ai.opencode.android.server.provision.EnvPathsTest" time="0.003"/>
+  <testcase name="reports no proot when neither copy exists" classname="ai.opencode.android.server.provision.EnvPathsTest" time="0.0"/>
+  <testcase name="never claims the native library directory is writable" classname="ai.opencode.android.server.provision.EnvPathsTest" time="0.004"/>
+  <testcase name="native library dir comes first on the loader path" classname="ai.opencode.android.server.provision.EnvPathsTest" time="0.003"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

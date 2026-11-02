@@ -1,6 +1,7 @@
 package ai.opencode.android.data.repo
 
 import ai.opencode.android.data.cache.SessionCache
+import ai.opencode.android.data.model.AgentOption
 import ai.opencode.android.data.model.ChatMessage
 import ai.opencode.android.data.model.FileDiffPayload
 import ai.opencode.android.data.model.ModelOption
@@ -64,6 +65,11 @@ class SessionRepository(
     suspend fun models(): ApiResult<List<ModelOption>> {
         val api = connection.api ?: return notConnected()
         return runApiCall { api.models() }
+    }
+
+    suspend fun agents(): ApiResult<List<AgentOption>> {
+        val api = connection.api ?: return notConnected()
+        return runApiCall { api.agents() }
     }
 
     suspend fun replyPermission(

@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="providers_title">AI providers</string>
+    <string name="providers_search_hint">Search 100+ providers</string>
+    <string name="providers_add_custom">Add custom endpoint</string>
+    <string name="providers_section_connected">Connected</string>
+    <string name="providers_section_recommended">Recommended</string>
+    <string name="providers_section_all">All providers</string>
+    <string name="providers_no_match">No provider matches “%1$s”</string>
+    <string name="providers_not_connected_title">Not connected to opencode</string>
+    <string name="providers_not_connected_body">Providers are configured on the opencode server. Start the local server or connect to your remote one first.</string>
+    <string name="providers_empty_title">No providers found</string>
+    <string name="providers_empty_body">The server returned an empty provider list.</string>
+
+    <plurals name="providers_models_count">
+        <item quantity="one">%d model</item>
+        <item quantity="other">%d models</item>
+    </plurals>
+    <string name="providers_status_connected">Connected</string>
+    <string name="providers_status_env">Key from the server environment</string>
+    <string name="providers_status_config">Configured in opencode.json</string>
+
+    <string name="providers_go_title">OpenCode Go</string>
+    <string name="providers_go_body">A low-cost subscription to strong open coding models (Kimi, GLM, Qwen, DeepSeek, MiniMax and more), made for opencode. One key from the OpenCode console.</string>
+    <string name="providers_go_get_key">Get a key</string>
+    <string name="providers_go_connect">Connect</string>
+    <string name="providers_go_connected">OpenCode Go is connected</string>
+    <string name="providers_zen_hint">Pay-as-you-go models from the OpenCode console, including free ones</string>
+
+    <string name="providers_sheet_choose_method">How do you want to sign in?</string>
+    <string name="providers_method_api_key">API key</string>
+    <string name="providers_method_browser">Sign in with browser</string>
+    <string name="providers_key_label">API key</string>
+    <string name="providers_key_hint">Stored on the opencode server (auth.json), never in this app.</string>
+    <string name="providers_key_env_hint">Or set %1$s on the server.</string>
+    <string name="providers_key_where">Where do I get a key?</string>
+    <string name="providers_paste">Paste</string>
+    <string name="providers_show_key">Show key</string>
+    <string name="providers_hide_key">Hide key</string>
+    <string name="providers_connect">Connect</string>
+    <string name="providers_connecting">Connecting…</string>
+    <string name="providers_disconnect">Disconnect</string>
+    <string name="providers_disconnect_confirm_title">Disconnect %1$s?</string>
+    <string name="providers_disconnect_confirm_body">The stored credential is removed from the server. Sessions using its models will stop working until you connect again.</string>
+    <string name="providers_env_cannot_disconnect">This key comes from the server environment (%1$s). Remove it there to disconnect.</string>
+    <string name="providers_oauth_open">Open sign-in page</string>
+    <string name="providers_oauth_waiting">Finish signing in in your browser. This page updates by itself.</string>
+    <string name="providers_oauth_code_label">Code from the sign-in page</string>
+    <string name="providers_oauth_submit">Finish sign-in</string>
+    <string name="providers_open_failed">No app can open the sign-in page</string>
+
+    <string name="providers_msg_connected">%1$s connected</string>
+    <string name="providers_msg_disconnected">%1$s disconnected</string>
+    <string name="providers_msg_custom_added">%1$s added</string>
+
+    <!-- Custom provider -->
+    <string name="providers_custom_title">Custom endpoint</string>
+    <string name="providers_custom_intro">Any OpenAI-compatible API works: LM Studio, Ollama, vLLM, LiteLLM or your own proxy. It is added to the server\'s global opencode config.</string>
+    <string name="providers_custom_name">Display name</string>
+    <string name="providers_custom_name_placeholder">My local LLM</string>
+    <string name="providers_custom_id">Provider ID</string>
+    <string name="providers_custom_id_hint">Lowercase letters, digits and dashes. Models are referenced as id/model.</string>
+    <string name="providers_custom_url">Base URL</string>
+    <string name="providers_custom_key">API key (optional)</string>
+    <string name="providers_custom_models">Models</string>
+    <string name="providers_custom_models_hint">Comma-separated model IDs, e.g. llama-3.3-70b, qwen3-coder</string>
+    <string name="providers_custom_save">Add provider</string>
+    <string name="providers_custom_err_id">Use 2–40 lowercase letters, digits or dashes</string>
+    <string name="providers_custom_err_url">Enter an http(s) URL</string>
+    <string name="providers_custom_err_models">Add at least one model</string>
+</resources>

@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="providers_title">AI-провайдеры</string>
+    <string name="providers_search_hint">Поиск среди 100+ провайдеров</string>
+    <string name="providers_add_custom">Добавить свой эндпоинт</string>
+    <string name="providers_section_connected">Подключены</string>
+    <string name="providers_section_recommended">Рекомендуем</string>
+    <string name="providers_section_all">Все провайдеры</string>
+    <string name="providers_no_match">Нет провайдеров по запросу «%1$s»</string>
+    <string name="providers_not_connected_title">Нет связи с opencode</string>
+    <string name="providers_not_connected_body">Провайдеры настраиваются на сервере opencode. Сначала запустите локальный сервер или подключитесь к удалённому.</string>
+    <string name="providers_empty_title">Провайдеры не найдены</string>
+    <string name="providers_empty_body">Сервер вернул пустой список провайдеров.</string>
+
+    <plurals name="providers_models_count">
+        <item quantity="one">%d модель</item>
+        <item quantity="few">%d модели</item>
+        <item quantity="many">%d моделей</item>
+        <item quantity="other">%d модели</item>
+    </plurals>
+    <string name="providers_status_connected">Подключён</string>
+    <string name="providers_status_env">Ключ из окружения сервера</string>
+    <string name="providers_status_config">Настроен в opencode.json</string>
+
+    <string name="providers_go_title">OpenCode Go</string>
+    <string name="providers_go_body">Недорогая подписка на сильные открытые модели для кода (Kimi, GLM, Qwen, DeepSeek, MiniMax и другие), сделанная для opencode. Один ключ из консоли OpenCode.</string>
+    <string name="providers_go_get_key">Получить ключ</string>
+    <string name="providers_go_connect">Подключить</string>
+    <string name="providers_go_connected">OpenCode Go подключён</string>
+    <string name="providers_zen_hint">Модели с оплатой по факту из консоли OpenCode, есть бесплатные</string>
+
+    <string name="providers_sheet_choose_method">Как войти?</string>
+    <string name="providers_method_api_key">API-ключ</string>
+    <string name="providers_method_browser">Войти через браузер</string>
+    <string name="providers_key_label">API-ключ</string>
+    <string name="providers_key_hint">Хранится на сервере opencode (auth.json), а не в этом приложении.</string>
+    <string name="providers_key_env_hint">Или задайте %1$s на сервере.</string>
+    <string name="providers_key_where">Где взять ключ?</string>
+    <string name="providers_paste">Вставить</string>
+    <string name="providers_show_key">Показать ключ</string>
+    <string name="providers_hide_key">Скрыть ключ</string>
+    <string name="providers_connect">Подключить</string>
+    <string name="providers_connecting">Подключение…</string>
+    <string name="providers_disconnect">Отключить</string>
+    <string name="providers_disconnect_confirm_title">Отключить %1$s?</string>
+    <string name="providers_disconnect_confirm_body">Сохранённые учётные данные будут удалены с сервера. Чаты с его моделями перестанут работать, пока вы не подключите его снова.</string>
+    <string name="providers_env_cannot_disconnect">Ключ задан в окружении сервера (%1$s). Чтобы отключить, удалите его там.</string>
+    <string name="providers_oauth_open">Открыть страницу входа</string>
+    <string name="providers_oauth_waiting">Завершите вход в браузере. Этот экран обновится сам.</string>
+    <string name="providers_oauth_code_label">Код со страницы входа</string>
+    <string name="providers_oauth_submit">Завершить вход</string>
+    <string name="providers_open_failed">Нет приложения, чтобы открыть страницу входа</string>
+
+    <string name="providers_msg_connected">%1$s подключён</string>
+    <string name="providers_msg_disconnected">%1$s отключён</string>
+    <string name="providers_msg_custom_added">%1$s добавлен</string>
+
+    <string name="providers_custom_title">Свой эндпоинт</string>
+    <string name="providers_custom_intro">Подойдёт любой OpenAI-совместимый API: LM Studio, Ollama, vLLM, LiteLLM или ваш прокси. Он добавляется в глобальную конфигурацию opencode на сервере.</string>
+    <string name="providers_custom_name">Название</string>
+    <string name="providers_custom_name_placeholder">Моя локальная LLM</string>
+    <string name="providers_custom_id">ID провайдера</string>
+    <string name="providers_custom_id_hint">Строчные латинские буквы, цифры и дефисы. Модели указываются как id/модель.</string>
+    <string name="providers_custom_url">Базовый URL</string>
+    <string name="providers_custom_key">API-ключ (необязательно)</string>
+    <string name="providers_custom_models">Модели</string>
+    <string name="providers_custom_models_hint">ID моделей через запятую, например llama-3.3-70b, qwen3-coder</string>
+    <string name="providers_custom_save">Добавить провайдера</string>
+    <string name="providers_custom_err_id">От 2 до 40 строчных букв, цифр или дефисов</string>
+    <string name="providers_custom_err_url">Введите URL с http(s)</string>
+    <string name="providers_custom_err_models">Добавьте хотя бы одну модель</string>
+</resources>

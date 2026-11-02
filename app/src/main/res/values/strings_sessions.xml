@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sessions_title">opencode</string>
+    <string name="sessions_on_this_phone">On this phone</string>
+    <string name="sessions_new_chat">New chat</string>
+    <string name="sessions_search_hint">Search chats</string>
+    <string name="sessions_untitled">Untitled chat</string>
+    <string name="sessions_actions">Chat actions</string>
+    <string name="sessions_group_today">Today</string>
+    <string name="sessions_group_yesterday">Yesterday</string>
+    <string name="sessions_group_week">Previous 7 days</string>
+    <string name="sessions_group_older">Older</string>
+    <string name="sessions_working">Working…</string>
+
+    <string name="sessions_empty_title">Start your first conversation</string>
+    <string name="sessions_empty_body">Ask opencode to explore a project, fix a bug or write some code.</string>
+    <string name="sessions_offline_title">Not connected yet</string>
+    <string name="sessions_offline_body_local">opencode runs right on this phone. Start the local server to begin.</string>
+    <string name="sessions_offline_body_remote">Connect to the opencode server on your computer or VPS in Settings.</string>
+    <string name="sessions_open_settings">Open settings</string>
+    <string name="sessions_no_match">No chats match “%1$s”</string>
+    <string name="sessions_cached">Offline: showing saved chats</string>
+
+    <string name="sessions_providers_title">Connect an AI provider</string>
+    <string name="sessions_providers_body">opencode needs a model to talk to. Add OpenCode Go, Anthropic, OpenAI or any other provider in a minute.</string>
+    <string name="sessions_providers_action">Choose a provider</string>
+
+    <string name="sessions_local_setup">Finish setup to run opencode on this phone</string>
+    <string name="sessions_local_failed">The local server stopped: %1$s</string>
+    <string name="sessions_local_failed_unknown">unknown error</string>
+    <string name="sessions_local_starting">Starting the local server…</string>
+    <string name="sessions_local_stopped">The local server is not running</string>
+    <string name="sessions_open_setup">Open setup</string>
+
+    <string name="sessions_delete_title">Delete this chat?</string>
+    <string name="sessions_delete_body">“%1$s” and all its messages are removed from the server. This cannot be undone.</string>
+</resources>

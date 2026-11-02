@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="action_ok">ОК</string>
+    <string name="action_cancel">Отмена</string>
+    <string name="action_retry">Повторить</string>
+    <string name="action_dismiss">Закрыть</string>
+    <string name="action_back">Назад</string>
+    <string name="action_save">Сохранить</string>
+    <string name="action_delete">Удалить</string>
+    <string name="action_close">Закрыть</string>
+    <string name="action_copy">Копировать</string>
+    <string name="action_reload">Обновить</string>
+    <string name="action_search">Поиск</string>
+    <string name="action_clear">Очистить</string>
+    <string name="action_connect">Подключить</string>
+    <string name="action_disconnect">Отключить</string>
+    <string name="action_settings">Настройки</string>
+    <string name="action_start">Запустить</string>
+    <string name="action_stop">Остановить</string>
+
+    <string name="state_loading">Загрузка…</string>
+    <string name="copied_to_clipboard">Скопировано</string>
+
+    <string name="connection_connected">На связи</string>
+    <string name="connection_connecting">Подключение</string>
+    <string name="connection_reconnecting">Переподключение</string>
+    <string name="connection_offline">Нет связи</string>
+
+    <string name="time_just_now">только что</string>
+    <plurals name="time_minutes_ago">
+        <item quantity="one">%d мин назад</item>
+        <item quantity="few">%d мин назад</item>
+        <item quantity="many">%d мин назад</item>
+        <item quantity="other">%d мин назад</item>
+    </plurals>
+    <plurals name="time_hours_ago">
+        <item quantity="one">%d ч назад</item>
+        <item quantity="few">%d ч назад</item>
+        <item quantity="many">%d ч назад</item>
+        <item quantity="other">%d ч назад</item>
+    </plurals>
+    <plurals name="time_days_ago">
+        <item quantity="one">%d день назад</item>
+        <item quantity="few">%d дня назад</item>
+        <item quantity="many">%d дней назад</item>
+        <item quantity="other">%d дня назад</item>
+    </plurals>
+</resources>

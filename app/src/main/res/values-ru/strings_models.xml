@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="models_title">Выбор модели</string>
+    <string name="models_search_hint">Поиск моделей</string>
+    <string name="models_server_default">По умолчанию сервера</string>
+    <string name="models_server_default_hint">opencode возьмёт модель из своей конфигурации</string>
+    <string name="models_empty_title">Моделей пока нет</string>
+    <string name="models_empty_message">Подключите AI-провайдера — OpenCode Go, Anthropic, OpenAI или другого, — и его модели появятся здесь.</string>
+    <string name="models_no_match">Ничего не найдено по запросу «%1$s»</string>
+    <string name="models_manage_providers">Управление провайдерами</string>
+    <string name="models_disabled">отключена</string>
+    <string name="models_selected">Выбрана</string>
+</resources>

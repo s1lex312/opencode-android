@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Shared -->
+    <string name="settings_pair">%1$s · %2$s</string>
+
+    <!-- Hub -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_hub_local_title">Running on this phone</string>
+    <string name="settings_hub_local_body">opencode lives inside the app, no computer needed.</string>
+    <string name="settings_hub_local_setup">Finish the one-time setup to start the built-in server.</string>
+    <string name="settings_hub_remote_title">Remote server</string>
+    <string name="settings_group_server">Server</string>
+    <string name="settings_group_preferences">Preferences</string>
+    <string name="settings_connection">Connection</string>
+    <string name="settings_providers">AI providers</string>
+    <string name="settings_providers_subtitle">API keys, OpenCode Go, custom endpoints</string>
+    <string name="settings_agent_model">Agent &amp; model</string>
+    <string name="settings_model_short_default">Default model</string>
+    <string name="settings_agent_short_default">Default agent</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="settings_theme_summary_system">System theme</string>
+    <string name="settings_theme_summary_light">Light theme</string>
+    <string name="settings_theme_summary_dark">Dark theme</string>
+    <string name="settings_about">About</string>
+    <string name="settings_about_subtitle">Version, links and privacy</string>
+
+    <!-- Connection -->
+    <string name="settings_connection_title">Connection</string>
+    <string name="settings_mode_local">This phone</string>
+    <string name="settings_mode_remote">Remote server</string>
+    <string name="settings_mode_local_hint">The app installs and runs opencode right here. No computer and no root needed.</string>
+    <string name="settings_mode_remote_hint">Connect to opencode serve running on your computer, home server or VPS.</string>
+    <string name="settings_local_group">Built-in server</string>
+    <string name="settings_local_server">opencode server</string>
+    <string name="settings_local_stopped">Stopped</string>
+    <string name="settings_local_starting">Starting…</string>
+    <string name="settings_local_running">Running on %1$s</string>
+    <string name="settings_local_unhealthy">Running, waiting for it to respond</string>
+    <string name="settings_local_failed">Stopped after an error</string>
+    <string name="settings_local_stopping">Stopping…</string>
+    <string name="settings_local_needs_setup">The environment isn\'t installed yet. Open Environment to set it up.</string>
+    <string name="settings_environment">Environment</string>
+    <string name="settings_environment_installed">Version %1$s installed</string>
+    <string name="settings_environment_missing">Not installed. Tap to set up</string>
+    <string name="settings_environment_checking">Checking…</string>
+    <string name="settings_server_log">Server log</string>
+    <string name="settings_server_log_subtitle">See what the server is doing</string>
+    <string name="settings_remote_group">Server address</string>
+    <string name="settings_remote_url_label">Address</string>
+    <string name="settings_remote_url_placeholder" translatable="false">http://192.168.1.10:4096</string>
+    <string name="settings_remote_url_empty">Enter the address of your opencode server</string>
+    <string name="settings_allow_http">Allow HTTP on local network</string>
+    <string name="settings_allow_http_subtitle">For addresses like 192.168.x.x or 10.x.x.x. Public hosts always need HTTPS.</string>
+    <string name="settings_auth_group">Sign-in</string>
+    <string name="settings_auth_none">None</string>
+    <string name="settings_auth_password">Password</string>
+    <string name="settings_auth_token">Token</string>
+    <string name="settings_auth_none_hint">The server accepts anyone who can reach it. Fine on a trusted network or a VPN.</string>
+    <string name="settings_auth_password_hint">HTTP Basic auth with a username and password.</string>
+    <string name="settings_auth_token_hint">A bearer token sent with every request.</string>
+    <string name="settings_username">Username</string>
+    <string name="settings_password">Password</string>
+    <string name="settings_token">Token</string>
+    <string name="settings_secret_stored">Saved securely. Type a new one to replace it.</string>
+    <string name="settings_show_secret">Show</string>
+    <string name="settings_hide_secret">Hide</string>
+    <string name="settings_clear_credentials">Forget saved password and token</string>
+    <string name="settings_storage_warning">Encrypted storage isn\'t available on this device, so passwords and tokens stay in memory only and are lost when the app closes.</string>
+    <string name="settings_test">Test</string>
+    <string name="settings_save_connect">Save &amp; connect</string>
+    <string name="settings_test_ok">Reachable: opencode %1$s (%2$s)</string>
+    <string name="settings_test_ok_unknown_version">Reachable (%1$s)</string>
+    <string name="settings_api_v2">API v2</string>
+    <string name="settings_api_legacy">legacy API</string>
+    <string name="settings_status_idle">Not connected</string>
+    <string name="settings_status_connecting">Connecting…</string>
+    <string name="settings_status_connected">Connected to %1$s</string>
+    <string name="settings_status_reconnecting">Connection lost, retrying (attempt %1$d)</string>
+    <string name="settings_status_failed">Couldn\'t connect: %1$s</string>
+    <string name="settings_msg_saved">Saved. Connecting to %1$s…</string>
+    <string name="settings_msg_mode_local">opencode will run on this phone</string>
+    <string name="settings_msg_mode_remote">Switched to your remote server</string>
+    <string name="settings_msg_credentials_cleared">Saved password and token removed</string>
+
+    <!-- Agent & model -->
+    <string name="settings_agent_title">Agent &amp; model</string>
+    <string name="settings_model_group">Model</string>
+    <string name="settings_default_model">Default model</string>
+    <string name="settings_default_model_server">Server default: opencode picks its configured model</string>
+    <string name="settings_providers_hint">Connect OpenCode Go, Anthropic, OpenAI and more</string>
+    <string name="settings_models_offline">Connect to a server first, then pick a model.</string>
+    <string name="settings_agent_group">Default agent</string>
+    <string name="settings_agent_server_default">Server default</string>
+    <string name="settings_agent_server_default_hint">Let the server choose, usually build</string>
+    <string name="settings_agent_unavailable">Not offered by this server</string>
+    <string name="settings_agents_offline">Connect to a server to see its agents.</string>
+    <string name="settings_permission_group">When the agent asks for permission</string>
+    <string name="settings_permission_ask">Ask me</string>
+    <string name="settings_permission_ask_hint">Show an approval card in the chat</string>
+    <string name="settings_permission_allow">Allow automatically</string>
+    <string name="settings_permission_allow_hint">Approve each request once. It still shows up in the conversation.</string>
+    <string name="settings_permission_deny">Deny automatically</string>
+    <string name="settings_permission_deny_hint">Reject every request without asking</string>
+
+    <!-- Appearance -->
+    <string name="settings_appearance_title">Appearance</string>
+    <string name="settings_preview_user">Can you add a dark mode toggle to the settings page?</string>
+    <string name="settings_preview_assistant">Sure! I\'ll add a theme switch and save the choice so it sticks after a restart.</string>
+    <string name="settings_theme_group">Theme</string>
+    <string name="settings_theme_system">System</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_palette">Accent colour</string>
+    <string name="settings_palette_opencode">opencode</string>
+    <string name="settings_palette_dynamic">Wallpaper</string>
+    <string name="settings_palette_emerald">Emerald</string>
+    <string name="settings_palette_amber">Amber</string>
+    <string name="settings_palette_violet">Violet</string>
+    <string name="settings_palette_rose">Rose</string>
+    <string name="settings_pure_black">Pure black</string>
+    <string name="settings_pure_black_subtitle">True black background, easy on OLED screens</string>
+    <string name="settings_pure_black_disabled">Available with the dark theme</string>
+    <string name="settings_chat_group">Chat</string>
+    <string name="settings_text_size">Text size</string>
+    <string name="settings_text_small">Small</string>
+    <string name="settings_text_default">Default</string>
+    <string name="settings_text_large">Large</string>
+    <string name="settings_language_group">Language</string>
+    <string name="settings_language">App language</string>
+    <string name="settings_language_system">System default</string>
+    <string name="settings_language_system_short">System language</string>
+    <string name="settings_language_hint">The screen reloads to apply the new language.</string>
+
+    <!-- About -->
+    <string name="settings_about_title">About</string>
+    <string name="settings_about_app_name">opencode for Android</string>
+    <string name="settings_about_tagline">A native home for the opencode coding agent, on your phone or connected to your own server.</string>
+    <string name="settings_about_app_group">This app</string>
+    <string name="settings_about_version">Version</string>
+    <string name="settings_about_version_hint">%1$s · tap to copy</string>
+    <string name="settings_about_build_full">Full build</string>
+    <string name="settings_about_build_full_hint">The opencode environment ships inside the app, so local setup works offline.</string>
+    <string name="settings_about_build_lite">Lite build</string>
+    <string name="settings_about_build_lite_hint">The opencode environment is downloaded or imported during setup, which keeps the app small.</string>
+    <string name="settings_about_compat">Works with</string>
+    <string name="settings_about_compat_hint">opencode 2.x servers and older 0.x / 1.x ones</string>
+    <string name="settings_about_links">Links</string>
+    <string name="settings_about_github">Source code on GitHub</string>
+    <string name="settings_about_opencode">opencode website</string>
+    <string name="settings_about_docs">opencode documentation</string>
+    <string name="settings_about_no_browser">No app found to open this link</string>
+    <string name="settings_about_privacy">Privacy &amp; security</string>
+    <string name="settings_about_secrets">Encrypted secrets</string>
+    <string name="settings_about_secrets_hint">Passwords and tokens are encrypted with a key held by the Android Keystore and never written to logs.</string>
+    <string name="settings_about_secrets_memory">Secrets kept in memory only</string>
+    <string name="settings_about_secrets_memory_hint">Encrypted storage isn\'t available on this device, so passwords and tokens are forgotten when the app closes.</string>
+    <string name="settings_about_https">HTTPS for public hosts</string>
+    <string name="settings_about_https_hint">Plain HTTP is only used for this phone and, if you allow it, your local network.</string>
+</resources>

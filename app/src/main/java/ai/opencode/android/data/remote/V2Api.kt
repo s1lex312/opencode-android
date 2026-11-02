@@ -1,5 +1,6 @@
 package ai.opencode.android.data.remote
 
+import ai.opencode.android.data.model.AgentOption
 import ai.opencode.android.data.model.ApiFlavor
 import ai.opencode.android.data.model.ChatMessage
 import ai.opencode.android.data.model.FileDiffPayload
@@ -136,6 +137,18 @@ class V2Api(override val http: ServerHttp) : OpencodeApi {
                 name = obj.str("name") ?: modelID,
                 disabled = obj.bool("enabled") == false,
             )
+        }
+    }
+
+    override suspend fun agents(): List<AgentOption> {
+        val response = http.getJson("/api/agent")
+        val array = (response as? JsonObject)?.obj("data") as? JsonArray
+            ?: response as? JsonArray
+            ?: return emptyList()
+        return array.objects().mapNotNull { obj ->
+            val name = obj.str("name") ?: obj.str("id") ?: return@mapNotNull null
+            if (obj.bool("hidden") == true) return@mapNotNull null
+            AgentOption(name = name, description = obj.str("description"), mode = obj.str("mode"))
         }
     }
 

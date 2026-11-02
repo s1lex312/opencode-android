@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_untitled">Новый чат</string>
+    <string name="chat_assistant_name">opencode</string>
+    <string name="chat_status_connected">Готов</string>
+    <string name="chat_status_working">Работает…</string>
+    <string name="chat_status_offline">Нет связи</string>
+    <string name="chat_diff">Изменения</string>
+    <string name="chat_more">Ещё</string>
+    <string name="chat_input_hint">Спросите opencode о чём угодно…</string>
+    <string name="chat_send">Отправить</string>
+    <string name="chat_waiting_server">Ждём сервер…</string>
+    <string name="chat_working">opencode работает…</string>
+    <string name="chat_thinking">Думает…</string>
+    <string name="chat_reasoning">Ход мыслей</string>
+    <string name="chat_expand">Развернуть</string>
+    <string name="chat_collapse">Свернуть</string>
+    <string name="chat_scroll_bottom">К последнему сообщению</string>
+    <string name="chat_model_default">Модель по умолчанию</string>
+    <string name="chat_agent_default">Агент по умолчанию</string>
+    <string name="chat_choose_agent">Агент</string>
+
+    <string name="chat_empty_title">Что будем делать?</string>
+    <string name="chat_empty_body">opencode умеет читать проект, запускать команды и править файлы. Попробуйте:</string>
+    <string name="chat_suggestion_explain">Объясни, как устроен этот проект</string>
+    <string name="chat_suggestion_bug">Найди и исправь баг в коде</string>
+    <string name="chat_suggestion_tests">Напиши тесты для основного модуля</string>
+
+    <string name="chat_tool_input">Вход</string>
+    <string name="chat_tool_output">Результат</string>
+    <string name="chat_tool_no_payload">Для этого шага нет подробностей.</string>
+    <string name="chat_tool_queued">В очереди</string>
+    <string name="chat_tool_running">Выполняется</string>
+    <string name="chat_tool_done">Готово</string>
+    <string name="chat_tool_failed">Ошибка</string>
+
+    <string name="chat_permission_title">opencode просит разрешение</string>
+    <string name="chat_permission_more">и ещё %1$d</string>
+    <string name="chat_permission_allow">Разрешить раз</string>
+    <string name="chat_permission_deny">Запретить</string>
+    <string name="chat_permission_always">Разрешать всегда</string>
+    <plurals name="chat_permission_queue">
+        <item quantity="one">Ждёт ещё %d запрос</item>
+        <item quantity="few">Ждут ещё %d запроса</item>
+        <item quantity="many">Ждут ещё %d запросов</item>
+        <item quantity="other">Ждут ещё %d запроса</item>
+    </plurals>
+</resources>

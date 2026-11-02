@@ -2,6 +2,7 @@ package ai.opencode.android.di
 
 import ai.opencode.android.BuildConfig
 import ai.opencode.android.data.cache.SessionCache
+import ai.opencode.android.data.repo.ProviderRepository
 import ai.opencode.android.data.repo.ServerConnectionManager
 import ai.opencode.android.data.repo.SessionRepository
 import ai.opencode.android.security.EncryptedSecretStore
@@ -113,6 +114,9 @@ class AppContainer(context: Context) {
     val sessionRepository: SessionRepository by lazy {
         SessionRepository(connectionManager, sessionCache)
     }
+
+    /** AI providers configured on the connected opencode server (API keys, OAuth, custom endpoints). */
+    val providerRepository: ProviderRepository by lazy { ProviderRepository(connectionManager) }
 
     val localServerManager: LocalServerManager by lazy {
         LocalServerManager(appContext, appScope, provisioner, secretStore)

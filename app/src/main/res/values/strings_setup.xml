@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Top bar -->
+    <string name="setup_title">Local server</string>
+    <string name="setup_open_log">Open server log</string>
+
+    <!-- Hero -->
+    <string name="setup_hero_title">Run opencode on this phone</string>
+    <string name="setup_hero_body">The app sets up a small Linux environment in its private storage and starts opencode there. No root, no Termux, about 400 MB of space.</string>
+
+    <!-- Banners -->
+    <string name="setup_remote_banner_title">You\'re using a remote server</string>
+    <string name="setup_remote_banner_body">The app currently talks to opencode on another machine. You can prepare this phone anyway and switch whenever you like — the remote address stays saved.</string>
+    <string name="setup_broken_banner_title">This build lost its environment</string>
+    <string name="setup_broken_banner_body">This Full APK was packaged without its environment bundle. Reinstall the Full APK from the latest release, or install a bundle file or link under Other sources.</string>
+    <string name="setup_lite_banner_title">Bring your own bundle</string>
+    <string name="setup_lite_banner_body">This Lite build doesn\'t include the environment. Pick a bundle file or paste a download link under Other sources — or use a remote server instead.</string>
+
+    <!-- Stepper -->
+    <string name="setup_step_check">Check this phone</string>
+    <string name="setup_step_install">Install the environment</string>
+    <string name="setup_step_start">Start the server</string>
+    <string name="setup_step_state_pending">Not started</string>
+    <string name="setup_step_state_active">In progress</string>
+    <string name="setup_step_state_done">Done</string>
+    <string name="setup_step_state_warning">Needs your attention</string>
+    <string name="setup_step_state_error">Failed</string>
+
+    <string name="setup_check_ready">Ready to go</string>
+    <string name="setup_check_ready_free">Ready to go · %1$s free</string>
+    <string name="setup_check_embedded">The environment is built into this app, no internet needed</string>
+    <string name="setup_check_download">The environment will be downloaded from your link</string>
+    <string name="setup_check_broken">The environment bundle is missing from this build</string>
+    <string name="setup_check_lite">Choose a bundle file or link below</string>
+
+    <string name="setup_install_version">Version %1$s</string>
+    <string name="setup_install_version_size">Version %1$s · %2$s on disk</string>
+    <string name="setup_install_embedded">Unpacks right from the app, takes a minute or two</string>
+    <string name="setup_install_download_size">Downloads about %1$s</string>
+    <string name="setup_install_pending">Not installed yet</string>
+    <string name="setup_install_failed">Installation didn\'t finish</string>
+
+    <string name="setup_start_waiting">Available after installation</string>
+    <string name="setup_start_remote">Off while the app uses a remote server</string>
+
+    <!-- Server status (also used by the log screen) -->
+    <string name="setup_server_stopped">Stopped</string>
+    <string name="setup_server_starting">Starting…</string>
+    <string name="setup_server_running">Running on 127.0.0.1:%1$d</string>
+    <string name="setup_server_unhealthy">Running, but not answering</string>
+    <string name="setup_server_stopping">Stopping…</string>
+    <string name="setup_server_failed">Couldn\'t start</string>
+    <string name="setup_server_failed_hint">The server log usually says what went wrong.</string>
+    <plurals name="setup_server_restarts">
+        <item quantity="one">Restarted %d time</item>
+        <item quantity="other">Restarted %d times</item>
+    </plurals>
+
+    <!-- Progress -->
+    <string name="setup_phase_preparing">Getting ready</string>
+    <string name="setup_phase_checking">Checking</string>
+    <string name="setup_phase_importing">Copying the selected file</string>
+    <string name="setup_phase_downloading">Downloading</string>
+    <string name="setup_phase_unpacking_builtin">Preparing the built-in environment</string>
+    <string name="setup_phase_verifying">Verifying the checksum</string>
+    <string name="setup_phase_extracting">Unpacking files</string>
+    <string name="setup_phase_installing">Finishing up</string>
+    <string name="setup_progress_percent">%1$d%%</string>
+    <string name="setup_progress_bytes">%1$s of %2$s</string>
+
+    <!-- Primary action -->
+    <string name="setup_action_install">Install</string>
+    <string name="setup_action_download_install">Download and install</string>
+    <string name="setup_action_choose_file">Choose a bundle file</string>
+    <string name="setup_action_installing">Installing…</string>
+    <string name="setup_action_installing_percent">Installing… %1$d%%</string>
+    <string name="setup_action_start">Start server</string>
+    <string name="setup_action_starting">Starting…</string>
+    <string name="setup_action_stopping">Stopping…</string>
+    <string name="setup_action_use_local">Run on this phone</string>
+    <string name="setup_action_done">All set</string>
+    <string name="setup_action_use_remote">Use a remote server instead</string>
+
+    <!-- Background reliability -->
+    <string name="setup_background_title">Keep it running</string>
+    <string name="setup_battery_title">Battery optimisation is on</string>
+    <string name="setup_battery_body">Android may stop the server in the background. Let opencode run without restrictions.</string>
+    <string name="setup_notifications_title">Notifications are off</string>
+    <string name="setup_notifications_body">See the server status and stop it right from the notification shade.</string>
+    <string name="setup_action_allow">Allow</string>
+    <string name="setup_action_open_settings">Settings</string>
+
+    <!-- Other sources -->
+    <string name="setup_sources_title">Other sources</string>
+    <string name="setup_sources_subtitle_embedded">Use a newer bundle from a link or a file</string>
+    <string name="setup_sources_subtitle_lite">Install from a download link or a .tar.gz file</string>
+    <string name="setup_sources_active_builtin">Currently using the bundle built into the app</string>
+    <string name="setup_sources_active_download">Currently downloading from your link</string>
+    <string name="setup_sources_active_none">No source yet</string>
+    <string name="setup_sources_link_title">Download link</string>
+    <string name="setup_sources_url_label">Bundle URL</string>
+    <string name="setup_sources_url_error">Only https:// links are accepted</string>
+    <string name="setup_sources_sha_label">SHA-256</string>
+    <string name="setup_sources_sha_hint">Printed by build-rootfs.sh next to the bundle</string>
+    <string name="setup_sources_sha_error">A SHA-256 has 64 hexadecimal characters</string>
+    <string name="setup_sources_sha_required">Required to download a bundle</string>
+    <string name="setup_sources_version_label">Version label (optional)</string>
+    <string name="setup_sources_save">Save link</string>
+    <string name="setup_sources_reset">Use built-in bundle</string>
+    <string name="setup_sources_file_title">Bundle file</string>
+    <string name="setup_sources_file_body">Works offline: the file is verified and unpacked on the phone.</string>
+    <string name="setup_sources_import">Import .tar.gz file</string>
+
+    <!-- Log preview -->
+    <string name="setup_logs_title">Server log</string>
+    <string name="setup_logs_empty">Nothing logged yet</string>
+
+    <!-- Maintenance -->
+    <string name="setup_manage_title">Maintenance</string>
+    <string name="setup_manage_reinstall">Reinstall environment</string>
+    <string name="setup_manage_reinstall_body">Set it up again from the current source</string>
+    <string name="setup_manage_reinstall_file_body">Pick a bundle file to install again</string>
+    <string name="setup_manage_restart">Restart server</string>
+    <string name="setup_manage_restart_body">Useful after changing providers or if it stops answering</string>
+    <string name="setup_manage_stop">Stop server</string>
+    <string name="setup_manage_stop_body">Starts again the next time you open the app</string>
+    <string name="setup_manage_remove">Remove environment</string>
+    <string name="setup_manage_remove_body">Frees %1$s and stops the server</string>
+    <string name="setup_manage_remove_body_unknown">Deletes the installed files and stops the server</string>
+    <string name="setup_remove_confirm_title">Remove the environment?</string>
+    <string name="setup_remove_confirm_body">The local server stops and its files are deleted. You can install it again at any time.</string>
+    <string name="setup_remove_confirm_action">Remove</string>
+
+    <!-- Details -->
+    <string name="setup_details_title">Details</string>
+    <string name="setup_details_subtitle">Build, versions, storage</string>
+    <string name="setup_details_build">Build</string>
+    <string name="setup_details_installed">Installed</string>
+    <string name="setup_details_not_installed">Not installed</string>
+    <string name="setup_details_bundle">Bundle</string>
+    <string name="setup_details_bundle_value">%1$s · %2$s</string>
+    <string name="setup_details_source">Source</string>
+    <string name="setup_details_source_embedded">Built into this APK, verified by its signature</string>
+    <string name="setup_details_source_download">Download from %1$s</string>
+    <string name="setup_details_source_broken">Missing from this Full build</string>
+    <string name="setup_details_source_lite">Not included (Lite build)</string>
+    <string name="setup_details_on_disk">On disk</string>
+    <string name="setup_details_free">Free space</string>
+    <string name="setup_details_server">Server</string>
+    <string name="setup_details_process">PID %1$d · port %2$d</string>
+    <string name="setup_details_location">Location</string>
+    <string name="setup_details_refresh">Refresh</string>
+    <string name="setup_expand">Show more</string>
+    <string name="setup_collapse">Show less</string>
+
+    <!-- Snackbar messages -->
+    <string name="setup_msg_no_source">This build has no environment inside. Add a download link or import a .tar.gz file first.</string>
+    <string name="setup_msg_installed">Environment %1$s installed</string>
+    <string name="setup_msg_importing">Importing the selected bundle…</string>
+    <string name="setup_msg_import_unreadable">Can\'t read the selected file</string>
+    <string name="setup_msg_import_too_small">That file is too small to be an environment bundle</string>
+    <string name="setup_msg_import_hash_failed">Can\'t compute the checksum of the selected file</string>
+    <string name="setup_msg_removed">Environment removed</string>
+    <string name="setup_msg_remove_partial">Some files couldn\'t be removed</string>
+    <string name="setup_msg_starting">Starting the local server…</string>
+    <string name="setup_msg_stopped">Local server stopped</string>
+    <string name="setup_msg_restarting">Restarting the local server…</string>
+    <string name="setup_msg_mode_local">opencode now runs on this phone</string>
+    <string name="setup_msg_mode_remote">Using your remote server</string>
+    <string name="setup_msg_source_saved">Download link saved</string>
+    <string name="setup_msg_source_reset">Back to the built-in bundle</string>
+</resources>

@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="setup_title">Локальный сервер</string>
+    <string name="setup_open_log">Открыть журнал сервера</string>
+
+    <string name="setup_hero_title">Запустите opencode на этом телефоне</string>
+    <string name="setup_hero_body">Приложение разворачивает небольшое Linux-окружение в своей приватной папке и запускает там opencode. Без root и Termux, нужно около 400 МБ.</string>
+
+    <string name="setup_remote_banner_title">Сейчас используется удалённый сервер</string>
+    <string name="setup_remote_banner_body">Приложение работает с opencode на другой машине. Телефон можно подготовить заранее и переключиться когда угодно — адрес удалённого сервера сохранится.</string>
+    <string name="setup_broken_banner_title">В этой сборке нет окружения</string>
+    <string name="setup_broken_banner_body">Full APK собран без встроенного окружения. Переустановите Full APK из последнего релиза или установите бандл из файла или по ссылке в разделе «Другие источники».</string>
+    <string name="setup_lite_banner_title">Нужен свой бандл</string>
+    <string name="setup_lite_banner_body">В Lite-сборке окружения нет. Выберите файл бандла или вставьте ссылку для загрузки в разделе «Другие источники» — либо подключитесь к удалённому серверу.</string>
+
+    <string name="setup_step_check">Проверка телефона</string>
+    <string name="setup_step_install">Установка окружения</string>
+    <string name="setup_step_start">Запуск сервера</string>
+    <string name="setup_step_state_pending">Не начато</string>
+    <string name="setup_step_state_active">Выполняется</string>
+    <string name="setup_step_state_done">Готово</string>
+    <string name="setup_step_state_warning">Требует внимания</string>
+    <string name="setup_step_state_error">Ошибка</string>
+
+    <string name="setup_check_ready">Всё готово</string>
+    <string name="setup_check_ready_free">Всё готово · свободно %1$s</string>
+    <string name="setup_check_embedded">Окружение встроено в приложение, интернет не нужен</string>
+    <string name="setup_check_download">Окружение будет загружено по вашей ссылке</string>
+    <string name="setup_check_broken">В этой сборке нет бандла окружения</string>
+    <string name="setup_check_lite">Выберите файл бандла или ссылку ниже</string>
+
+    <string name="setup_install_version">Версия %1$s</string>
+    <string name="setup_install_version_size">Версия %1$s · %2$s на диске</string>
+    <string name="setup_install_embedded">Распаковывается прямо из приложения, займёт минуту-две</string>
+    <string name="setup_install_download_size">Загрузка около %1$s</string>
+    <string name="setup_install_pending">Ещё не установлено</string>
+    <string name="setup_install_failed">Установка не завершилась</string>
+
+    <string name="setup_start_waiting">Доступно после установки</string>
+    <string name="setup_start_remote">Выключен, пока используется удалённый сервер</string>
+
+    <string name="setup_server_stopped">Остановлен</string>
+    <string name="setup_server_starting">Запускается…</string>
+    <string name="setup_server_running">Работает на 127.0.0.1:%1$d</string>
+    <string name="setup_server_unhealthy">Запущен, но не отвечает</string>
+    <string name="setup_server_stopping">Останавливается…</string>
+    <string name="setup_server_failed">Не удалось запустить</string>
+    <string name="setup_server_failed_hint">Причина обычно видна в журнале сервера.</string>
+    <plurals name="setup_server_restarts">
+        <item quantity="one">Перезапущен %d раз</item>
+        <item quantity="few">Перезапущен %d раза</item>
+        <item quantity="many">Перезапущен %d раз</item>
+        <item quantity="other">Перезапущен %d раза</item>
+    </plurals>
+
+    <string name="setup_phase_preparing">Подготовка</string>
+    <string name="setup_phase_checking">Проверка</string>
+    <string name="setup_phase_importing">Копирование выбранного файла</string>
+    <string name="setup_phase_downloading">Загрузка</string>
+    <string name="setup_phase_unpacking_builtin">Подготовка встроенного окружения</string>
+    <string name="setup_phase_verifying">Проверка контрольной суммы</string>
+    <string name="setup_phase_extracting">Распаковка файлов</string>
+    <string name="setup_phase_installing">Завершение</string>
+    <string name="setup_progress_percent">%1$d%%</string>
+    <string name="setup_progress_bytes">%1$s из %2$s</string>
+
+    <string name="setup_action_install">Установить</string>
+    <string name="setup_action_download_install">Загрузить и установить</string>
+    <string name="setup_action_choose_file">Выбрать файл бандла</string>
+    <string name="setup_action_installing">Установка…</string>
+    <string name="setup_action_installing_percent">Установка… %1$d%%</string>
+    <string name="setup_action_start">Запустить сервер</string>
+    <string name="setup_action_starting">Запуск…</string>
+    <string name="setup_action_stopping">Остановка…</string>
+    <string name="setup_action_use_local">Запускать на телефоне</string>
+    <string name="setup_action_done">Всё настроено</string>
+    <string name="setup_action_use_remote">Использовать удалённый сервер</string>
+
+    <string name="setup_background_title">Работа в фоне</string>
+    <string name="setup_battery_title">Включена оптимизация батареи</string>
+    <string name="setup_battery_body">Android может остановить сервер в фоне. Разрешите opencode работать без ограничений.</string>
+    <string name="setup_notifications_title">Уведомления выключены</string>
+    <string name="setup_notifications_body">Статус сервера и кнопка остановки будут в шторке уведомлений.</string>
+    <string name="setup_action_allow">Разрешить</string>
+    <string name="setup_action_open_settings">Настройки</string>
+
+    <string name="setup_sources_title">Другие источники</string>
+    <string name="setup_sources_subtitle_embedded">Более новый бандл по ссылке или из файла</string>
+    <string name="setup_sources_subtitle_lite">Установка по ссылке или из файла .tar.gz</string>
+    <string name="setup_sources_active_builtin">Сейчас используется встроенный бандл</string>
+    <string name="setup_sources_active_download">Сейчас загружается по вашей ссылке</string>
+    <string name="setup_sources_active_none">Источник не выбран</string>
+    <string name="setup_sources_link_title">Ссылка для загрузки</string>
+    <string name="setup_sources_url_label">URL бандла</string>
+    <string name="setup_sources_url_error">Принимаются только ссылки https://</string>
+    <string name="setup_sources_sha_label">SHA-256</string>
+    <string name="setup_sources_sha_hint">build-rootfs.sh печатает её рядом с бандлом</string>
+    <string name="setup_sources_sha_error">SHA-256 — это 64 шестнадцатеричных символа</string>
+    <string name="setup_sources_sha_required">Нужна для загрузки бандла</string>
+    <string name="setup_sources_version_label">Метка версии (необязательно)</string>
+    <string name="setup_sources_save">Сохранить ссылку</string>
+    <string name="setup_sources_reset">Встроенный бандл</string>
+    <string name="setup_sources_file_title">Файл бандла</string>
+    <string name="setup_sources_file_body">Работает офлайн: файл проверяется и распаковывается на телефоне.</string>
+    <string name="setup_sources_import">Импортировать .tar.gz</string>
+
+    <string name="setup_logs_title">Журнал сервера</string>
+    <string name="setup_logs_empty">Пока пусто</string>
+
+    <string name="setup_manage_title">Обслуживание</string>
+    <string name="setup_manage_reinstall">Переустановить окружение</string>
+    <string name="setup_manage_reinstall_body">Установить заново из текущего источника</string>
+    <string name="setup_manage_reinstall_file_body">Выбрать файл бандла для переустановки</string>
+    <string name="setup_manage_restart">Перезапустить сервер</string>
+    <string name="setup_manage_restart_body">Пригодится после смены провайдеров или если сервер завис</string>
+    <string name="setup_manage_stop">Остановить сервер</string>
+    <string name="setup_manage_stop_body">Запустится снова при следующем открытии приложения</string>
+    <string name="setup_manage_remove">Удалить окружение</string>
+    <string name="setup_manage_remove_body">Освободит %1$s и остановит сервер</string>
+    <string name="setup_manage_remove_body_unknown">Удалит установленные файлы и остановит сервер</string>
+    <string name="setup_remove_confirm_title">Удалить окружение?</string>
+    <string name="setup_remove_confirm_body">Локальный сервер остановится, его файлы будут удалены. Установить заново можно в любой момент.</string>
+    <string name="setup_remove_confirm_action">Удалить</string>
+
+    <string name="setup_details_title">Подробности</string>
+    <string name="setup_details_subtitle">Сборка, версии, место</string>
+    <string name="setup_details_build">Сборка</string>
+    <string name="setup_details_installed">Установлено</string>
+    <string name="setup_details_not_installed">Не установлено</string>
+    <string name="setup_details_bundle">Бандл</string>
+    <string name="setup_details_bundle_value">%1$s · %2$s</string>
+    <string name="setup_details_source">Источник</string>
+    <string name="setup_details_source_embedded">Встроен в APK, проверен его подписью</string>
+    <string name="setup_details_source_download">Загрузка с %1$s</string>
+    <string name="setup_details_source_broken">Отсутствует в этой Full-сборке</string>
+    <string name="setup_details_source_lite">Не входит в сборку (Lite)</string>
+    <string name="setup_details_on_disk">На диске</string>
+    <string name="setup_details_free">Свободно</string>
+    <string name="setup_details_server">Сервер</string>
+    <string name="setup_details_process">PID %1$d · порт %2$d</string>
+    <string name="setup_details_location">Расположение</string>
+    <string name="setup_details_refresh">Обновить</string>
+    <string name="setup_expand">Показать ещё</string>
+    <string name="setup_collapse">Свернуть</string>
+
+    <string name="setup_msg_no_source">В этой сборке нет окружения. Сначала добавьте ссылку для загрузки или импортируйте файл .tar.gz.</string>
+    <string name="setup_msg_installed">Окружение %1$s установлено</string>
+    <string name="setup_msg_importing">Импорт выбранного бандла…</string>
+    <string name="setup_msg_import_unreadable">Не удаётся прочитать выбранный файл</string>
+    <string name="setup_msg_import_too_small">Файл слишком мал для бандла окружения</string>
+    <string name="setup_msg_import_hash_failed">Не удалось посчитать контрольную сумму файла</string>
+    <string name="setup_msg_removed">Окружение удалено</string>
+    <string name="setup_msg_remove_partial">Часть файлов удалить не удалось</string>
+    <string name="setup_msg_starting">Запуск локального сервера…</string>
+    <string name="setup_msg_stopped">Локальный сервер остановлен</string>
+    <string name="setup_msg_restarting">Перезапуск локального сервера…</string>
+    <string name="setup_msg_mode_local">opencode теперь работает на телефоне</string>
+    <string name="setup_msg_mode_remote">Используется удалённый сервер</string>
+    <string name="setup_msg_source_saved">Ссылка сохранена</string>
+    <string name="setup_msg_source_reset">Снова используется встроенный бандл</string>
+</resources>

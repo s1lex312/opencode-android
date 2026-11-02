@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Diff -->
+    <string name="diff_title">Changes</string>
+    <string name="diff_reload">Reload changes</string>
+    <string name="diff_loading">Loading changes…</string>
+    <string name="diff_empty_title">No changes yet</string>
+    <string name="diff_empty_body">When opencode edits files, the changes of this chat show up here.</string>
+    <string name="diff_binary">Binary file, no text diff available.</string>
+    <string name="diff_no_patch">The server returned no patch for this file.</string>
+    <string name="diff_subtitle_empty">Files changed in this chat</string>
+    <plurals name="diff_files_changed">
+        <item quantity="one">%d file changed</item>
+        <item quantity="other">%d files changed</item>
+    </plurals>
+    <string name="diff_status_added">added</string>
+    <string name="diff_status_deleted">deleted</string>
+    <string name="diff_status_modified">modified</string>
+    <string name="diff_unparsed">This patch could not be read as a unified diff; raw content below.</string>
+
+    <!-- Logs -->
+    <string name="logs_title">Server log</string>
+    <string name="logs_reload">Reload from disk</string>
+    <string name="logs_clear">Clear log</string>
+    <string name="logs_from_disk">%1$s (from disk)</string>
+    <string name="logs_live">%1$s (live)</string>
+    <string name="logs_empty">No log output yet. Start the server to see its output here.</string>
+
+    <!-- Local server notification -->
+    <string name="notification_channel_description">Status of the opencode server running on this phone</string>
+    <string name="notification_starting">Starting opencode server…</string>
+    <string name="notification_restarting">Restarting opencode server…</string>
+    <string name="notification_stopping">Stopping opencode server…</string>
+    <string name="notification_listening">Listening on 127.0.0.1:%1$d</string>
+    <string name="notification_setup_required">Setup required: open the app to install</string>
+    <string name="notification_restart">Restart</string>
+</resources>

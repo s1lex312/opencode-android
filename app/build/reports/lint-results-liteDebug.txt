@@ -1,0 +1,261 @@
+C:\Users\maniak\AppData\Local\Temp\oab\app\src\main\java\ai\opencode\android\ui\setup\SetupScreen.kt:1191: Warning: Use of REQUEST_IGNORE_BATTERY_OPTIMIZATIONS violates the Play Store Content Policy regarding acceptable use cases, as described in https://developer.android.com/training/monitoring-device-state/doze-standby.html [BatteryLife]
+    val request = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "BatteryLife":
+   This issue flags code that either
+   * negatively affects battery life, or
+   * uses APIs that have recently changed behavior to prevent background tasks
+   from consuming memory and battery excessively.
+
+   Generally, you should be using WorkManager instead.
+
+   For more details on how to update your code, please see
+   https://developer.android.com/topic/performance/background-optimization
+
+
+C:\Users\maniak\AppData\Local\Temp\oab\app\src\main\AndroidManifest.xml:32: Warning: Redundant label can be removed [RedundantLabel]
+            android:label="@string/app_name"
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "RedundantLabel":
+   When an activity does not have a label attribute, it will use the one from
+   the application tag. Since the application has already specified the same
+   label, the label on this activity can be omitted.
+
+C:\Users\maniak\AppData\Local\Temp\oab\app\build.gradle.kts:393: Warning: A newer version of androidx.core:core-ktx than 1.13.1 is available: 1.19.1 [GradleDependency]
+    implementation("androidx.core:core-ktx:1.13.1")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\maniak\AppData\Local\Temp\oab\app\build.gradle.kts:395: Warning: A newer version of androidx.appcompat:appcompat than 1.7.0 is available: 1.8.0 [GradleDependency]
+    implementation("androidx.appcompat:appcompat:1.7.0")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\maniak\AppData\Local\Temp\oab\app\build.gradle.kts:396: Warning: A newer version of androidx.activity:activity-compose than 1.9.2 is available: 1.13.0 [GradleDependency]
+    implementation("androidx.activity:activity-compose:1.9.2")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\maniak\AppData\Local\Temp\oab\app\build.gradle.kts:397: Warning: A newer version of androidx.lifecycle:lifecycle-runtime-ktx than 2.8.6 is available: 2.11.0 [GradleDependency]
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\maniak\AppData\Local\Temp\oab\app\build.gradle.kts:398: Warning: A newer version of androidx.lifecycle:lifecycle-runtime-compose than 2.8.6 is available: 2.11.0 [GradleDependency]
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\maniak\AppData\Local\Temp\oab\app\build.gradle.kts:399: Warning: A newer version of androidx.lifecycle:lifecycle-viewmodel-compose than 2.8.6 is available: 2.11.0 [GradleDependency]
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\maniak\AppData\Local\Temp\oab\app\build.gradle.kts:407: Warning: A newer version of androidx.navigation:navigation-compose than 2.7.7 is available: 2.10.2 [GradleDependency]
+    implementation("androidx.navigation:navigation-compose:2.7.7")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\maniak\AppData\Local\Temp\oab\app\build.gradle.kts:408: Warning: A newer version of androidx.datastore:datastore-preferences than 1.1.1 is available: 1.3.0 [GradleDependency]
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\maniak\AppData\Local\Temp\oab\app\build.gradle.kts:409: Warning: A newer version of androidx.security:security-crypto than 1.1.0-alpha06 is available: 1.1.0 [GradleDependency]
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\maniak\AppData\Local\Temp\oab\app\build.gradle.kts:413: Warning: A newer version of org.jetbrains.kotlinx:kotlinx-serialization-json than 1.7.3 is available: 1.11.0 [GradleDependency]
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\maniak\AppData\Local\Temp\oab\app\build.gradle.kts:421: Warning: A newer version of androidx.test.ext:junit than 1.2.1 is available: 1.3.0 [GradleDependency]
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "GradleDependency":
+   This detector looks for usages of libraries where the version you are using
+   is not the current stable release. Using older versions is fine, and there
+   are cases where you deliberately want to stick with an older version.
+   However, you may simply not be aware that a more recent version is
+   available, and that is what this lint check helps find.
+
+C:\Users\maniak\AppData\Local\Temp\oab\app\src\main\java\ai\opencode\android\ui\components\Common.kt:70: Warning: Modifier parameter should be the first optional parameter [ModifierParameter from androidx.compose.ui]
+fun StatusDot(color: Color, size: Dp = 9.dp, modifier: Modifier = Modifier) {
+                                             ~~~~~~~~
+C:\Users\maniak\AppData\Local\Temp\oab\app\src\main\java\ai\opencode\android\ui\components\Common.kt:258: Warning: Modifier parameter should be the first optional parameter [ModifierParameter from androidx.compose.ui]
+fun LoadingIndicator(text: String? = null, modifier: Modifier = Modifier) {
+                                           ~~~~~~~~
+
+   Explanation for issues of type "ModifierParameter":
+   The first (or only) Modifier parameter in a Composable function should
+   follow the following rules:
+   - Be named modifier
+   - Have a type of Modifier
+   - Either have no default value, or have a default value of Modifier
+   - If optional, be the first optional parameter in the parameter list
+
+   Vendor: Jetpack Compose
+   Identifier: androidx.compose.ui
+   Feedback: https://issuetracker.google.com/issues/new?component=612128
+
+C:\Users\maniak\AppData\Local\Temp\oab\app\src\main\res\values\strings_providers.xml:47: Warning: Repeated word "in" in message: possible typo [Typos]
+    <string name="providers_oauth_waiting">Finish signing in in your browser. This page updates by itself.</string>
+                                                          ^
+
+   Explanation for issues of type "Typos":
+   This check looks through the string definitions, and if it finds any words
+   that look like likely misspellings, they are flagged.
+
+C:\Users\maniak\AppData\Local\Temp\oab\app\src\main\res\values\strings_chat.xml:38: Warning: Formatting %d followed by words ("more"): This should probably be a plural rather than a string [PluralsCandidate]
+    <string name="chat_permission_more">and %1$d more</string>
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "PluralsCandidate":
+   This lint check looks for potential errors in internationalization where
+   you have translated a message which involves a quantity and it looks like
+   other parts of the string may need grammatical changes.
+
+   For example, rather than something like this:
+     <string name="try_again">Try again in %d seconds.</string>
+   you should be using a plural:
+      <plurals name="try_again">
+           <item quantity="one">Try again in %d second</item>
+           <item quantity="other">Try again in %d seconds</item>
+       </plurals>
+   This will ensure that in other languages the right set of translations are
+   provided for the different quantity classes.
+
+   (This check depends on some heuristics, so it may not accurately determine
+   whether a string really should be a quantity. You can use tools:ignore to
+   filter out false positives.
+
+   https://developer.android.com/guide/topics/resources/string-resource.html#Plurals
+
+C:\Users\maniak\AppData\Local\Temp\oab\app\src\main\java\ai\opencode\android\server\provision\EnvProvisioner.kt:275: Warning: Setting file permissions to world-readable can be risky, review carefully [SetWorldReadable]
+            paths.prootFile.setReadable(true, false)
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\maniak\AppData\Local\Temp\oab\app\src\main\java\ai\opencode\android\server\provision\EnvProvisioner.kt:287: Warning: Setting file permissions to world-readable can be risky, review carefully [SetWorldReadable]
+            libs.listFiles()?.forEach { it.setReadable(true, false) }
+                                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\maniak\AppData\Local\Temp\oab\app\src\main\java\ai\opencode\android\server\provision\TarGzExtractor.kt:179: Warning: Setting file permissions to world-readable can be risky, review carefully [SetWorldReadable]
+            file.setReadable(true, false)
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\maniak\AppData\Local\Temp\oab\app\src\main\java\ai\opencode\android\server\provision\TarGzExtractor.kt:182: Warning: Setting file permissions to world-readable can be risky, review carefully [SetWorldReadable]
+            file.setReadable(true, false)
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "SetWorldReadable":
+   Setting files world-readable is very dangerous, and likely to cause
+   security holes in applications. It is strongly discouraged; instead,
+   applications should use more formal mechanisms for interactions such as
+   ContentProvider, BroadcastReceiver, and Service.
+
+   https://goo.gle/SetWorldReadable
+
+C:\Users\maniak\AppData\Local\Temp\oab\app\src\main\res\xml\network_security_config.xml:13: Warning: Insecure Base Configuration [InsecureBaseConfiguration]
+    <base-config cleartextTrafficPermitted="true">
+                                            ~~~~
+
+   Explanation for issues of type "InsecureBaseConfiguration":
+   Permitting cleartext traffic could allow eavesdroppers to intercept data
+   sent by your app, which impacts the privacy of your users. Consider only
+   allowing encrypted traffic by setting the cleartextTrafficPermitted tag to
+   "false".
+
+   https://goo.gle/InsecureBaseConfiguration
+   https://developer.android.com/preview/features/security-config.html
+
+C:\Users\maniak\AppData\Local\Temp\oab\app\src\main\java\ai\opencode\android\server\LocalServerService.kt:147: Warning: Unnecessary; SDK_INT is never < 26 [ObsoleteSdkInt]
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\maniak\AppData\Local\Temp\oab\app\src\main\res\mipmap-anydpi-v26: Warning: This folder configuration (v26) is unnecessary; minSdkVersion is 26. Merge all the resources in this folder into mipmap-anydpi. [ObsoleteSdkInt]
+
+   Explanation for issues of type "ObsoleteSdkInt":
+   This check flags version checks that are not necessary, because the
+   minSdkVersion (or surrounding known API level) is already at least as high
+   as the version checked for.
+
+   Similarly, it also looks for resources in -vNN folders, such as values-v14
+   where the version qualifier is less than or equal to the minSdkVersion,
+   where the contents should be merged into the best folder.
+
+C:\Users\maniak\AppData\Local\Temp\oab\app\src\main\java\ai\opencode\android\ui\providers\ProvidersScreen.kt:336: Information: Prefer mutableIntStateOf instead of mutableStateOf [AutoboxingStateCreation from androidx.compose.runtime]
+    var methodIndex by rememberSaveable(provider.id) { mutableStateOf(0) }
+                                                       ~~~~~~~~~~~~~~
+
+   Explanation for issues of type "AutoboxingStateCreation":
+   Calling mutableStateOf<T>() when T is either backed by a primitive type on
+   the JVM or is a value class results in a state implementation that requires
+   all state values to be boxed. This usually causes an additional allocation
+   for each state write, and adds some additional work to auto-unbox values
+   when reading the value of the state. Instead, prefer to use a specialized
+   primitive state implementation for Int, Long, Float, and Double when the
+   state does not need to track null values and does not override the default
+   SnapshotMutationPolicy. See mutableIntStateOf(), mutableLongStateOf(),
+   mutableFloatStateOf(), and mutableDoubleStateOf() for more information.
+
+   Vendor: Jetpack Compose
+   Identifier: androidx.compose.runtime
+   Feedback: https://issuetracker.google.com/issues/new?component=612128
+
+C:\Users\maniak\AppData\Local\Temp\oab\app\src\main\res\values\strings_chat.xml:21: Warning: The resource R.string.chat_choose_agent appears to be unused [UnusedResources]
+    <string name="chat_choose_agent">Agent</string>
+            ~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\maniak\AppData\Local\Temp\oab\app\src\main\res\values\strings_common.xml:4: Warning: The resource R.string.action_ok appears to be unused [UnusedResources]
+    <string name="action_ok">OK</string>
+            ~~~~~~~~~~~~~~~~
+C:\Users\maniak\AppData\Local\Temp\oab\app\src\main\res\values\strings_common.xml:9: Warning: The resource R.string.action_save appears to be unused [UnusedResources]
+    <string name="action_save">Save</string>
+            ~~~~~~~~~~~~~~~~~~
+C:\Users\maniak\AppData\Local\Temp\oab\app\src\main\res\values\strings_common.xml:12: Warning: The resource R.string.action_copy appears to be unused [UnusedResources]
+    <string name="action_copy">Copy</string>
+            ~~~~~~~~~~~~~~~~~~
+C:\Users\maniak\AppData\Local\Temp\oab\app\src\main\res\values\strings_common.xml:15: Warning: The resource R.string.action_clear appears to be unused [UnusedResources]
+    <string name="action_clear">Clear</string>
+            ~~~~~~~~~~~~~~~~~~~
+C:\Users\maniak\AppData\Local\Temp\oab\app\src\main\res\values\strings_common.xml:17: Warning: The resource R.string.action_disconnect appears to be unused [UnusedResources]
+    <string name="action_disconnect">Disconnect</string>
+            ~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\maniak\AppData\Local\Temp\oab\app\src\main\res\values\strings_providers.xml:27: Warning: The resource R.string.providers_go_connected appears to be unused [UnusedResources]
+    <string name="providers_go_connected">OpenCode Go is connected</string>
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "UnusedResources":
+   Unused resources make applications larger and slow down builds.
+
+
+   The unused resource check can ignore tests. If you want to include
+   resources that are only referenced from tests, consider packaging them in a
+   test source set instead.
+
+   You can include test sources in the unused resource check by setting the
+   system property lint.unused-resources.include-tests =true, and to exclude
+   them (usually for performance reasons), use
+   lint.unused-resources.exclude-tests =true.
+   ,
+
+C:\Users\maniak\AppData\Local\Temp\oab\app\src\main\java\ai\opencode\android\server\provision\EnvProvisioner.kt:72: Warning: Consider also using StorageManager#getAllocatableBytes and allocateBytes which will consider clearable cached data [UsableSpace]
+        val usable = runCatching { paths.root.parentFile?.usableSpace ?: 0L }.getOrDefault(0L)
+                                                          ~~~~~~~~~~~
+C:\Users\maniak\AppData\Local\Temp\oab\app\src\main\java\ai\opencode\android\ui\setup\SetupViewModel.kt:255: Warning: Consider also using StorageManager#getAllocatableBytes and allocateBytes which will consider clearable cached data [UsableSpace]
+                val free = runCatching { paths.root.parentFile?.usableSpace ?: 0L }.getOrDefault(0L)
+                                                                ~~~~~~~~~~~
+
+   Explanation for issues of type "UsableSpace":
+   When you need to allocate disk space for large files, consider using the
+   new allocateBytes(FileDescriptor, long) API, which will automatically clear
+   cached files belonging to other apps (as needed) to meet your request.
+
+   When deciding if the device has enough disk space to hold your new data,
+   call getAllocatableBytes(UUID) instead of using getUsableSpace(), since the
+   former will consider any cached data that the system is willing to clear on
+   your behalf.
+
+   Note that these methods require API level 26. If your app is running on
+   older devices, you will probably need to use both APIs, conditionally
+   switching on Build.VERSION.SDK_INT. Lint only looks in the same compilation
+   unit to see if you are already using both APIs, so if it warns even though
+   you are already using the new API, consider moving the calls to the same
+   file or suppressing the warning.
+
+C:\Users\maniak\AppData\Local\Temp\oab\app\src\main\res\values\strings_providers.xml:66: Warning: Replace "-" with an "en dash" character (–, &#8211;) ? [TypographyDashes]
+    <string name="providers_custom_models_hint">Comma-separated model IDs, e.g. llama-3.3-70b, qwen3-coder</string>
+                                                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\Users\maniak\AppData\Local\Temp\oab\app\src\main\res\values-ru\strings_providers.xml:67: Warning: Replace "-" with an "en dash" character (–, &#8211;) ? [TypographyDashes]
+    <string name="providers_custom_models_hint">ID моделей через запятую, например llama-3.3-70b, qwen3-coder</string>
+                                                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "TypographyDashes":
+   The "n dash" (u2013, &#8211;) and the "m dash" (u2014, &#8212;) characters
+   are used for ranges (n dash) and breaks (m dash). Using these instead of
+   plain hyphens can make text easier to read and your application will look
+   more polished.
+
+   https://en.wikipedia.org/wiki/Dash
+
+0 errors, 35 warnings

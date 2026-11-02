@@ -1,5 +1,6 @@
 package ai.opencode.android.data.remote
 
+import ai.opencode.android.data.model.AgentOption
 import ai.opencode.android.data.model.ApiFlavor
 import ai.opencode.android.data.model.ChatMessage
 import ai.opencode.android.data.model.FileDiffPayload
@@ -41,6 +42,8 @@ interface OpencodeApi {
     suspend fun diff(sessionId: String): List<FileDiffPayload>
 
     suspend fun models(): List<ModelOption>
+
+    suspend fun agents(): List<AgentOption>
 
     suspend fun replyPermission(sessionId: String, permissionId: String, decision: PermissionDecision)
 

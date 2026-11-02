@@ -5,6 +5,8 @@ import ai.opencode.android.data.events.OpencodeEvent
 import ai.opencode.android.data.model.ChatMessage
 import ai.opencode.android.data.model.ConnectionState
 import ai.opencode.android.data.model.MessagePart
+import ai.opencode.android.data.model.AgentOption
+import ai.opencode.android.data.model.ModelOption
 import ai.opencode.android.data.model.ModelRef
 import ai.opencode.android.data.model.PermissionDecision
 import ai.opencode.android.data.model.PermissionPolicy
@@ -30,7 +32,8 @@ import kotlinx.coroutines.launch
 
 data class ChatUiState(
     val sessionId: String,
-    val title: String = "Session",
+    /** Blank until the server reports the title; the screen shows a localised placeholder. */
+    val title: String = "",
     val messages: List<ChatMessage> = emptyList(),
     val loading: Boolean = true,
     val sending: Boolean = false,
@@ -40,6 +43,13 @@ data class ChatUiState(
     val connected: Boolean = false,
     val connectionError: String? = null,
     val permissions: List<PermissionRequest> = emptyList(),
+    /** Model/agent used for the next prompt (global defaults from Settings). */
+    val model: ModelRef? = null,
+    val agent: String = "",
+    val models: List<ModelOption> = emptyList(),
+    val modelsLoading: Boolean = false,
+    val modelsError: String? = null,
+    val agents: List<AgentOption> = emptyList(),
 ) {
     val canSend: Boolean get() = connected && !sending
 }
@@ -70,6 +80,7 @@ class ChatViewModel(
                 permissionPolicy = settings.permissionPolicy
                 model = settings.model
                 agent = settings.agent
+                _state.update { it.copy(model = settings.model, agent = settings.agent) }
             }
         }
         viewModelScope.launch {
@@ -146,6 +157,38 @@ class ChatViewModel(
     }
 
     fun dismissError() = _state.update { it.copy(error = null) }
+
+    fun loadModels() {
+        if (_state.value.modelsLoading) return
+        _state.update { it.copy(modelsLoading = true, modelsError = null) }
+        viewModelScope.launch {
+            when (val result = repository.models()) {
+                is ApiResult.Ok -> _state.update { it.copy(modelsLoading = false, models = result.value) }
+                is ApiResult.Err -> _state.update { it.copy(modelsLoading = false, modelsError = result.message) }
+            }
+        }
+    }
+
+    fun loadAgents() {
+        viewModelScope.launch {
+            val result = repository.agents()
+            if (result is ApiResult.Ok) {
+                _state.update { it.copy(agents = result.value.filter { agent -> agent.selectable }.distinctBy { agent -> agent.name }) }
+            }
+        }
+    }
+
+    /** `null` = the server's default model. Persisted as the default for every chat. */
+    fun selectModel(option: ModelOption?) {
+        viewModelScope.launch {
+            settingsRepository.update { it.copy(model = option?.let { selected -> ModelRef(selected.providerID, selected.modelID) }) }
+        }
+    }
+
+    /** Blank = the server's default agent. */
+    fun selectAgent(name: String) {
+        viewModelScope.launch { settingsRepository.update { it.copy(agent = name.trim()) } }
+    }
 
     fun retry() {
         _state.update { it.copy(error = null) }
@@ -246,7 +289,7 @@ class ChatViewModel(
                 val match = result.value.firstOrNull { it.id == sessionId }
                 if (match != null) {
                     titleLoadedFor = sessionId
-                    _state.update { it.copy(title = match.title.ifBlank { "Session" }) }
+                    _state.update { it.copy(title = match.title) }
                 }
             }
         }

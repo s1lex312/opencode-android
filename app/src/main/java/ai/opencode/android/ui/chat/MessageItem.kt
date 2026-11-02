@@ -1,5 +1,6 @@
 package ai.opencode.android.ui.chat
 
+import ai.opencode.android.R
 import ai.opencode.android.data.model.ChatMessage
 import ai.opencode.android.data.model.MessagePart
 import ai.opencode.android.data.model.PermissionDecision
@@ -7,13 +8,21 @@ import ai.opencode.android.data.model.PermissionRequest
 import ai.opencode.android.data.model.Role
 import ai.opencode.android.data.model.ToolCall
 import ai.opencode.android.data.model.ToolStatus
-import ai.opencode.android.ui.components.SectionCard
 import ai.opencode.android.ui.format.formatClockTime
+import ai.opencode.android.ui.theme.LocalChatTextScale
+import ai.opencode.android.ui.theme.StatusColors
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,14 +32,21 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -44,100 +60,148 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+/** [style] scaled by Settings → Appearance → Text size. */
+@Composable
+internal fun scaled(style: TextStyle): TextStyle {
+    val scale = LocalChatTextScale.current
+    return if (scale == 1f) style else style.copy(fontSize = style.fontSize * scale, lineHeight = style.lineHeight * scale)
+}
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MessageItem(message: ChatMessage, modifier: Modifier = Modifier) {
     val isUser = message.role == Role.USER
-    Column(
-        modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp),
-        horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
-    ) {
-        if (!isUser) {
-            Row(
-                modifier = Modifier.padding(start = 4.dp, bottom = 3.dp),
-                verticalAlignment = Alignment.CenterVertically,
+    val context = LocalContext.current
+    val copied = stringResource(R.string.copied_to_clipboard)
+    val copy: () -> Unit = {
+        val text = message.plainText
+        if (text.isNotBlank()) {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+            clipboard?.setPrimaryClip(ClipData.newPlainText("message", text))
+            Toast.makeText(context, copied, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Notices-only messages (turn finished, compaction) render as a centred chip.
+    val notices = message.parts.filterIsInstance<MessagePart.Notice>()
+    if (!isUser && notices.isNotEmpty() && notices.size == message.parts.size && message.error == null) {
+        Box(modifier.fillMaxWidth().padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
+            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                Text(
+                    text = notices.joinToString(" · ") { it.text },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                )
+            }
+        }
+        return
+    }
+
+    if (isUser) {
+        Column(
+            modifier = modifier.fillMaxWidth().padding(start = 48.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+            horizontalAlignment = Alignment.End,
+        ) {
+            Surface(
+                shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp, bottomStart = 22.dp, bottomEnd = 6.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.widthIn(max = 640.dp).combinedClickable(onClick = {}, onLongClick = copy),
             ) {
                 Text(
-                    text = "opencode",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.SemiBold,
+                    text = message.plainText,
+                    style = scaled(MaterialTheme.typography.bodyLarge),
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 11.dp),
                 )
-                message.model?.let { model ->
-                    Text(
-                        text = " · $model",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                if (message.created > 0) {
-                    Text(
-                        text = " · ${formatClockTime(message.created)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+            }
+            if (message.created > 0) {
+                Text(
+                    text = formatClockTime(message.created),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 3.dp, end = 6.dp),
+                )
+            }
+        }
+        return
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .combinedClickable(onClick = {}, onLongClick = copy)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp)) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.Terminal,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(14.dp),
                     )
                 }
             }
-        }
-
-        Surface(
-            shape = RoundedCornerShape(if (isUser) 18.dp else 14.dp),
-            color = if (isUser) {
-                MaterialTheme.colorScheme.primaryContainer
-            } else {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-            },
-            modifier = Modifier.widthIn(max = 720.dp),
-        ) {
-            Column(
-                modifier = Modifier.padding(horizontal = 13.dp, vertical = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                if (message.parts.isEmpty() && message.error == null) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(modifier = Modifier.size(13.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = "Thinking…",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                message.parts.forEach { part ->
-                    when (part) {
-                        is MessagePart.Text -> MarkdownText(text = part.text)
-                        is MessagePart.Reasoning -> ReasoningBlock(text = part.text)
-                        is MessagePart.Tool -> ToolCallCard(call = part.call)
-                        is MessagePart.Notice -> Text(
-                            text = part.text,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                message.error?.let { error ->
-                    Text(
-                        text = "Error: $error",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            }
-        }
-
-        if (isUser && message.created > 0) {
+            Spacer(Modifier.width(8.dp))
             Text(
-                text = formatClockTime(message.created),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 2.dp, end = 4.dp),
+                text = stringResource(R.string.chat_assistant_name),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface,
             )
+            val meta = listOfNotNull(message.model, formatClockTime(message.created).takeIf { message.created > 0 })
+            if (meta.isNotEmpty()) {
+                Text(
+                    text = "  " + meta.joinToString(" · "),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
+        }
+
+        if (message.parts.isEmpty() && message.error == null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = stringResource(R.string.chat_thinking),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        message.parts.forEach { part ->
+            when (part) {
+                is MessagePart.Text -> MarkdownText(text = part.text, style = scaled(MaterialTheme.typography.bodyLarge))
+                is MessagePart.Reasoning -> ReasoningBlock(text = part.text)
+                is MessagePart.Tool -> ToolCallCard(call = part.call)
+                is MessagePart.Notice -> Text(
+                    text = part.text,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        message.error?.let { error ->
+            Surface(color = MaterialTheme.colorScheme.errorContainer, shape = MaterialTheme.shapes.small) {
+                Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                }
+            }
         }
     }
 }
@@ -145,31 +209,34 @@ fun MessageItem(message: ChatMessage, modifier: Modifier = Modifier) {
 @Composable
 private fun ReasoningBlock(text: String) {
     var expanded by rememberSaveable { mutableStateOf(false) }
-    Column {
-        Row(
-            modifier = Modifier.clickable { expanded = !expanded },
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                Icons.Default.Psychology,
-                contentDescription = null,
-                modifier = Modifier.size(15.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                text = if (expanded) "Hide reasoning" else "Show reasoning",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        AnimatedVisibility(visible = expanded) {
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp),
-            )
+    Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.medium) {
+        Column(Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Default.Psychology, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.tertiary)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = stringResource(R.string.chat_reasoning),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = stringResource(if (expanded) R.string.chat_collapse else R.string.chat_expand),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            AnimatedVisibility(visible = expanded) {
+                Text(
+                    text = text,
+                    style = scaled(MaterialTheme.typography.bodySmall),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+                )
+            }
         }
     }
 }
@@ -180,63 +247,50 @@ fun ToolCallCard(call: ToolCall, modifier: Modifier = Modifier) {
     var expanded by rememberSaveable(call.id) { mutableStateOf(false) }
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
-        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    Icons.Default.Build,
-                    contentDescription = null,
-                    modifier = Modifier.size(15.dp),
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = call.name,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.weight(1f),
-                )
-                ToolStatusBadge(status = call.status)
+                ToolStatusIcon(call.status)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = call.name,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                    call.title?.takeIf { it.isNotBlank() }?.let { title ->
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = if (expanded) Int.MAX_VALUE else 1,
+                        )
+                    }
+                }
                 Icon(
                     imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = if (expanded) "Collapse" else "Expand",
-                    modifier = Modifier.size(18.dp),
+                    contentDescription = stringResource(if (expanded) R.string.chat_collapse else R.string.chat_expand),
+                    modifier = Modifier.size(20.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
-            call.title?.takeIf { it.isNotBlank() }?.let { title ->
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
             if (call.error != null) {
-                Text(
-                    text = call.error,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
+                Text(text = call.error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             }
 
             AnimatedVisibility(visible = expanded) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    call.input?.takeIf { it.isNotBlank() }?.let { input ->
-                        CodeBlock(label = "input", text = input)
-                    }
-                    call.output?.takeIf { it.isNotBlank() }?.let { output ->
-                        CodeBlock(label = "output", text = output)
-                    }
+                    call.input?.takeIf { it.isNotBlank() }?.let { CodeBlock(label = stringResource(R.string.chat_tool_input), text = it) }
+                    call.output?.takeIf { it.isNotBlank() }?.let { CodeBlock(label = stringResource(R.string.chat_tool_output), text = it) }
                     if (call.input.isNullOrBlank() && call.output.isNullOrBlank()) {
                         Text(
-                            text = "No payload captured for this call.",
+                            text = stringResource(R.string.chat_tool_no_payload),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -248,95 +302,86 @@ fun ToolCallCard(call: ToolCall, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun ToolStatusBadge(status: ToolStatus) {
-    val (label, color) = when (status) {
-        ToolStatus.PENDING -> "queued" to MaterialTheme.colorScheme.onSurfaceVariant
-        ToolStatus.RUNNING -> "running" to Color(0xFFE8C468)
-        ToolStatus.COMPLETED -> "done" to Color(0xFF6FD08C)
-        ToolStatus.ERROR -> "failed" to MaterialTheme.colorScheme.error
-    }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        if (status == ToolStatus.RUNNING) {
-            CircularProgressIndicator(modifier = Modifier.size(11.dp), strokeWidth = 1.5.dp, color = color)
-            Spacer(Modifier.width(5.dp))
+private fun ToolStatusIcon(status: ToolStatus) {
+    val description = stringResource(
+        when (status) {
+            ToolStatus.PENDING -> R.string.chat_tool_queued
+            ToolStatus.RUNNING -> R.string.chat_tool_running
+            ToolStatus.COMPLETED -> R.string.chat_tool_done
+            ToolStatus.ERROR -> R.string.chat_tool_failed
+        },
+    )
+    Box(Modifier.size(22.dp), contentAlignment = Alignment.Center) {
+        when (status) {
+            ToolStatus.RUNNING -> CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = StatusColors.warn)
+            ToolStatus.PENDING -> Icon(Icons.Default.Schedule, contentDescription = description, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+            ToolStatus.COMPLETED -> Icon(Icons.Default.CheckCircle, contentDescription = description, tint = StatusColors.ok, modifier = Modifier.size(18.dp))
+            ToolStatus.ERROR -> Icon(Icons.Default.ErrorOutline, contentDescription = description, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
         }
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = color,
-        )
     }
 }
 
 @Composable
 private fun CodeBlock(label: String, text: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(text = label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(6.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest, MaterialTheme.shapes.small)
                 .horizontalScroll(rememberScrollState())
-                .padding(8.dp),
+                .padding(10.dp),
         ) {
-            Text(
-                text = text,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 12.sp,
-                softWrap = false,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+            Text(text = text, fontFamily = FontFamily.Monospace, fontSize = 12.sp, softWrap = false, color = MaterialTheme.colorScheme.onSurface)
         }
     }
 }
 
-/** Inline approval card shown above the composer for `permission.asked` events. */
+/** Approval card shown above the composer for `permission.asked` events. */
 @Composable
 fun PermissionPrompt(
     request: PermissionRequest,
     onDecision: (PermissionDecision) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    SectionCard(
-        title = "Permission requested",
-        description = request.title,
-        modifier = modifier,
-    ) {
-        if (request.resources.isNotEmpty()) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                request.resources.take(6).forEach { resource ->
-                    Text(
-                        text = "• $resource",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                if (request.resources.size > 6) {
-                    Text(
-                        text = "+${request.resources.size - 6} more",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+    ElevatedCard(modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Shield, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(10.dp))
+                Text(stringResource(R.string.chat_permission_title), style = MaterialTheme.typography.titleMedium)
+            }
+            Text(request.title, style = MaterialTheme.typography.bodyMedium)
+            if (request.resources.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    request.resources.take(6).forEach { resource ->
+                        Text(
+                            text = "• $resource",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (request.resources.size > 6) {
+                        Text(
+                            text = stringResource(R.string.chat_permission_more, request.resources.size - 6),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
-        }
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(
-                onClick = { onDecision(PermissionDecision.REJECT) },
-                modifier = Modifier.weight(1f),
-            ) { Text("Reject") }
-            Button(
-                onClick = { onDecision(PermissionDecision.ONCE) },
-                modifier = Modifier.weight(1f),
-            ) { Text("Allow") }
-        }
-        TextButton(onClick = { onDecision(PermissionDecision.ALWAYS) }, modifier = Modifier.fillMaxWidth()) {
-            Text("Always allow")
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { onDecision(PermissionDecision.REJECT) }, modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.chat_permission_deny))
+                }
+                Button(onClick = { onDecision(PermissionDecision.ONCE) }, modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.chat_permission_allow))
+                }
+            }
+            TextButton(onClick = { onDecision(PermissionDecision.ALWAYS) }, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.chat_permission_always))
+            }
         }
     }
 }

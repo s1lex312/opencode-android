@@ -1,15 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <!--
-        Platform theme only: all real styling happens in Compose (Material 3).
-        Keeping the platform parent avoids pulling in the Material Components view library.
+        Platform window theme only: all real styling happens in Compose (Material 3). AppCompat is
+        the parent because MainActivity is an AppCompatActivity (per-app languages before
+        Android 13); no AppCompat widgets are used.
     -->
-    <style name="Theme.OpencodeAndroid" parent="@android:style/Theme.Material.NoActionBar">
+    <style name="Theme.OpencodeAndroid" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="android:windowBackground">@color/window_background</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowLightNavigationBar">false</item>
-        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:windowLayoutInDisplayCutoutMode" tools:targetApi="27">shortEdges</item>
     </style>
 </resources>

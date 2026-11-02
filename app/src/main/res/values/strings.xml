@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">opencode</string>
+    <string name="app_name" translatable="false">opencode</string>
     <string name="notification_channel_local_server">Local opencode server</string>
     <string name="notification_local_server_title">opencode server</string>
 </resources>
