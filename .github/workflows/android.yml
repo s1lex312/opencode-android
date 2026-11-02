@@ -160,23 +160,35 @@ jobs:
           sudo apt-get install -y build-essential gcc-aarch64-linux-gnu libc6-dev-arm64-cross \
             curl file pkg-config libpython3-dev
 
-      - name: Build static arm64 proot
+      - name: Build arm64 talloc
         run: |
           set -euo pipefail
-          # proot needs libtalloc for the *target* architecture; build it first, then proot itself.
           curl -fsSL https://www.samba.org/ftp/talloc/talloc-2.4.2.tar.gz -o talloc.tar.gz
           tar xf talloc.tar.gz
           cd talloc-2.4.2
-          ./configure --host=aarch64-linux-gnu --disable-python --without-gettext \
-            --prefix="$GITHUB_WORKSPACE/talloc-arm64"
-          make -j"$(nproc)"
-          make install
-          cd "$GITHUB_WORKSPACE"
+          if ! ./configure --host=aarch64-linux-gnu --disable-python --without-gettext \
+                 --prefix="$GITHUB_WORKSPACE/talloc-arm64" > /tmp/talloc.log 2>&1; then
+            echo "::error title=talloc configure failed::$(tail -c 3000 /tmp/talloc.log | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+            exit 1
+          fi
+          if ! make -j"$(nproc)" >> /tmp/talloc.log 2>&1 || ! make install >> /tmp/talloc.log 2>&1; then
+            echo "::error title=talloc build failed::$(tail -c 3000 /tmp/talloc.log | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+            exit 1
+          fi
+          ls "$GITHUB_WORKSPACE/talloc-arm64/lib" | head
 
+      - name: Build static arm64 proot
+        run: |
+          set -euo pipefail
+          # proot needs libtalloc for the *target* architecture, hence the step above.
           git clone --depth 1 https://github.com/proot-me/proot.git proot-src
           cd proot-src/src
-          PKG_CONFIG_PATH="$GITHUB_WORKSPACE/talloc-arm64/lib/pkgconfig" \
-            make -j"$(nproc)" CC=aarch64-linux-gnu-gcc CFLAGS="-static -O2" LDFLAGS="-static"
+          if ! PKG_CONFIG_PATH="$GITHUB_WORKSPACE/talloc-arm64/lib/pkgconfig" \
+                 make -j"$(nproc)" CC=aarch64-linux-gnu-gcc CFLAGS="-static -O2" LDFLAGS="-static" \
+                 > /tmp/proot.log 2>&1; then
+            echo "::error title=proot build failed::$(tail -c 3000 /tmp/proot.log | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+            exit 1
+          fi
           BIN="$(find .. -maxdepth 3 -type f -name proot -perm -u+x | head -n 1)"
           file "$BIN"
           cp "$BIN" "$GITHUB_WORKSPACE/proot-aarch64"
