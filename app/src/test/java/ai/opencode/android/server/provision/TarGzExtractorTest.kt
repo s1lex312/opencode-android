@@ -27,7 +27,7 @@ class TarGzExtractorTest {
         assertEquals(5, stats.entries)
         assertTrue(File(target, "rootfs/bin/sh").isFile)
         assertEquals("#!/bin/sh\n", File(target, "rootfs/bin/sh").readText())
-        assertTrue(File(target, "rootfs/bin/sh-link").isFile || java.nio.file.Files.isSymbolicLink(File(target, "rootfs/bin/sh-link").toPath))
+        assertTrue(File(target, "rootfs/bin/sh-link").isFile || java.nio.file.Files.isSymbolicLink(File(target, "rootfs/bin/sh-link").toPath()))
         assertTrue(File(target, "proot").canExecute())
     }
 
