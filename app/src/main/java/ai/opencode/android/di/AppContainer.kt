@@ -141,7 +141,13 @@ class AppContainer(context: Context) {
     val localServerManager: LocalServerManager by lazy {
         LocalServerManager(appContext, appScope, provisioner, secretStore).also { manager ->
             manager.extraBinds = { if (storageBindEnabled) StorageAccess.binds(appContext) else emptyList() }
+            manager.extraEnv = { proxyController.serverEnvironment() }
         }
+    }
+
+    /** Local bridge to the user's upstream proxy, for the in-app server and the app's own requests. */
+    val proxyController: ai.opencode.android.net.ProxyController by lazy {
+        ai.opencode.android.net.ProxyController(settingsRepository, secretStore, appScope)
     }
 
     /** The in-app server's global opencode config, for edits the HTTP API cannot express. */
@@ -215,6 +221,21 @@ class AppContainer(context: Context) {
         ConfigBackup(appContext, settingsRepository, secretStore, workbench, { envPaths.rootfsDir }, appScope)
     }
 
+    /** Named snapshots of all settings, switchable in Settings → Profiles. */
+    val settingsProfiles: ai.opencode.android.settings.SettingsProfiles by lazy {
+        ai.opencode.android.settings.SettingsProfiles(appContext, settingsRepository, workbench)
+    }
+
+    /** Declarative plugins: MCP servers, agents, commands, prompts, snippets and hooks from a manifest. */
+    val plugins: ai.opencode.android.plugins.PluginManager by lazy {
+        ai.opencode.android.plugins.PluginManager(appContext, downloadClient, settingsRepository, sessionRepository, workbench, localConfigFile) {
+            restartLocalServerService()
+        }
+    }
+
+    /** Prompts typed while the server was unreachable, per chat, kept on disk. */
+    val outbox: ai.opencode.android.data.outbox.Outbox by lazy { ai.opencode.android.data.outbox.Outbox(appContext) }
+
     /** Updates the APK itself from this repository's GitHub releases. */
     val appUpdater: AppUpdater by lazy {
         AppUpdater(appContext, downloadClient, settingsRepository, appScope) {
@@ -256,6 +277,7 @@ class AppContainer(context: Context) {
     fun bootstrap() {
         appScope.launch { runCatching { settingsRepository.current() } }
         appScope.launch { runCatching { provisioner.refresh() } }
+        proxyController.start()
         agentNotifier.start()
         phoneAccess.start()
         hookRunner.start()

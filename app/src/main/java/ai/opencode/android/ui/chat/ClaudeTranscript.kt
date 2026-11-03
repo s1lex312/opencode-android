@@ -1,5 +1,7 @@
 package ai.opencode.android.ui.chat
 
+import ai.opencode.android.ui.theme.csp
+
 import ai.opencode.android.R
 import ai.opencode.android.data.model.ChatMessage
 import ai.opencode.android.data.model.MessagePart
@@ -90,13 +92,14 @@ fun ClaudeMessage(
     modifier: Modifier = Modifier,
 ) {
     val mono = FontFamily.Monospace
+    val tokens = ai.opencode.android.ui.theme.LocalUiTokens.current
     if (message.role == Role.USER) {
         Surface(
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            shape = RoundedCornerShape(6.dp),
+            shape = RoundedCornerShape(tokens.bubbleRadius / 4),
             modifier = modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 6.dp)
+                .padding(horizontal = 12.dp, vertical = tokens.gap(6f))
                 .combinedClickable(onClick = {}, onLongClick = onLongPress),
         ) {
             Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
@@ -133,8 +136,8 @@ fun ClaudeMessage(
         modifier = modifier
             .fillMaxWidth()
             .combinedClickable(onClick = {}, onLongClick = onLongPress)
-            .padding(start = 12.dp, end = 14.dp, top = 4.dp, bottom = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(start = 12.dp, end = 14.dp, top = tokens.gap(4f), bottom = tokens.gap(4f)),
+        verticalArrangement = Arrangement.spacedBy(tokens.gap(8f)),
     ) {
         message.parts.forEach { part ->
             when (part) {
@@ -205,14 +208,14 @@ private fun Elbow(text: String, color: Color, maxLines: Int, modifier: Modifier 
         Text(
             text = Glyph.ELBOW + "  ",
             fontFamily = FontFamily.Monospace,
-            fontSize = 12.5.sp,
+            fontSize = 12.5.csp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
             text = text,
             fontFamily = FontFamily.Monospace,
-            fontSize = 12.5.sp,
-            lineHeight = 17.sp,
+            fontSize = 12.5.csp,
+            lineHeight = 17.csp,
             color = color,
             maxLines = maxLines,
             overflow = TextOverflow.Ellipsis,
@@ -319,8 +322,8 @@ fun ToolLine(call: ToolCall, chat: ChatSettings) {
                     }
                 },
                 fontFamily = FontFamily.Monospace,
-                fontSize = 13.5.sp,
-                lineHeight = 19.sp,
+                fontSize = 13.5.csp,
+                lineHeight = 19.csp,
                 maxLines = if (expanded) 6 else 2,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -369,8 +372,8 @@ private fun ToolBlock(label: String, text: String) {
             Text(
                 text = text.take(MAX_TOOL_TEXT),
                 fontFamily = FontFamily.Monospace,
-                fontSize = 12.sp,
-                lineHeight = 16.sp,
+                fontSize = 12.csp,
+                lineHeight = 16.csp,
                 softWrap = false,
                 modifier = Modifier.horizontalScroll(rememberScrollState()).padding(8.dp),
             )
@@ -397,7 +400,7 @@ private fun TodoList(input: JsonObject?) {
                 Text(
                     text = if (index == 0) Glyph.ELBOW + "  " else "   ",
                     fontFamily = FontFamily.Monospace,
-                    fontSize = 13.sp,
+                    fontSize = 13.csp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 val (box, color, weight, decoration) = when (status) {
@@ -409,8 +412,8 @@ private fun TodoList(input: JsonObject?) {
                 Text(
                     text = "$box $content",
                     fontFamily = FontFamily.Monospace,
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp,
+                    fontSize = 13.csp,
+                    lineHeight = 18.csp,
                     color = color,
                     fontWeight = weight,
                     textDecoration = decoration,
@@ -469,7 +472,7 @@ fun ClaudeSpinner(
                     withStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurfaceVariant)) { append(" ($details)") }
                 },
                 fontFamily = FontFamily.Monospace,
-                fontSize = 13.sp,
+                fontSize = 13.csp,
                 maxLines = 2,
             )
         }
@@ -506,14 +509,14 @@ fun ClaudePermissionPrompt(request: PermissionRequest, onDecision: (PermissionDe
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
                 color = accent,
-                fontSize = 14.sp,
+                fontSize = 14.csp,
             )
             Text(request.title, style = MaterialTheme.typography.bodyMedium)
             request.resources.take(4).forEach { resource ->
                 Text(
                     text = resource,
                     fontFamily = FontFamily.Monospace,
-                    fontSize = 12.5.sp,
+                    fontSize = 12.5.csp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,

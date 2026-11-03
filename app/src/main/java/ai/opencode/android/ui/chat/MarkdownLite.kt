@@ -1,5 +1,7 @@
 package ai.opencode.android.ui.chat
 
+import ai.opencode.android.ui.theme.csp
+
 import ai.opencode.android.R
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -726,8 +728,8 @@ private fun CodeBlockView(block: MarkdownBlock.Code) {
                 Text(
                     text = highlighted,
                     fontFamily = FontFamily.Monospace,
-                    fontSize = 12.5.sp,
-                    lineHeight = 18.sp,
+                    fontSize = 12.5.csp,
+                    lineHeight = 18.csp,
                     softWrap = false,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
@@ -744,11 +746,12 @@ private fun copy(context: Context, text: String, toast: String) {
 
 @Composable
 private fun rememberHighlighted(block: MarkdownBlock.Code): AnnotatedString {
+    val extra = ai.opencode.android.ui.theme.LocalExtraColors.current
     val palette = SyntaxPalette(
-        keyword = MaterialTheme.colorScheme.primary,
-        string = Color(0xFF7FB069).let { if (ai.opencode.android.ui.theme.LocalDarkTheme.current) it else Color(0xFF2E7D32) },
-        comment = MaterialTheme.colorScheme.onSurfaceVariant,
-        number = MaterialTheme.colorScheme.tertiary,
+        keyword = extra.syntaxKeyword,
+        string = extra.syntaxString,
+        comment = extra.syntaxComment,
+        number = extra.syntaxNumber,
     )
     return remember(block, palette) { SyntaxHighlighter.highlight(block.code, block.language, palette) }
 }

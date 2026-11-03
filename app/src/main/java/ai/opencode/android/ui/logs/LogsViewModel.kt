@@ -57,6 +57,9 @@ class LogsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    /** This app's own logcat, newest last. */
+    fun appLog(): List<String> = ai.opencode.android.data.diagnostics.Diagnostics(container).appLog().lines()
+
     fun clear() {
         container.localServerManager.clearLogs()
         _state.update { it.copy(lines = emptyList()) }

@@ -215,10 +215,14 @@ class ConfigBackup(
             appVersion = BuildConfig.VERSION_NAME,
             createdAt = System.currentTimeMillis(),
             settings = BackupCodec.encodePrefs(settings.exportRaw()),
-            files = mapOf(Workbench.FILE_NAME to workbench.exportJson()),
+            files = mapOf(Workbench.FILE_NAME to workbench.exportJson()) + appFiles(),
             server = plain,
         )
     }
+
+    private fun appFiles(): Map<String, String> = APP_FILES.mapNotNull { name ->
+        File(context.filesDir, name).takeIf { it.isFile && it.length() < MAX_APP_FILE_BYTES }?.let { name to it.readText() }
+    }.toMap()
 
     private fun collectSecrets(): BackupSecrets = BackupSecrets(store = secrets.exportAll(), server = serverFiles().second)
 
@@ -367,6 +371,8 @@ class ConfigBackup(
     private suspend fun apply(snapshot: BackupSnapshot, opened: BackupSecrets?) {
         settings.importRaw(BackupCodec.decodePrefs(snapshot.settings))
         snapshot.files[Workbench.FILE_NAME]?.let { workbench.importJson(it) }
+        // Settings profiles and installed plugins: read by their managers on the next start.
+        APP_FILES.forEach { name -> snapshot.files[name]?.let { File(context.filesDir, name).writeText(it) } }
         opened?.store?.takeIf { it.isNotEmpty() }?.let(secrets::importAll)
         val server = snapshot.server + opened?.server.orEmpty()
         if (server.isNotEmpty()) {
@@ -384,6 +390,10 @@ class ConfigBackup(
     fun applyPendingServerFiles(): Boolean = applyPendingServerFiles(context, rootfs())
 
     companion object {
+        /** Files in filesDir that travel with the backup besides the workbench. */
+        private val APP_FILES = listOf("settings-profiles.json", "plugins.json")
+        private const val MAX_APP_FILE_BYTES = 2L * 1024 * 1024
+
         private const val TAG = "ConfigBackup"
         private const val PREFS = "config_backup"
         private const val KEY_INITIALIZED = "initialized"

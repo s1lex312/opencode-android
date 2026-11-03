@@ -1,5 +1,7 @@
 package ai.opencode.android.ui.tools
 
+import ai.opencode.android.ui.theme.csp
+
 import ai.opencode.android.R
 import ai.opencode.android.data.hooks.HookRun
 import ai.opencode.android.di.AppContainer
@@ -190,7 +192,7 @@ private fun HookRunRow(run: HookRun) {
             Text(
                 run.output.ifBlank { stringResource(R.string.hooks_no_output) }.takeLast(3000),
                 fontFamily = FontFamily.Monospace,
-                fontSize = 11.sp,
+                fontSize = 11.csp,
                 maxLines = if (open) 60 else 4,
                 overflow = TextOverflow.Ellipsis,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

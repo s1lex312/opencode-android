@@ -58,6 +58,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /** A prompt typed while the agent was busy; sent automatically when the turn ends. */
@@ -270,6 +273,7 @@ class ChatViewModel(
     private val usageStats: UsageStats? = null,
     private val tasks: BackgroundTasks? = null,
     drafts: DraftInbox? = null,
+    private val outbox: ai.opencode.android.data.outbox.Outbox? = null,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ChatUiState(sessionId = sessionId))
@@ -299,6 +303,9 @@ class ChatViewModel(
     private var snippetDepth = 0
     private var budgetExceededShown = false
 
+    /** Settings → All settings → offline_queue: keep prompts typed while the server is unreachable. */
+    private var offlineQueue = true
+
     init {
         viewModelScope.launch {
             settingsRepository.settings.collect { settings ->
@@ -306,6 +313,7 @@ class ChatViewModel(
                 model = settings.model
                 agent = settings.agent
                 systemPrompt = settings.activeSystemPrompt?.text?.takeIf { it.isNotBlank() }
+                offlineQueue = settings.offlineQueue
                 _state.update {
                     it.copy(
                         model = settings.model,
@@ -337,6 +345,13 @@ class ChatViewModel(
                     loadQuestions()
                     if (_state.value.directory == null) {
                         _state.update { it.copy(directory = state.info.directory) }
+                    }
+                    // Prompts typed while offline go out once the busy state has been re-read.
+                    if (_state.value.queue.isNotEmpty()) {
+                        viewModelScope.launch {
+                            delay(OFFLINE_DRAIN_DELAY_MS)
+                            drainQueue()
+                        }
                     }
                 }
             }
@@ -374,6 +389,23 @@ class ChatViewModel(
             while (true) {
                 delay(BUSY_POLL_MS)
                 if (_state.value.busy && _state.value.connected) syncBusy()
+            }
+        }
+        outbox?.let { box ->
+            val stored = box.load(sessionId)
+            if (stored.isNotEmpty()) {
+                _state.update { state ->
+                    state.copy(
+                        queue = state.queue + stored.map { prompt ->
+                            QueuedPrompt(nextQueueId++, prompt.text, prompt.attachmentModels(), prompt.mentions, prompt.agents)
+                        },
+                    )
+                }
+            }
+            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                state.map { it.queue }.distinctUntilChanged().drop(1).collect { queue ->
+                    box.save(sessionId, queue.map { ai.opencode.android.data.outbox.StoredPrompt.of(it.text, it.attachments, it.mentions, it.agents) })
+                }
             }
         }
         if (!connection.isConnected) connection.connect()
@@ -428,9 +460,11 @@ class ChatViewModel(
         _state.update { it.copy(attachments = emptyList()) }
         pickedMentions.clear()
         val current = _state.value
-        if (current.busy || current.sending) {
+        val offline = !current.connected && offlineQueue
+        if (current.busy || current.sending || offline) {
             val queued = QueuedPrompt(nextQueueId++, trimmed, attachments, mentions, agents)
             _state.update { it.copy(queue = it.queue + queued) }
+            if (offline) _effects.trySend(ChatEffect.Toast(UiText.of(R.string.chat_offline_queued)))
             return
         }
         dispatch(trimmed, attachments, mentions, agents)
@@ -488,15 +522,29 @@ class ChatViewModel(
                     scheduleReload(delayMs = 500)
                 }
 
-                is ApiResult.Err -> _state.update {
-                    it.copy(
-                        sending = false,
-                        busy = false,
-                        turnStartedAt = null,
-                        error = result.message,
-                        messages = it.messages.filterNot { message -> message.id == optimistic.id },
-                        attachments = attachments,
-                    )
+                is ApiResult.Err -> if (result.notConnected && offlineQueue) {
+                    // Never reached the server: keep it at the head of the queue for the reconnect.
+                    _state.update {
+                        it.copy(
+                            sending = false,
+                            busy = false,
+                            turnStartedAt = null,
+                            messages = it.messages.filterNot { message -> message.id == optimistic.id },
+                            queue = listOf(QueuedPrompt(nextQueueId++, text, attachments, mentions, agents)) + it.queue,
+                        )
+                    }
+                    _effects.trySend(ChatEffect.Toast(UiText.of(R.string.chat_offline_queued)))
+                } else {
+                    _state.update {
+                        it.copy(
+                            sending = false,
+                            busy = false,
+                            turnStartedAt = null,
+                            error = result.message,
+                            messages = it.messages.filterNot { message -> message.id == optimistic.id },
+                            attachments = attachments,
+                        )
+                    }
                 }
             }
         }
@@ -1352,6 +1400,9 @@ class ChatViewModel(
         private const val DIFF_PARALLEL = 4
 
         /** Events that only exist while the model is producing output. */
+        /** After a reconnect, wait for the busy state to be re-read before sending queued prompts. */
+        private const val OFFLINE_DRAIN_DELAY_MS = 1_500L
+
         fun isLiveOutput(event: OpencodeEvent): Boolean = when (event) {
             is OpencodeEvent.TextDelta, is OpencodeEvent.ToolStarted, is OpencodeEvent.ToolCalled -> true
             is OpencodeEvent.PartUpserted -> event.delta != null ||
@@ -1371,6 +1422,7 @@ class ChatViewModel(
                     usageStats = container.usageStats,
                     tasks = container.backgroundTasks,
                     drafts = container.draftInbox,
+                    outbox = container.outbox,
                 )
             }
         }

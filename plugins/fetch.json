@@ -1,0 +1,23 @@
+{
+  "format": "opencode-android-plugin",
+  "version": 1,
+  "id": "fetch",
+  "name": "Fetch",
+  "description": "Lets the agent download web pages as Markdown (local MCP server through uvx).",
+  "pluginVersion": "1.0.0",
+  "author": "opencode-android",
+  "homepage": "https://github.com/modelcontextprotocol/servers",
+  "requires": [
+    "python"
+  ],
+  "mcp": {
+    "fetch": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "mcp-server-fetch"
+      ],
+      "enabled": true
+    }
+  }
+}

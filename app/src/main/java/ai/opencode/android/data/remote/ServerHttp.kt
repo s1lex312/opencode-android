@@ -50,6 +50,7 @@ class ServerHttp(
         .readTimeout(timeoutSeconds, TimeUnit.SECONDS)
         .callTimeout(0, TimeUnit.MILLISECONDS)
         .retryOnConnectionFailure(true)
+        .proxySelector(ai.opencode.android.net.AppProxySelector)
         .addInterceptor(NetworkPolicyInterceptor(allowPrivateNetworkCleartext))
         .apply { if (credentials.authMode != ai.opencode.android.settings.AuthMode.NONE) addInterceptor(AuthInterceptor(credentials)) }
         .apply { if (BuildConfig.DEBUG) addInterceptor(MetadataLoggingInterceptor()) }

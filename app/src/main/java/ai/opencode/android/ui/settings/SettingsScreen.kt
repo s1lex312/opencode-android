@@ -43,6 +43,13 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.AccountTree
+import androidx.compose.material.icons.filled.DataObject
+import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.HealthAndSafety
+import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.VpnLock
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -94,6 +101,13 @@ fun SettingsScreen(
     onOpenEnv: () -> Unit = {},
     onOpenTasks: () -> Unit = {},
     onOpenBackup: () -> Unit = {},
+    onOpenProxy: () -> Unit = {},
+    onOpenPlugins: () -> Unit = {},
+    onOpenConfig: () -> Unit = {},
+    onOpenAll: () -> Unit = {},
+    onOpenProfiles: () -> Unit = {},
+    onOpenDiagnostics: () -> Unit = {},
+    onOpenLogs: () -> Unit = {},
 ) {
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(container))
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -240,6 +254,66 @@ fun SettingsScreen(
             )
         }
 
+        SettingsGroup(title = stringResource(R.string.settings_group_advanced)) {
+            SettingsItem(
+                title = stringResource(R.string.proxy_title),
+                subtitle = state.settings.proxy.let { proxy ->
+                    if (proxy.active) "${proxy.type} ${proxy.host}:${proxy.port}" else stringResource(R.string.proxy_hub_subtitle)
+                },
+                icon = Icons.Default.VpnLock,
+                showChevron = true,
+                onClick = onOpenProxy,
+            )
+            SettingsDivider()
+            SettingsItem(
+                title = stringResource(R.string.plugins_title),
+                subtitle = stringResource(R.string.plugins_hub_subtitle),
+                icon = Icons.Default.Extension,
+                showChevron = true,
+                onClick = onOpenPlugins,
+            )
+            SettingsDivider()
+            SettingsItem(
+                title = stringResource(R.string.config_title),
+                subtitle = stringResource(R.string.config_hub_subtitle),
+                icon = Icons.Default.DataObject,
+                showChevron = true,
+                onClick = onOpenConfig,
+            )
+            SettingsDivider()
+            SettingsItem(
+                title = stringResource(R.string.all_settings_title),
+                subtitle = stringResource(R.string.all_settings_hub_subtitle),
+                icon = Icons.Default.Tune,
+                showChevron = true,
+                onClick = onOpenAll,
+            )
+            SettingsDivider()
+            SettingsItem(
+                title = stringResource(R.string.profiles_title),
+                subtitle = stringResource(R.string.profiles_hub_subtitle),
+                icon = Icons.Default.AccountTree,
+                showChevron = true,
+                onClick = onOpenProfiles,
+            )
+            SettingsDivider()
+            SettingsItem(
+                title = stringResource(R.string.diag_title),
+                subtitle = stringResource(R.string.diag_hub_subtitle),
+                icon = Icons.Default.HealthAndSafety,
+                showChevron = true,
+                onClick = onOpenDiagnostics,
+            )
+            SettingsDivider()
+            SettingsItem(
+                title = stringResource(R.string.logs_title),
+                subtitle = stringResource(R.string.logs_hub_subtitle),
+                icon = Icons.Default.Terminal,
+                showChevron = true,
+                onClick = onOpenLogs,
+            )
+        }
+
         Spacer(Modifier.height(16.dp))
         SettingsGroup {
             SettingsItem(
@@ -315,24 +389,37 @@ internal fun SettingsPage(
     title: String,
     onBack: () -> Unit,
     snackbarHostState: SnackbarHostState? = null,
+    actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {},
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val compact = ai.opencode.android.ui.theme.LocalUiTokens.current.compactTopBars
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            LargeTopAppBar(
-                title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.action_back),
-                        )
-                    }
-                },
-                scrollBehavior = scrollBehavior,
-            )
+            val navigationIcon: @Composable () -> Unit = {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = stringResource(R.string.action_back),
+                    )
+                }
+            }
+            if (compact) {
+                androidx.compose.material3.TopAppBar(
+                    title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    navigationIcon = navigationIcon,
+                    actions = actions,
+                    scrollBehavior = scrollBehavior,
+                )
+            } else {
+                LargeTopAppBar(
+                    title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    navigationIcon = navigationIcon,
+                    actions = actions,
+                    scrollBehavior = scrollBehavior,
+                )
+            }
         },
         snackbarHost = { if (snackbarHostState != null) SnackbarHost(snackbarHostState) },
     ) { padding ->

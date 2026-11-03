@@ -52,7 +52,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun AdaptiveContent(
     modifier: Modifier = Modifier,
-    maxWidth: Dp = 840.dp,
+    maxWidth: Dp = ai.opencode.android.ui.theme.LocalUiTokens.current.contentMaxWidth,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
@@ -349,7 +349,7 @@ fun SettingsItem(
         modifier = modifier
             .fillMaxWidth()
             .then(rowModifier)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = 16.dp, vertical = ai.opencode.android.ui.theme.LocalUiTokens.current.gap(14f)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) {
@@ -402,7 +402,7 @@ fun SettingsSwitchItem(
         modifier = modifier
             .fillMaxWidth()
             .toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = 16.dp, vertical = ai.opencode.android.ui.theme.LocalUiTokens.current.gap(14f)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) {

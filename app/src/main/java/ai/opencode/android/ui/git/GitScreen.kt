@@ -1,5 +1,7 @@
 package ai.opencode.android.ui.git
 
+import ai.opencode.android.ui.theme.csp
+
 import ai.opencode.android.R
 import ai.opencode.android.data.git.GitFile
 import ai.opencode.android.di.AppContainer
@@ -250,7 +252,7 @@ fun GitScreen(container: AppContainer, cwd: String?, onBack: () -> Unit) {
                                     Text(
                                         commit.hash,
                                         fontFamily = FontFamily.Monospace,
-                                        fontSize = 12.sp,
+                                        fontSize = 12.csp,
                                         color = MaterialTheme.colorScheme.tertiary,
                                         modifier = Modifier.width(72.dp),
                                     )
@@ -373,7 +375,7 @@ private fun OutputCard(output: GitOutput, onDismiss: () -> Unit) {
                 IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, contentDescription = stringResource(R.string.action_close)) }
             }
             Box(Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState()).padding(end = 12.dp)) {
-                Text(output.text, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                Text(output.text, fontFamily = FontFamily.Monospace, fontSize = 12.csp)
             }
         }
     }

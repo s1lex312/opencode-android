@@ -1,6 +1,7 @@
 package ai.opencode.android.ui.theme
 
 import ai.opencode.android.settings.AppearanceSettings
+import ai.opencode.android.settings.FontChoice
 import ai.opencode.android.settings.ThemeMode
 import ai.opencode.android.settings.ThemePalette
 import android.os.Build
@@ -21,6 +22,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -48,23 +55,38 @@ fun OpencodeTheme(
 ) {
     val dark = appearance.isDark()
     val context = LocalContext.current
-    val colors = remember(dark, appearance.palette, appearance.pureBlack) {
+    val custom = appearance.custom
+    val overrides = custom.colors(dark)
+    val colors = remember(dark, appearance.palette, appearance.pureBlack, overrides) {
         val base = when {
             appearance.palette == ThemePalette.DYNAMIC && dynamicColorAvailable ->
                 if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
 
             else -> schemeFor(accentFor(appearance.palette), dark)
         }
-        if (dark && appearance.pureBlack) base.pureBlack() else base
+        val scheme = if (dark && appearance.pureBlack) base.pureBlack() else base
+        ColorRoles.apply(scheme, overrides)
     }
+    val extra = remember(dark, overrides, colors) { ColorRoles.extra(ExtraColors.defaults(dark, colors), overrides) }
+    val typography = remember(custom.uiFont, custom.lineHeightScale) { typographyFor(custom.uiFont.family(), custom.lineHeightScale) }
+    val shapes = remember(custom.cornerScale) { shapesFor(custom.cornerScale) }
+    val density = LocalDensity.current
+    val scaledDensity = remember(density, custom.uiFontScale) {
+        if (custom.uiFontScale == 1f) density else Density(density.density, density.fontScale * custom.uiFontScale)
+    }
+    val tokens = remember(custom) { UiTokens.from(custom) }
     CompositionLocalProvider(
         LocalDarkTheme provides dark,
-        LocalChatTextScale provides appearance.chatTextScale.factor,
+        LocalChatTextScale provides appearance.chatTextScale.factor * custom.chatFontScale,
+        LocalCodeTextScale provides custom.codeFontScale,
+        LocalExtraColors provides extra,
+        LocalUiTokens provides tokens,
+        LocalDensity provides scaledDensity,
     ) {
         MaterialTheme(
             colorScheme = colors,
-            typography = OpencodeTypography,
-            shapes = OpencodeShapes,
+            typography = typography,
+            shapes = shapes,
             content = content,
         )
     }
@@ -307,26 +329,55 @@ private fun ColorScheme.pureBlack(): ColorScheme = copy(
 
 private val DefaultTypography = Typography()
 
-val OpencodeTypography = Typography(
-    displaySmall = DefaultTypography.displaySmall.copy(fontWeight = FontWeight.SemiBold),
-    headlineLarge = DefaultTypography.headlineLarge.copy(fontWeight = FontWeight.SemiBold),
-    headlineMedium = DefaultTypography.headlineMedium.copy(fontWeight = FontWeight.SemiBold),
-    headlineSmall = DefaultTypography.headlineSmall.copy(fontWeight = FontWeight.SemiBold),
-    titleLarge = DefaultTypography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
-    titleMedium = DefaultTypography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-    titleSmall = DefaultTypography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-    bodyLarge = DefaultTypography.bodyLarge.copy(lineHeight = 24.sp),
-    bodyMedium = DefaultTypography.bodyMedium.copy(lineHeight = 21.sp),
-    labelLarge = DefaultTypography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+val OpencodeTypography = typographyFor(FontFamily.Default, 1f)
+
+/** The app's type scale in [family], line heights multiplied by [lineHeight]. */
+fun typographyFor(family: FontFamily, lineHeight: Float): Typography {
+    fun TextStyle.styled(weight: FontWeight? = null, height: TextUnit? = null): TextStyle {
+        val base = (height ?: this.lineHeight)
+        return copy(
+            fontFamily = family,
+            fontWeight = weight ?: fontWeight,
+            lineHeight = if (base.isSpecified && lineHeight != 1f) base * lineHeight else base,
+        )
+    }
+    val d = DefaultTypography
+    return Typography(
+        displayLarge = d.displayLarge.styled(),
+        displayMedium = d.displayMedium.styled(),
+        displaySmall = d.displaySmall.styled(FontWeight.SemiBold),
+        headlineLarge = d.headlineLarge.styled(FontWeight.SemiBold),
+        headlineMedium = d.headlineMedium.styled(FontWeight.SemiBold),
+        headlineSmall = d.headlineSmall.styled(FontWeight.SemiBold),
+        titleLarge = d.titleLarge.styled(FontWeight.SemiBold),
+        titleMedium = d.titleMedium.styled(FontWeight.SemiBold),
+        titleSmall = d.titleSmall.styled(FontWeight.SemiBold),
+        bodyLarge = d.bodyLarge.styled(height = 24.sp),
+        bodyMedium = d.bodyMedium.styled(height = 21.sp),
+        bodySmall = d.bodySmall.styled(),
+        labelLarge = d.labelLarge.styled(FontWeight.SemiBold),
+        labelMedium = d.labelMedium.styled(),
+        labelSmall = d.labelSmall.styled(),
+    )
+}
+
+val OpencodeShapes = shapesFor(1f)
+
+/** Material shapes with every radius multiplied by [scale] (0 = square corners). */
+fun shapesFor(scale: Float): Shapes = Shapes(
+    extraSmall = RoundedCornerShape((6 * scale).dp),
+    small = RoundedCornerShape((10 * scale).dp),
+    medium = RoundedCornerShape((16 * scale).dp),
+    large = RoundedCornerShape((24 * scale).dp),
+    extraLarge = RoundedCornerShape((32 * scale).dp),
 )
 
-val OpencodeShapes = Shapes(
-    extraSmall = RoundedCornerShape(6.dp),
-    small = RoundedCornerShape(10.dp),
-    medium = RoundedCornerShape(16.dp),
-    large = RoundedCornerShape(24.dp),
-    extraLarge = RoundedCornerShape(32.dp),
-)
+fun FontChoice.family(): FontFamily = when (this) {
+    FontChoice.SYSTEM -> FontFamily.Default
+    FontChoice.SANS -> FontFamily.SansSerif
+    FontChoice.SERIF -> FontFamily.Serif
+    FontChoice.MONO -> FontFamily.Monospace
+}
 
 // ---------------------------------------------------------------------------------- diff colours
 
@@ -342,30 +393,25 @@ data class DiffPalette(
 
 @Composable
 @ReadOnlyComposable
-fun diffPalette(): DiffPalette = if (LocalDarkTheme.current) {
-    DiffPalette(
-        addedBackground = Color(0xFF122B1D),
-        addedText = Color(0xFF9BE9A8),
-        removedBackground = Color(0xFF341A1A),
-        removedText = Color(0xFFFFB3AD),
-        hunkBackground = Color(0xFF16222E),
-        hunkText = Color(0xFF8FC7E8),
-        noteText = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-} else {
-    DiffPalette(
-        addedBackground = Color(0xFFE6F6EA),
-        addedText = Color(0xFF1B5E20),
-        removedBackground = Color(0xFFFDECEA),
-        removedText = Color(0xFFB3261E),
-        hunkBackground = Color(0xFFE8F1F8),
-        hunkText = Color(0xFF0B4F6C),
+fun diffPalette(): DiffPalette {
+    val extra = LocalExtraColors.current
+    return DiffPalette(
+        addedBackground = extra.diffAddedBackground,
+        addedText = extra.diffAddedText,
+        removedBackground = extra.diffRemovedBackground,
+        removedText = extra.diffRemovedText,
+        hunkBackground = extra.diffHunkBackground,
+        hunkText = extra.diffHunkText,
         noteText = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
 
-/** Semantic status colours that read well on both themes (connection dots, health). */
+/** Semantic status colours that read well on both themes (connection dots, health); user-editable. */
 object StatusColors {
-    val ok = Color(0xFF3FB27F)
-    val warn = Color(0xFFE0A63A)
+    val ok: Color
+        @Composable @ReadOnlyComposable
+        get() = LocalExtraColors.current.statusOk
+    val warn: Color
+        @Composable @ReadOnlyComposable
+        get() = LocalExtraColors.current.statusWarn
 }

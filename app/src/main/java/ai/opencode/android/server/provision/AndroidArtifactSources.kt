@@ -167,5 +167,7 @@ object EnvConfig {
         .writeTimeout(30, TimeUnit.SECONDS)
         .followRedirects(true)
         .followSslRedirects(true)
+        // Settings → Proxy → "the app's own traffic" (GitHub may be blocked as well).
+        .proxySelector(ai.opencode.android.net.AppProxySelector)
         .build()
 }

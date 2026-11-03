@@ -1,5 +1,7 @@
 package ai.opencode.android.ui.chat
 
+import ai.opencode.android.ui.theme.csp
+
 import ai.opencode.android.R
 import ai.opencode.android.data.model.MentionCandidate
 import ai.opencode.android.data.model.PromptAttachment
@@ -237,7 +239,7 @@ fun Composer(
                 }
             }
 
-            StatusLine(
+            if (ai.opencode.android.ui.theme.LocalUiTokens.current.showStatusLine) StatusLine(
                 state = state,
                 onCycleAgent = onCycleAgent,
                 onSelectAgent = onSelectAgent,
@@ -293,7 +295,7 @@ private fun StatusLine(
     onOpenUsage: () -> Unit,
 ) {
     val dim = MaterialTheme.colorScheme.onSurfaceVariant
-    val style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+    val style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace, fontSize = 12.csp)
     var agentMenu by remember { mutableStateOf(false) }
     var promptMenu by remember { mutableStateOf(false) }
     Row(
@@ -462,7 +464,7 @@ private fun ContextGauge(state: ChatUiState, onClick: () -> Unit) {
             text = label,
             style = MaterialTheme.typography.labelMedium,
             fontFamily = FontFamily.Monospace,
-            fontSize = 12.sp,
+            fontSize = 12.csp,
             color = if (fraction != null && fraction * 100 >= state.chat.contextWarnPercent) color else MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
         )

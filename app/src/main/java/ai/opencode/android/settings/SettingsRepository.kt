@@ -61,6 +61,35 @@ class SettingsRepository(context: Context) {
         }
     }
 
+    /** Every stored preference by name, live; for Settings → All settings. */
+    val raw: Flow<Map<String, Any>> = store.data.map { prefs -> prefs.asMap().mapKeys { it.key.name } }
+
+    /** What a fresh install stores for every key (the defaults of [AppSettings]). */
+    fun defaultsRaw(): Map<String, Any> =
+        androidx.datastore.preferences.core.mutablePreferencesOf().apply { write(AppSettings()) }
+            .asMap().mapKeys { it.key.name }
+
+    /**
+     * Writes one preference by name, typed like [value]; `null` removes it so the default applies.
+     * Values are re-read through [AppSettings], so out-of-range numbers are clamped on read.
+     */
+    suspend fun setRaw(name: String, value: Any?) {
+        store.edit { prefs ->
+            prefs.asMap().keys.filter { it.name == name }.forEach { prefs.remove(it) }
+            when (value) {
+                null -> Unit
+                is String -> prefs[stringPreferencesKey(name)] = value
+                is Boolean -> prefs[booleanPreferencesKey(name)] = value
+                is Int -> prefs[intPreferencesKey(name)] = value
+                is Long -> prefs[longPreferencesKey(name)] = value
+                is Float -> prefs[floatPreferencesKey(name)] = value
+                is Double -> prefs[doublePreferencesKey(name)] = value
+                is Set<*> -> prefs[stringSetPreferencesKey(name)] = value.filterIsInstance<String>().toSet()
+                else -> throw IllegalArgumentException("Unsupported preference type ${value.javaClass.simpleName}")
+            }
+        }
+    }
+
     suspend fun update(transform: (AppSettings) -> AppSettings) {
         store.edit { prefs ->
             val updated = transform(prefs.toAppSettings())
@@ -94,6 +123,8 @@ class SettingsRepository(context: Context) {
                 palette = this[KEY_THEME_PALETTE]?.toEnum<ThemePalette>() ?: ThemePalette.CLAUDE,
                 pureBlack = this[KEY_PURE_BLACK] ?: false,
                 chatTextScale = this[KEY_CHAT_TEXT_SCALE]?.toEnum<TextScale>() ?: TextScale.DEFAULT,
+                custom = ExtraSettingsCodec.decodeUi(this[KEY_UI_CUSTOM]),
+                savedThemes = ExtraSettingsCodec.decodeThemes(this[KEY_UI_THEMES]),
             ),
             notifications = this[KEY_NOTIFICATIONS] ?: true,
             systemPrompts = ProfileCodec.decodePrompts(this[KEY_SYSTEM_PROMPTS]),
@@ -124,6 +155,9 @@ class SettingsRepository(context: Context) {
             ),
             modelContextLimits = ProfileCodec.decodeLimits(this[KEY_MODEL_LIMITS]),
             sessionContextLimits = ProfileCodec.decodeLimits(this[KEY_SESSION_LIMITS]),
+            proxy = ExtraSettingsCodec.decodeProxy(this[KEY_PROXY]),
+            pluginCatalogUrl = this[KEY_PLUGIN_CATALOG]?.takeIf { it.isNotBlank() } ?: AppSettings.DEFAULT_PLUGIN_CATALOG,
+            offlineQueue = this[KEY_OFFLINE_QUEUE] ?: true,
         ).migrated(this[KEY_UI_REVISION] ?: 0)
     }
 
@@ -180,6 +214,11 @@ class SettingsRepository(context: Context) {
         this[KEY_PHONE_TOOLS] = value.phone.androidTools
         this[KEY_MODEL_LIMITS] = ProfileCodec.encodeLimits(value.modelContextLimits)
         this[KEY_SESSION_LIMITS] = ProfileCodec.encodeLimits(value.sessionContextLimits)
+        this[KEY_UI_CUSTOM] = ExtraSettingsCodec.encodeUi(value.appearance.custom)
+        this[KEY_UI_THEMES] = ExtraSettingsCodec.encodeThemes(value.appearance.savedThemes)
+        this[KEY_PROXY] = ExtraSettingsCodec.encodeProxy(value.proxy)
+        this[KEY_PLUGIN_CATALOG] = value.pluginCatalogUrl
+        this[KEY_OFFLINE_QUEUE] = value.offlineQueue
         this[KEY_UI_REVISION] = UI_REVISION
         // Settings that no longer exist: drop them so old installs do not carry stale overrides.
         OBSOLETE_KEYS.forEach { remove(it) }
@@ -235,6 +274,11 @@ class SettingsRepository(context: Context) {
         val KEY_MODEL_LIMITS = stringPreferencesKey("model_context_limits")
         val KEY_SESSION_LIMITS = stringPreferencesKey("session_context_limits")
         val KEY_UI_REVISION = intPreferencesKey("ui_revision")
+        val KEY_UI_CUSTOM = stringPreferencesKey("ui_custom")
+        val KEY_UI_THEMES = stringPreferencesKey("ui_saved_themes")
+        val KEY_PROXY = stringPreferencesKey("proxy")
+        val KEY_PLUGIN_CATALOG = stringPreferencesKey("plugin_catalog_url")
+        val KEY_OFFLINE_QUEUE = booleanPreferencesKey("offline_queue")
 
         /** Bump when [migrated] gains a step. */
         const val UI_REVISION = 14

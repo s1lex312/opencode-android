@@ -35,6 +35,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Contrast
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -61,7 +62,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 
 /** Settings → Appearance: theme, accent, OLED black, chat text size and the interface language. */
 @Composable
-fun AppearanceSettingsScreen(container: AppContainer, onBack: () -> Unit) {
+fun AppearanceSettingsScreen(container: AppContainer, onBack: () -> Unit, onOpenCustomize: () -> Unit = {}) {
     val viewModel: AppearanceViewModel = viewModel(factory = AppearanceViewModel.factory(container))
     val appearance by viewModel.appearance.collectAsStateWithLifecycle()
     var languageDialog by rememberSaveable { mutableStateOf(false) }
@@ -146,6 +147,16 @@ fun AppearanceSettingsScreen(container: AppContainer, onBack: () -> Unit) {
                     )
                 },
                 onSelect = viewModel::setChatTextScale,
+            )
+        }
+
+        SettingsGroup(title = stringResource(R.string.ui_custom_group)) {
+            SettingsItem(
+                title = stringResource(R.string.ui_custom_title),
+                subtitle = stringResource(R.string.ui_custom_hub_subtitle),
+                icon = Icons.Default.Tune,
+                showChevron = true,
+                onClick = onOpenCustomize,
             )
         }
 

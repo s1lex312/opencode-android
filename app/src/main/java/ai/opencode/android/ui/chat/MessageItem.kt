@@ -74,7 +74,9 @@ import androidx.compose.ui.unit.sp
 @Composable
 internal fun scaled(style: TextStyle): TextStyle {
     val scale = LocalChatTextScale.current
-    return if (scale == 1f) style else style.copy(fontSize = style.fontSize * scale, lineHeight = style.lineHeight * scale)
+    val font = ai.opencode.android.ui.theme.LocalUiTokens.current.chatFont
+    val sized = if (scale == 1f) style else style.copy(fontSize = style.fontSize * scale, lineHeight = style.lineHeight * scale)
+    return if (font == null) sized else sized.copy(fontFamily = font)
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -112,13 +114,21 @@ fun MessageItem(message: ChatMessage, modifier: Modifier = Modifier, onLongPress
 
     if (isUser) {
         Column(
-            modifier = modifier.fillMaxWidth().padding(start = 48.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+            modifier = modifier.fillMaxWidth().padding(
+                start = 48.dp, end = 12.dp,
+                top = ai.opencode.android.ui.theme.LocalUiTokens.current.gap(6f),
+                bottom = ai.opencode.android.ui.theme.LocalUiTokens.current.gap(6f),
+            ),
             horizontalAlignment = Alignment.End,
         ) {
+            val tokens = ai.opencode.android.ui.theme.LocalUiTokens.current
             Surface(
-                shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp, bottomStart = 22.dp, bottomEnd = 6.dp),
+                shape = RoundedCornerShape(
+                    topStart = tokens.bubbleRadius, topEnd = tokens.bubbleRadius,
+                    bottomStart = tokens.bubbleRadius, bottomEnd = tokens.bubbleRadius / 4,
+                ),
                 color = MaterialTheme.colorScheme.primaryContainer,
-                modifier = Modifier.widthIn(max = 640.dp).combinedClickable(onClick = {}, onLongClick = copy),
+                modifier = Modifier.widthIn(max = tokens.bubbleMaxWidth).combinedClickable(onClick = {}, onLongClick = copy),
             ) {
                 Column(Modifier.padding(horizontal = 16.dp, vertical = 11.dp)) {
                     if (message.plainText.isNotBlank()) {

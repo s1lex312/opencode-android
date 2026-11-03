@@ -1,0 +1,60 @@
+{
+  "format": "opencode-android-plugin",
+  "version": 1,
+  "id": "dev-workflow",
+  "name": "Dev workflow",
+  "description": "Review, test and commit snippets, a code reviewer agent, a strict system prompt and an optional format-on-edit hook.",
+  "pluginVersion": "1.0.0",
+  "author": "opencode-android",
+  "agent": {
+    "reviewer": {
+      "description": "Reviews the current changes for bugs, without editing files",
+      "mode": "subagent",
+      "prompt": "You are a strict code reviewer. Read the diff (git diff and git diff --staged), find correctness bugs, risky changes and missing tests. Report each finding with file:line and a concrete fix. Do not edit files.",
+      "permission": {
+        "edit": "deny",
+        "bash": "ask"
+      }
+    }
+  },
+  "command": {
+    "review": {
+      "description": "Review the uncommitted changes",
+      "agent": "reviewer",
+      "template": "Review the uncommitted changes in this repository. $ARGUMENTS"
+    }
+  },
+  "systemPrompts": [
+    {
+      "name": "Strict engineer",
+      "text": "Be concise. Prefer small, verified changes. Run the tests after every edit and report the exact command and result. Never claim something works without evidence."
+    }
+  ],
+  "snippets": [
+    {
+      "name": "tests",
+      "body": "Run the project's tests, fix what fails, and show the final test output. $ARGUMENTS",
+      "description": "Run and fix tests"
+    },
+    {
+      "name": "commit",
+      "body": "Look at git status and git diff, then create one commit with an imperative one-line message describing what changed and why. Do not push.",
+      "description": "Commit the current changes"
+    },
+    {
+      "name": "explain",
+      "body": "Explain how $ARGUMENTS works in this codebase: entry points, data flow, and the files involved, with file:line references.",
+      "description": "Explain a part of the code",
+      "send": true
+    }
+  ],
+  "hooks": [
+    {
+      "name": "Format edited file",
+      "event": "file_edited",
+      "command": "command -v prettier >/dev/null 2>&1 && prettier --write \"$FILE\" >/dev/null 2>&1 || true",
+      "matcher": "*.{js,ts,tsx,jsx,json,css,md}",
+      "timeoutSeconds": 30
+    }
+  ]
+}

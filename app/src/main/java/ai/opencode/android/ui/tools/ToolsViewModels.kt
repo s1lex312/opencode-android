@@ -269,6 +269,9 @@ object EnvScripts {
         return Check(versions, values["pm"]?.takeIf { it.isNotBlank() }, values["uid"]?.let { it == "0" } ?: true)
     }
 
+    /** Printed when link(2) fails inside proot: the running server predates --link2symlink. */
+    const val NO_HARD_LINKS = "Hard links do not work in this environment: restart the server (Settings, Connection, Restart) and run the install again."
+
     fun install(packages: Set<EnvPackage>): String {
         val node = EnvPackage.NODE in packages
         val python = EnvPackage.PYTHON in packages
@@ -289,8 +292,16 @@ object EnvScripts {
         return buildString {
             appendLine("set -e")
             appendLine("SUDO=; [ \"\$(id -u)\" = 0 ] || SUDO='sudo -n'")
+            // A server started before 1.7 runs proot without --link2symlink: dpkg then fails on the
+            // first package that replaces a file. Say so instead of leaving apt's code 100.
+            appendLine("probe=\$(mktemp 2>/dev/null || echo /tmp/.oc-link-probe); : > \"\$probe\"")
+            appendLine("if ! ln \"\$probe\" \"\$probe.l\" 2>/dev/null; then rm -f \"\$probe\"; echo '$NO_HARD_LINKS'; exit 1; fi")
+            appendLine("rm -f \"\$probe\" \"\$probe.l\"")
             appendLine("if command -v apt-get >/dev/null 2>&1; then")
+            // Finish whatever a previous failed run left half-installed, or apt refuses to continue.
+            appendLine("  \$SUDO dpkg --configure -a >/dev/null 2>&1 || true")
             appendLine("  echo '>>> apt-get update'; \$SUDO apt-get update")
+            appendLine("  \$SUDO apt-get install -f -y >/dev/null 2>&1 || true")
             appendLine("  echo '>>> apt-get install ${apt.joinToString(" ")}'")
             appendLine("  \$SUDO apt-get install -y --no-install-recommends ${apt.joinToString(" ")}")
             appendLine("elif command -v apk >/dev/null 2>&1; then")

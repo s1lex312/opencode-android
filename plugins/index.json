@@ -1,0 +1,58 @@
+{
+  "format": "opencode-android-plugin-index",
+  "plugins": [
+    {
+      "id": "context7",
+      "name": "Context7",
+      "description": "Up-to-date library documentation for the agent (remote MCP server, no install).",
+      "url": "https://raw.githubusercontent.com/s1lex312/opencode-android/main/plugins/context7.json",
+      "sha256": "fc7ed38a73f6098af30266e3ffb0b8b5e6bc98b64e8cda0dfde281d73d77eda8",
+      "tags": [
+        "mcp",
+        "snippets"
+      ]
+    },
+    {
+      "id": "deepwiki",
+      "name": "DeepWiki",
+      "description": "Ask questions about any public GitHub repository (remote MCP server).",
+      "url": "https://raw.githubusercontent.com/s1lex312/opencode-android/main/plugins/deepwiki.json",
+      "sha256": "96f30c9858bf9475a96ab8c4674ae13e79d7b25172143641b087ac4c72e571c9",
+      "tags": [
+        "mcp"
+      ]
+    },
+    {
+      "id": "sequential-thinking",
+      "name": "Sequential thinking",
+      "description": "Step-by-step reasoning tool for long tasks (local MCP server through npx).",
+      "url": "https://raw.githubusercontent.com/s1lex312/opencode-android/main/plugins/sequential-thinking.json",
+      "sha256": "80a5a1ac6fd211b99ece0e97e585c1605318a3a4ecf3f9134e1f968c83278b8d",
+      "tags": [
+        "mcp"
+      ]
+    },
+    {
+      "id": "fetch",
+      "name": "Fetch",
+      "description": "Lets the agent download web pages as Markdown (local MCP server through uvx).",
+      "url": "https://raw.githubusercontent.com/s1lex312/opencode-android/main/plugins/fetch.json",
+      "sha256": "b1120c854a8d89173e53f04d8b282b78d0ebf106d0229b68c14f9c9577e01ea8",
+      "tags": [
+        "mcp"
+      ]
+    },
+    {
+      "id": "dev-workflow",
+      "name": "Dev workflow",
+      "description": "Review, test and commit snippets, a code reviewer agent, a strict system prompt and an optional format-on-edit hook.",
+      "url": "https://raw.githubusercontent.com/s1lex312/opencode-android/main/plugins/dev-workflow.json",
+      "sha256": "31853f778616b199abae51d0671463fd0d783ef4f0a33b0664ff980f8b73dc1d",
+      "tags": [
+        "snippets",
+        "agent",
+        "hooks"
+      ]
+    }
+  ]
+}

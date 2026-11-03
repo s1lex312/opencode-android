@@ -322,11 +322,21 @@ private fun LimitDialog(
     )
 }
 
-private val InputColor = Color(0xFF4C8DFF)
-private val CacheColor = Color(0xFF35B57A)
-private val CacheWriteColor = Color(0xFF8E6CF0)
-private val OutputColor = Color(0xFFE0A030)
-private val ReasoningColor = Color(0xFFE0607E)
+private val InputColor: Color
+    @androidx.compose.runtime.Composable @androidx.compose.runtime.ReadOnlyComposable
+    get() = ai.opencode.android.ui.theme.LocalExtraColors.current.contextInput
+private val CacheColor: Color
+    @androidx.compose.runtime.Composable @androidx.compose.runtime.ReadOnlyComposable
+    get() = ai.opencode.android.ui.theme.LocalExtraColors.current.contextCacheRead
+private val CacheWriteColor: Color
+    @androidx.compose.runtime.Composable @androidx.compose.runtime.ReadOnlyComposable
+    get() = ai.opencode.android.ui.theme.LocalExtraColors.current.contextCacheWrite
+private val OutputColor: Color
+    @androidx.compose.runtime.Composable @androidx.compose.runtime.ReadOnlyComposable
+    get() = ai.opencode.android.ui.theme.LocalExtraColors.current.contextOutput
+private val ReasoningColor: Color
+    @androidx.compose.runtime.Composable @androidx.compose.runtime.ReadOnlyComposable
+    get() = ai.opencode.android.ui.theme.LocalExtraColors.current.contextReasoning
 
 /** Stacked bar of what the context is made of: fresh input, cache, output, reasoning. */
 @Composable

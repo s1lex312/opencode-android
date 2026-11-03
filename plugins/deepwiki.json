@@ -1,0 +1,17 @@
+{
+  "format": "opencode-android-plugin",
+  "version": 1,
+  "id": "deepwiki",
+  "name": "DeepWiki",
+  "description": "Ask questions about any public GitHub repository (remote MCP server).",
+  "pluginVersion": "1.0.0",
+  "author": "opencode-android",
+  "homepage": "https://deepwiki.com",
+  "mcp": {
+    "deepwiki": {
+      "type": "remote",
+      "url": "https://mcp.deepwiki.com/mcp",
+      "enabled": true
+    }
+  }
+}

@@ -1,5 +1,7 @@
 package ai.opencode.android.ui.diff
 
+import ai.opencode.android.ui.theme.csp
+
 import androidx.compose.ui.res.stringResource
 import ai.opencode.android.R
 import ai.opencode.android.data.diff.DiffFile
@@ -278,14 +280,14 @@ internal fun HunkView(hunk: DiffHunk) {
                         Text(
                             text = marker,
                             fontFamily = FontFamily.Monospace,
-                            fontSize = 12.sp,
+                            fontSize = 12.csp,
                             color = textColor,
                             modifier = Modifier.width(12.dp),
                         )
                         Text(
                             text = line.text.ifEmpty { " " },
                             fontFamily = FontFamily.Monospace,
-                            fontSize = 12.sp,
+                            fontSize = 12.csp,
                             softWrap = false,
                             color = textColor,
                         )
@@ -301,7 +303,7 @@ private fun Gutter(number: Int?) {
     Text(
         text = number?.toString().orEmpty(),
         fontFamily = FontFamily.Monospace,
-        fontSize = 11.sp,
+        fontSize = 11.csp,
         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
         modifier = Modifier
             .width(34.dp)
@@ -320,7 +322,7 @@ private fun RawPatch(patch: String) {
         Text(
             text = patch,
             fontFamily = FontFamily.Monospace,
-            fontSize = 12.sp,
+            fontSize = 12.csp,
             softWrap = false,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

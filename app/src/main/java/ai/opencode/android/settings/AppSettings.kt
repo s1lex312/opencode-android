@@ -65,6 +65,9 @@ data class AppearanceSettings(
     /** True black surfaces in dark mode (OLED). */
     val pureBlack: Boolean = false,
     val chatTextScale: TextScale = TextScale.DEFAULT,
+    /** Colours, fonts, sizes and spacing on top of the palette. */
+    val custom: UiCustomization = UiCustomization(),
+    val savedThemes: List<SavedTheme> = emptyList(),
 )
 
 data class LocalServerSettings(
@@ -126,6 +129,12 @@ data class AppSettings(
     val modelContextLimits: Map<String, Long> = emptyMap(),
     /** User context window per chat (session id → tokens), overrides the model's. */
     val sessionContextLimits: Map<String, Long> = emptyMap(),
+    /** Upstream proxy for providers blocked in the user's region. */
+    val proxy: ProxySettings = ProxySettings(),
+    /** Plugin catalogue (index JSON) shown in Settings → Plugins. */
+    val pluginCatalogUrl: String = DEFAULT_PLUGIN_CATALOG,
+    /** Keep prompts typed while offline and send them once the server is reachable again. */
+    val offlineQueue: Boolean = true,
 ) {
     /** Context window to use for [sessionId] running [modelKey]; `null` falls back to the catalogue. */
     fun contextLimitOverride(sessionId: String?, modelKey: String?): Long? =
@@ -160,5 +169,6 @@ data class AppSettings(
         const val DEFAULT_SERVER_URL = "http://127.0.0.1:4096"
         const val DEFAULT_USERNAME = "opencode"
         const val REQUEST_TIMEOUT_SECONDS = 300
+        const val DEFAULT_PLUGIN_CATALOG = "https://raw.githubusercontent.com/s1lex312/opencode-android/main/plugins/index.json"
     }
 }

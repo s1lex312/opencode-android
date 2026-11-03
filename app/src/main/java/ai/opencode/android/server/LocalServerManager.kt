@@ -53,6 +53,9 @@ class LocalServerManager(
     @Volatile
     var extraBinds: () -> List<String> = { emptyList() }
 
+    /** Extra environment for the server process (the proxy variables); read at every launch. */
+    var extraEnv: () -> Map<String, String> = { emptyMap() }
+
     private val logBuffer = ArrayDeque<String>()
     private val logStore = ServerLogStore(provisioner.paths().logFile)
 
@@ -316,6 +319,12 @@ class LocalServerManager(
             proot.absolutePath,
             "-0",
             "--kill-on-exit",
+            // Android's SELinux policy forbids link(2) in app data: without this every hard link
+            // fails, and dpkg cannot replace a package (it hard-links the old file as a backup:
+            // "unable to make backup link of './usr/bin/perl'", apt exits with code 100).
+            "--link2symlink",
+            // System V IPC emulation (Termux proot): postgres, some Python and Node packages need it.
+            "--sysvipc",
             "-r", rootfs.absolutePath,
             "-b", "/dev",
             "-b", "/proc",
@@ -361,6 +370,9 @@ class LocalServerManager(
             if (libDirs.isNotEmpty()) {
                 builder.environment()["LD_LIBRARY_PATH"] = libDirs.joinToString(":")
             }
+            val extra = runCatching { extraEnv() }.getOrDefault(emptyMap())
+            builder.environment().putAll(extra)
+            extra["HTTPS_PROXY"]?.let { appendLog("Proxy: model and package traffic goes through $it") }
             val origin = if (proot == paths.nativeProot) "packaged in the APK" else "app storage"
             appendLog("Runtime: proot=${proot.absolutePath} ($origin)")
             val started = builder.start()

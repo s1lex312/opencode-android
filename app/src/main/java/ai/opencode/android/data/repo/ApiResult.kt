@@ -29,7 +29,27 @@ suspend fun <T> runApiCall(block: suspend () -> T): ApiResult<T> = try {
 } catch (unauthorized: UnauthorizedException) {
     ApiResult.Err(NetworkErrors.describe(unauthorized), unauthorized = true)
 } catch (api: ApiException) {
-    ApiResult.Err(NetworkErrors.describe(api))
+    ApiResult.Err(NetworkErrors.describe(api), notConnected = neverReachedServer(api))
 } catch (t: Throwable) {
-    ApiResult.Err(NetworkErrors.describe(t))
+    ApiResult.Err(NetworkErrors.describe(t), notConnected = neverReachedServer(t))
+}
+
+/**
+ * True when the request certainly did not reach the server (refused, no route, DNS), so sending it
+ * again cannot duplicate anything. Timeouts after the connection was made do not count.
+ */
+fun neverReachedServer(t: Throwable): Boolean {
+    var current: Throwable? = t
+    var depth = 0
+    while (current != null && depth < 8) {
+        when (current) {
+            is java.net.ConnectException, is java.net.UnknownHostException, is java.net.NoRouteToHostException,
+            is java.net.PortUnreachableException,
+            -> return true
+            is java.net.SocketTimeoutException -> if (current.message?.contains("connect", ignoreCase = true) == true) return true
+        }
+        current = current.cause
+        depth++
+    }
+    return false
 }

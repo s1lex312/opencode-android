@@ -64,6 +64,13 @@ object Routes {
     const val SETTINGS_MCP = "settings/mcp"
     const val SETTINGS_BEHAVIOUR = "settings/behaviour"
     const val SETTINGS_PHONE = "settings/phone"
+    const val SETTINGS_PROXY = "settings/proxy"
+    const val SETTINGS_UI = "settings/appearance/customize"
+    const val SETTINGS_ALL = "settings/all"
+    const val SETTINGS_PROFILES = "settings/profiles"
+    const val SETTINGS_PLUGINS = "settings/plugins"
+    const val SETTINGS_DIAGNOSTICS = "settings/diagnostics"
+    const val SETTINGS_CONFIG = "settings/opencode-config"
 
     const val PROVIDERS = "providers"
     const val PROVIDERS_CUSTOM = "providers/custom"
@@ -116,18 +123,27 @@ fun OpencodeNavHost(
         if (shareRequest > 0 && container.pendingShare.value != null) navController.open(Routes.SHARE)
     }
 
+    val animate = ai.opencode.android.ui.theme.LocalUiTokens.current.animations
     NavHost(
         navController = navController,
         startDestination = Routes.SESSIONS,
         enterTransition = {
-            slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(TRANSITION_MS)) +
-                fadeIn(tween(TRANSITION_MS))
+            if (!animate) {
+                androidx.compose.animation.EnterTransition.None
+            } else {
+                slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(TRANSITION_MS)) +
+                    fadeIn(tween(TRANSITION_MS))
+            }
         },
-        exitTransition = { fadeOut(tween(TRANSITION_MS / 2)) },
-        popEnterTransition = { fadeIn(tween(TRANSITION_MS)) },
+        exitTransition = { if (animate) fadeOut(tween(TRANSITION_MS / 2)) else androidx.compose.animation.ExitTransition.None },
+        popEnterTransition = { if (animate) fadeIn(tween(TRANSITION_MS)) else androidx.compose.animation.EnterTransition.None },
         popExitTransition = {
-            slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.End, tween(TRANSITION_MS)) +
-                fadeOut(tween(TRANSITION_MS))
+            if (!animate) {
+                androidx.compose.animation.ExitTransition.None
+            } else {
+                slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.End, tween(TRANSITION_MS)) +
+                    fadeOut(tween(TRANSITION_MS))
+            }
         },
     ) {
         composable(Routes.SESSIONS) {
@@ -302,7 +318,42 @@ fun OpencodeNavHost(
                 onOpenEnv = { navController.open(Routes.ENV) },
                 onOpenTasks = { navController.open(Routes.TASKS) },
                 onOpenBackup = { navController.open(Routes.SETTINGS_BACKUP) },
+                onOpenProxy = { navController.open(Routes.SETTINGS_PROXY) },
+                onOpenPlugins = { navController.open(Routes.SETTINGS_PLUGINS) },
+                onOpenConfig = { navController.open(Routes.SETTINGS_CONFIG) },
+                onOpenAll = { navController.open(Routes.SETTINGS_ALL) },
+                onOpenProfiles = { navController.open(Routes.SETTINGS_PROFILES) },
+                onOpenDiagnostics = { navController.open(Routes.SETTINGS_DIAGNOSTICS) },
+                onOpenLogs = { navController.open(Routes.LOGS) },
             )
+        }
+
+        composable(Routes.SETTINGS_PROXY) {
+            ai.opencode.android.ui.settings.ProxyScreen(container = container, onBack = back)
+        }
+
+        composable(Routes.SETTINGS_UI) {
+            ai.opencode.android.ui.settings.UiCustomizeScreen(container = container, onBack = back)
+        }
+
+        composable(Routes.SETTINGS_ALL) {
+            ai.opencode.android.ui.settings.AllSettingsScreen(container = container, onBack = back)
+        }
+
+        composable(Routes.SETTINGS_PROFILES) {
+            ai.opencode.android.ui.settings.SettingsProfilesScreen(container = container, onBack = back)
+        }
+
+        composable(Routes.SETTINGS_PLUGINS) {
+            ai.opencode.android.ui.settings.PluginsScreen(container = container, onBack = back, onOpenEnv = { navController.open(Routes.ENV) })
+        }
+
+        composable(Routes.SETTINGS_DIAGNOSTICS) {
+            ai.opencode.android.ui.settings.DiagnosticsScreen(container = container, onBack = back, onOpenLogs = { navController.open(Routes.LOGS) })
+        }
+
+        composable(Routes.SETTINGS_CONFIG) {
+            ai.opencode.android.ui.config.ConfigEditorScreen(container = container, onBack = back)
         }
 
         composable(Routes.SETTINGS_BACKUP) {
@@ -349,7 +400,7 @@ fun OpencodeNavHost(
         }
 
         composable(Routes.SETTINGS_APPEARANCE) {
-            AppearanceSettingsScreen(container = container, onBack = back)
+            AppearanceSettingsScreen(container = container, onBack = back, onOpenCustomize = { navController.open(Routes.SETTINGS_UI) })
         }
 
         composable(Routes.SETTINGS_ABOUT) {

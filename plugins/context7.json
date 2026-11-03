@@ -1,0 +1,24 @@
+{
+  "format": "opencode-android-plugin",
+  "version": 1,
+  "id": "context7",
+  "name": "Context7",
+  "description": "Up-to-date library documentation for the agent (remote MCP server, no install).",
+  "pluginVersion": "1.0.0",
+  "author": "opencode-android",
+  "homepage": "https://github.com/upstash/context7",
+  "mcp": {
+    "context7": {
+      "type": "remote",
+      "url": "https://mcp.context7.com/mcp",
+      "enabled": true
+    }
+  },
+  "snippets": [
+    {
+      "name": "docs",
+      "body": "Use the context7 tools to look up the current documentation for: $ARGUMENTS. Quote the relevant API and give a short example.",
+      "description": "Look up library docs via Context7"
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "format": "opencode-android-plugin",
+  "version": 1,
+  "id": "sequential-thinking",
+  "name": "Sequential thinking",
+  "description": "Step-by-step reasoning tool for long tasks (local MCP server through npx).",
+  "pluginVersion": "1.0.0",
+  "author": "opencode-android",
+  "homepage": "https://github.com/modelcontextprotocol/servers",
+  "requires": [
+    "node"
+  ],
+  "mcp": {
+    "sequential-thinking": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ],
+      "enabled": true
+    }
+  }
+}

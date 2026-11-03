@@ -1,5 +1,7 @@
 package ai.opencode.android.ui.terminal
 
+import ai.opencode.android.ui.theme.csp
+
 import ai.opencode.android.R
 import ai.opencode.android.di.AppContainer
 import ai.opencode.android.ui.components.ErrorCard
@@ -144,7 +146,7 @@ fun TerminalScreen(container: AppContainer, cwd: String?, onBack: () -> Unit) {
             state.error?.let { ErrorCard(message = it, onRetry = viewModel::open) }
 
             val fontSize = 12.sp
-            val textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = fontSize, lineHeight = 16.sp, color = TerminalForeground)
+            val textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = fontSize, lineHeight = 16.csp, color = TerminalForeground)
             val measurer = rememberTextMeasurer()
             val density = LocalDensity.current
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().background(TerminalBackground).padding(horizontal = 6.dp)) {
@@ -188,7 +190,7 @@ fun TerminalScreen(container: AppContainer, cwd: String?, onBack: () -> Unit) {
                         modifier = Modifier.weight(1f),
                         singleLine = true,
                         placeholder = { Text(stringResource(R.string.terminal_input_hint), fontFamily = FontFamily.Monospace) },
-                        textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp),
+                        textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.csp),
                         keyboardOptions = KeyboardOptions(
                             capitalization = KeyboardCapitalization.None,
                             autoCorrect = false,
