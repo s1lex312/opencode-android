@@ -273,7 +273,9 @@ fun BackupAndUpdatePrompts(container: AppContainer) {
             confirmButton = {
                 TextButton(onClick = {
                     permissionAsked = true
-                    runCatching { context.startActivity(container.appUpdater.permissionIntent()) }
+                    val updater = container.appUpdater
+                    if (updater.canInstall()) updater.update() else runCatching { context.startActivity(updater.permissionIntent()) }
+
                 }) { Text(stringResource(R.string.app_update_allow)) }
             },
             dismissButton = { TextButton(onClick = { permissionAsked = true }) { Text(stringResource(R.string.app_update_later)) } },

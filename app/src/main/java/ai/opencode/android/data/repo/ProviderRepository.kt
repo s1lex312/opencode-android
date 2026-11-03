@@ -13,9 +13,11 @@ import ai.opencode.android.data.remote.obj
 import ai.opencode.android.data.remote.objects
 import ai.opencode.android.data.remote.str
 import ai.opencode.android.data.remote.strList
+import ai.opencode.android.server.LocalConfigFile
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
@@ -32,18 +34,29 @@ import kotlinx.serialization.json.putJsonObject
  *  * **2.x**: only `/api/...` — `/api/integration` lists providers and sign-in methods,
  *    `/api/integration/{id}/connect/key|oauth` connects, `DELETE /api/credential/{id}` disconnects.
  */
-class ProviderRepository(private val connection: ServerConnectionManager) {
+class ProviderRepository(
+    private val httpOf: () -> ServerHttp?,
+    /** The in-app server's config files; null or [isLocalServer] false → only the HTTP API is used. */
+    private val localConfig: LocalConfigFile? = null,
+    private val isLocalServer: suspend () -> Boolean = { false },
+) {
+
+    constructor(
+        connection: ServerConnectionManager,
+        localConfig: LocalConfigFile? = null,
+        isLocalServer: suspend () -> Boolean = { false },
+    ) : this({ connection.api?.http }, localConfig, isLocalServer)
 
     /** Remembered per server: whether the legacy 1.x routes answer. */
     private var legacyFor: Pair<String, Boolean>? = null
 
     suspend fun providers(): ApiResult<List<ProviderInfo>> {
-        val http = connection.api?.http ?: return notConnected()
+        val http = httpOf() ?: return notConnected()
         return runApiCall { if (isLegacy(http)) legacyProviders(http) else v2Providers(http) }
     }
 
     suspend fun setApiKey(providerId: String, key: String): ApiResult<Unit> {
-        val http = connection.api?.http ?: return notConnected()
+        val http = httpOf() ?: return notConnected()
         val trimmed = key.trim()
         if (trimmed.isEmpty()) return ApiResult.Err("The API key is empty")
         return runApiCall {
@@ -57,6 +70,7 @@ class ProviderRepository(private val connection: ServerConnectionManager) {
                 )
                 // Sessions on the /api routes of 1.16+ read a separate credential store.
                 runCatching { v2ConnectKey(http, providerId, trimmed) }
+                enable(http, providerId)
                 reload(http, legacy = true)
             } else {
                 v2ConnectKey(http, providerId, trimmed)
@@ -66,11 +80,20 @@ class ProviderRepository(private val connection: ServerConnectionManager) {
     }
 
     suspend fun disconnect(provider: ProviderInfo): ApiResult<Unit> {
-        val http = connection.api?.http ?: return notConnected()
+        val http = httpOf() ?: return notConnected()
         return runApiCall {
             if (isLegacy(http)) {
-                http.deleteJson("/auth/${enc(provider.id)}")
+                val auth = runCatching { http.deleteJson("/auth/${enc(provider.id)}") }
                 runCatching { v2Credentials(http, provider.id).forEach { http.deleteJson("/api/credential/${enc(it)}") } }
+                val global = runCatching { http.getJson("/global/config") as? JsonObject }.getOrNull()
+                if (isCustom(provider, global?.obj("provider")?.obj(provider.id))) {
+                    // A custom provider lives in opencode.json: without its key it is still loaded
+                    // from there, so deleting the key alone changes nothing.
+                    global ?: throw ApiException(null, "Cannot read the server config")
+                    removeConfigured(http, provider.id, global)
+                } else {
+                    auth.getOrThrow()
+                }
                 runCatching { http.postJson("/global/dispose") }
             } else {
                 provider.credentialIds.forEach { http.deleteJson("/api/credential/${enc(it)}") }
@@ -85,7 +108,7 @@ class ProviderRepository(private val connection: ServerConnectionManager) {
         method: ProviderAuthMethod.OAuth,
         inputs: Map<String, String>,
     ): ApiResult<OAuthSession> {
-        val http = connection.api?.http ?: return notConnected()
+        val http = httpOf() ?: return notConnected()
         return runApiCall {
             if (isLegacy(http)) {
                 val response = http.postJson(
@@ -128,7 +151,7 @@ class ProviderRepository(private val connection: ServerConnectionManager) {
      * provider confirms — the 1.x server blocks the request, a 2.x attempt is polled.
      */
     suspend fun finishOAuth(session: OAuthSession, code: String?): ApiResult<Unit> {
-        val http = connection.api?.http ?: return notConnected()
+        val http = httpOf() ?: return notConnected()
         return runApiCall {
             if (isLegacy(http)) {
                 http.postJson(
@@ -138,6 +161,7 @@ class ProviderRepository(private val connection: ServerConnectionManager) {
                         if (!code.isNullOrBlank()) put("code", code.trim())
                     },
                 )
+                enable(http, session.providerId)
                 reload(http, legacy = true)
             } else {
                 val attempt = session.attemptId ?: throw ApiException(null, "Sign-in attempt is missing")
@@ -154,11 +178,12 @@ class ProviderRepository(private val connection: ServerConnectionManager) {
 
     /** Adds an OpenAI-compatible endpoint to the global config (1.x servers). */
     suspend fun addCustomProvider(draft: CustomProviderDraft): ApiResult<Unit> {
-        val http = connection.api?.http ?: return notConnected()
+        val http = httpOf() ?: return notConnected()
         return runApiCall {
             if (!isLegacy(http)) {
                 throw ApiException(null, "This server only accepts custom providers from its config file")
             }
+            enable(http, draft.id)
             if (draft.apiKey.isNotBlank()) {
                 http.putJson(
                     "/auth/${enc(draft.id)}",
@@ -189,6 +214,43 @@ class ProviderRepository(private val connection: ServerConnectionManager) {
     }
 
     // ------------------------------------------------------------------ 1.x
+
+    /**
+     * A provider the config defines (its own package or endpoint), as opposed to a built-in one
+     * that merely has option overrides there: only the former is removed with its config entry.
+     */
+    private fun isCustom(provider: ProviderInfo, entry: JsonObject?): Boolean {
+        entry ?: return false
+        return provider.source == "config" || provider.source == "custom" ||
+            entry.str("npm") != null || entry.obj("options")?.str("baseURL") != null
+    }
+
+    /**
+     * Removes `provider.<id>` from the config. On the in-app server the files are edited; the
+     * server only re-reads them when a PATCH changes something, so the id goes into
+     * `disabled_providers` and back out again. Elsewhere it stays there: the provider is hidden,
+     * which is all the HTTP API allows.
+     */
+    private suspend fun removeConfigured(http: ServerHttp, id: String, global: JsonObject) {
+        val disabled = global.strList("disabled_providers")
+        val edited = localConfig != null && isLocalServer() && localConfig.remove(listOf("provider", id))
+        patchDisabled(http, (disabled + id).distinct())
+        if (edited) patchDisabled(http, disabled - id)
+    }
+
+    /** Undoes [removeConfigured]'s hiding when the user connects the same provider again. */
+    private suspend fun enable(http: ServerHttp, id: String) {
+        val global = runCatching { http.getJson("/global/config") as? JsonObject }.getOrNull() ?: return
+        val disabled = global.strList("disabled_providers")
+        if (id in disabled) runCatching { patchDisabled(http, disabled - id) }
+    }
+
+    private suspend fun patchDisabled(http: ServerHttp, ids: List<String>) {
+        http.patchJson(
+            "/global/config",
+            buildJsonObject { put("disabled_providers", JsonArray(ids.map { JsonPrimitive(it) })) },
+        )
+    }
 
     private suspend fun isLegacy(http: ServerHttp): Boolean {
         legacyFor?.let { (server, legacy) -> if (server == http.baseUrl) return legacy }

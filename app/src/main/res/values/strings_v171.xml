@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_update_confirming">Confirm the installation of %1$s in the system window. Closed it? Tap Install.</string>
+    <string name="app_update_samsung_hint">Samsung: if the switch is greyed out, turn off Auto Blocker (Settings, Security and privacy, Auto Blocker) for the update.</string>
+</resources>

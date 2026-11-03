@@ -74,12 +74,15 @@ data class AppUpdateState(
         /** Android needs "Install unknown apps" for this app first. */
         NEEDS_PERMISSION,
 
+        /** The system install dialog is open (or waits in a notification) for the user to confirm. */
+        CONFIRMING,
+
         /** The new APK is signed with another key: Android only installs it after an uninstall. */
         SIGNATURE_MISMATCH,
         FAILED,
     }
 
-    val busy: Boolean get() = phase == Phase.CHECKING || phase == Phase.DOWNLOADING || phase == Phase.INSTALLING
+    val busy: Boolean get() = phase == Phase.CHECKING || phase == Phase.DOWNLOADING || phase == Phase.INSTALLING || phase == Phase.CONFIRMING
 }
 
 /**
@@ -93,6 +96,11 @@ data class AppUpdateState(
  * installed the current version itself, so only the very first in-app update shows the system
  * dialog. Automatic installs wait until the app is in the background and no agent turn is running,
  * because replacing the APK restarts the process.
+ *
+ * "Install unknown apps" is asked for once: when the user grants it and comes back, the install
+ * that needed it continues by itself (the wish survives the process restart some devices do on
+ * that switch). A system confirmation the user cancelled is not shown again automatically for
+ * that version; only the Install button brings it back.
  */
 class AppUpdater(
     private val context: Context,
@@ -109,6 +117,10 @@ class AppUpdater(
     private var release: AppRelease? = null
     private var apk: File? = null
     private val dir: File get() = File(context.cacheDir, "updates")
+    private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    /** Whether Android lets this app install packages right now. */
+    fun canInstall(): Boolean = context.packageManager.canRequestPackageInstalls()
 
     fun start() {
         createChannel()
@@ -121,6 +133,10 @@ class AppUpdater(
             }
         }
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) {
+                scope.launch { runCatching { resumeAfterPermission() } }
+            }
+
             override fun onStop(owner: LifecycleOwner) {
                 scope.launch { runCatching { maybeAutoInstall() } }
             }
@@ -136,14 +152,28 @@ class AppUpdater(
             return
         }
         if (!downloadNow()) return
-        if (current.appAutoInstall && !foreground() && !anySessionBusy()) installNow() else notifyAvailable(found, ready = true)
+        val auto = current.appAutoInstall && !declined(found.version) && !foreground() && !anySessionBusy()
+        if (auto) installNow() else notifyAvailable(found, ready = true)
     }
 
     private suspend fun maybeAutoInstall() {
         if (_state.value.phase != AppUpdateState.Phase.READY) return
-        if (!settings.current().appAutoInstall || anySessionBusy()) return
+        val version = release?.version ?: return
+        if (!settings.current().appAutoInstall || declined(version) || anySessionBusy()) return
         installNow()
     }
+
+    /** The user came back, maybe from "Install unknown apps": finish the install that waited for it. */
+    private suspend fun resumeAfterPermission() {
+        if (!prefs.getBoolean(KEY_WANTS_INSTALL, false) || !canInstall()) return
+        prefs.edit().remove(KEY_WANTS_INSTALL).apply()
+        if (_state.value.busy) return
+        if (release == null && checkNow() == null) return
+        if (apk?.isFile != true && !downloadNow()) return
+        installNow()
+    }
+
+    private fun declined(version: String): Boolean = prefs.getString(KEY_DECLINED, null) == version
 
     fun check() {
         scope.launch { checkNow() }
@@ -151,7 +181,9 @@ class AppUpdater(
 
     /** Download (if needed) and install; the button in Settings. */
     fun update() {
+        prefs.edit().remove(KEY_DECLINED).apply()
         scope.launch {
+            if (_state.value.phase == AppUpdateState.Phase.INSTALLING) return@launch
             if (release == null && checkNow() == null) return@launch
             if (apk?.isFile != true && !downloadNow()) return@launch
             installNow()
@@ -212,11 +244,14 @@ class AppUpdater(
 
     private suspend fun installNow() = lock.withLock {
         val file = apk?.takeIf { it.isFile } ?: return@withLock
-        if (!context.packageManager.canRequestPackageInstalls()) {
+        if (!canInstall()) {
+            // Picked up again by resumeAfterPermission() once the user flips the switch.
+            prefs.edit().putBoolean(KEY_WANTS_INSTALL, true).apply()
             _state.update { it.copy(phase = AppUpdateState.Phase.NEEDS_PERMISSION) }
             notifyAvailable(release ?: return@withLock, ready = true)
             return@withLock
         }
+        prefs.edit().remove(KEY_WANTS_INSTALL).apply()
         _state.update { it.copy(phase = AppUpdateState.Phase.INSTALLING, message = null) }
         try {
             withContext(Dispatchers.IO) { commitSession(file) }
@@ -227,6 +262,8 @@ class AppUpdater(
 
     private fun commitSession(file: File) {
         val installer = context.packageManager.packageInstaller
+        // Sessions of earlier attempts (a dialog the user never answered) would pile up otherwise.
+        installer.mySessions.forEach { runCatching { installer.abandonSession(it.sessionId) } }
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
             setAppPackageName(context.packageName)
             setSize(file.length())
@@ -266,7 +303,8 @@ class AppUpdater(
                     // Background activity starts are blocked: let the user tap the notification.
                     notifyConfirm(confirm)
                 }
-                _state.update { it.copy(phase = AppUpdateState.Phase.READY) }
+                // Not READY: leaving the app for the dialog must not start yet another session.
+                _state.update { it.copy(phase = AppUpdateState.Phase.CONFIRMING) }
             }
 
             PackageInstaller.STATUS_SUCCESS -> _state.update { it.copy(phase = AppUpdateState.Phase.UP_TO_DATE) }
@@ -276,6 +314,8 @@ class AppUpdater(
                 val phase = if (status == PackageInstaller.STATUS_FAILURE_CONFLICT || status == PackageInstaller.STATUS_FAILURE_INCOMPATIBLE) {
                     AppUpdateState.Phase.SIGNATURE_MISMATCH
                 } else if (status == PackageInstaller.STATUS_FAILURE_ABORTED) {
+                    // The user said no: do not put the dialog in front of them again on its own.
+                    (release?.version ?: _state.value.latest)?.let { prefs.edit().putString(KEY_DECLINED, it).apply() }
                     AppUpdateState.Phase.READY
                 } else {
                     AppUpdateState.Phase.FAILED
@@ -465,6 +505,9 @@ class AppUpdater(
         const val NOTIFICATION_ID = 5200
         private const val START_DELAY_MS = 20_000L
         private const val CHECK_INTERVAL_MS = 6L * 60 * 60 * 1000
+        private const val PREFS = "app_update"
+        private const val KEY_WANTS_INSTALL = "wants_install"
+        private const val KEY_DECLINED = "declined_version"
 
         /** `1.6.0` out of `1.6.0-lite-debug`. */
         fun currentVersion(): String = BuildConfig.VERSION_NAME.substringBefore('-')

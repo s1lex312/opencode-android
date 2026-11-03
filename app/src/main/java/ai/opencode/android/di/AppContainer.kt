@@ -132,7 +132,7 @@ class AppContainer(context: Context) {
     }
 
     /** AI providers configured on the connected opencode server (API keys, OAuth, custom endpoints). */
-    val providerRepository: ProviderRepository by lazy { ProviderRepository(connectionManager) }
+    val providerRepository: ProviderRepository by lazy { ProviderRepository(connectionManager, localConfigFile) { settingsRepository.current().isLocalMode } }
 
     /** Mirrors Settings → Phone access → shared storage for the (non-suspending) proot launcher. */
     @Volatile
@@ -186,6 +186,7 @@ class AppContainer(context: Context) {
 
     /** Non-interactive commands on the server through its PTY API (git, installs, hooks). */
     val remoteExec: RemoteExec by lazy { RemoteExec(connectionManager) }
+    val envInstaller: ai.opencode.android.ui.tools.EnvInstaller by lazy { ai.opencode.android.ui.tools.EnvInstaller(remoteExec, appScope) }
 
     val hookRunner: HookRunner by lazy {
         HookRunner(connectionManager, sessionRepository, settingsRepository, workbench, remoteExec, appScope)

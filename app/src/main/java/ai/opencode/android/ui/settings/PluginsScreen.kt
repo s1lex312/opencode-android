@@ -67,7 +67,15 @@ fun PluginsScreen(container: AppContainer, onBack: () -> Unit, onOpenEnv: () -> 
     var catalogDialog by rememberSaveable { mutableStateOf(false) }
     var removing by remember { mutableStateOf<InstalledPlugin?>(null) }
 
-    fun fail(t: Throwable) = Toast.makeText(context, t.message ?: t.javaClass.simpleName, Toast.LENGTH_LONG).show()
+    // Installs and removals outlive this screen: connecting an npx MCP server can take a minute,
+    // and leaving the screen must not cancel the work half-way (config patched, plugin unrecorded).
+    val work = container.appScope
+    val app = context.applicationContext
+
+    fun fail(t: Throwable) {
+        if (t is kotlinx.coroutines.CancellationException) return
+        Toast.makeText(app, t.message ?: t.javaClass.simpleName, Toast.LENGTH_LONG).show()
+    }
 
     fun open(url: String, sha: String? = null) {
         loading = true
@@ -116,7 +124,7 @@ fun PluginsScreen(container: AppContainer, onBack: () -> Unit, onOpenEnv: () -> 
                 InstalledRow(
                     plugin = plugin,
                     busy = plugin.manifest.id in state.busy,
-                    onToggle = { enabled -> scope.launch { runCatching { manager.setEnabled(plugin.manifest.id, enabled) }.onFailure(::fail) } },
+                    onToggle = { enabled -> work.launch { runCatching { manager.setEnabled(plugin.manifest.id, enabled) }.onFailure(::fail) } },
                     onRemove = { removing = plugin },
                 )
             }
@@ -174,15 +182,15 @@ fun PluginsScreen(container: AppContainer, onBack: () -> Unit, onOpenEnv: () -> 
             onOpenEnv = onOpenEnv,
             onInstall = { enableHooks ->
                 preview = null
-                scope.launch {
+                work.launch {
                     runCatching { manager.install(current, enableHooks) }
                         .onSuccess { installed ->
                             val text = if (installed.warnings.isEmpty()) {
-                                context.getString(R.string.plugins_installed_toast, installed.manifest.name)
+                                app.getString(R.string.plugins_installed_toast, installed.manifest.name)
                             } else {
-                                context.getString(R.string.plugins_installed_partly, installed.manifest.name, installed.warnings.joinToString("; "))
+                                app.getString(R.string.plugins_installed_partly, installed.manifest.name, installed.warnings.joinToString("; "))
                             }
-                            Toast.makeText(context, text, Toast.LENGTH_LONG).show()
+                            Toast.makeText(app, text, Toast.LENGTH_LONG).show()
                         }
                         .onFailure(::fail)
                 }
@@ -238,15 +246,15 @@ fun PluginsScreen(container: AppContainer, onBack: () -> Unit, onOpenEnv: () -> 
             confirmButton = {
                 TextButton(onClick = {
                     removing = null
-                    scope.launch {
+                    work.launch {
                         runCatching { manager.uninstall(plugin.manifest.id) }
                             .onSuccess { warnings ->
                                 val text = if (warnings.isEmpty()) {
-                                    context.getString(R.string.plugins_removed, plugin.manifest.name)
+                                    app.getString(R.string.plugins_removed, plugin.manifest.name)
                                 } else {
-                                    context.getString(R.string.plugins_removed_partly, plugin.manifest.name, warnings.joinToString("; "))
+                                    app.getString(R.string.plugins_removed_partly, plugin.manifest.name, warnings.joinToString("; "))
                                 }
-                                Toast.makeText(context, text, Toast.LENGTH_LONG).show()
+                                Toast.makeText(app, text, Toast.LENGTH_LONG).show()
                             }
                             .onFailure(::fail)
                     }

@@ -11,6 +11,7 @@ import ai.opencode.android.data.stats.StatsState
 import ai.opencode.android.data.stats.UsageStats
 import ai.opencode.android.data.tasks.BackgroundTasks
 import ai.opencode.android.di.AppContainer
+import ai.opencode.android.server.GuestEnvironment
 import ai.opencode.android.settings.BackgroundTask
 import ai.opencode.android.settings.BudgetSettings
 import ai.opencode.android.settings.Hook
@@ -21,6 +22,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -182,7 +184,11 @@ data class EnvUiState(
  * in Local mode), so `npx`/`uvx` MCP servers start. Node comes from nodejs.org because Ubuntu
  * 22.04's apt package is v12, too old for current MCP servers.
  */
-class EnvViewModel(private val exec: RemoteExec, private val connection: ServerConnectionManager) : ViewModel() {
+class EnvViewModel(
+    private val exec: RemoteExec,
+    private val connection: ServerConnectionManager,
+    private val installer: EnvInstaller,
+) : ViewModel() {
 
     private val _state = MutableStateFlow(EnvUiState())
     val state: StateFlow<EnvUiState> = _state.asStateFlow()
@@ -191,6 +197,14 @@ class EnvViewModel(private val exec: RemoteExec, private val connection: ServerC
         viewModelScope.launch {
             if (!connection.isConnected) connection.connect()
             check()
+        }
+        viewModelScope.launch {
+            var wasInstalling = installer.state.value.installing
+            installer.state.collect { run ->
+                _state.update { it.copy(installing = run.installing, log = run.log, exitCode = run.exitCode, error = if (run.installing) null else run.error ?: it.error) }
+                if (wasInstalling && !run.installing) check()
+                wasInstalling = run.installing
+            }
         }
     }
 
@@ -209,10 +223,32 @@ class EnvViewModel(private val exec: RemoteExec, private val connection: ServerC
         }
     }
 
+    fun install(packages: Set<EnvPackage>) = installer.install(packages)
+
+    companion object {
+        private const val CHECK_TIMEOUT_MS = 30_000L
+
+        fun factory(container: AppContainer): ViewModelProvider.Factory = viewModelFactory {
+            initializer { EnvViewModel(container.remoteExec, container.connectionManager, container.envInstaller) }
+        }
+    }
+}
+
+/**
+ * Runs the environment install outside any screen: leaving the screen used to cancel the job,
+ * which removes the PTY and kills apt/dpkg half-way, leaving the package database broken.
+ */
+class EnvInstaller(private val exec: RemoteExec, private val scope: CoroutineScope) {
+
+    data class Run(val installing: Boolean = false, val log: String = "", val exitCode: Int? = null, val error: String? = null)
+
+    private val _state = MutableStateFlow(Run())
+    val state: StateFlow<Run> = _state.asStateFlow()
+
     fun install(packages: Set<EnvPackage>) {
         if (packages.isEmpty() || _state.value.installing) return
-        _state.update { it.copy(installing = true, log = "", exitCode = null, error = null) }
-        viewModelScope.launch {
+        _state.value = Run(installing = true)
+        scope.launch {
             try {
                 val result = exec.run(EnvScripts.install(packages), null, INSTALL_TIMEOUT_MS) { chunk ->
                     _state.update { it.copy(log = (it.log + chunk).takeLast(MAX_LOG)) }
@@ -229,19 +265,16 @@ class EnvViewModel(private val exec: RemoteExec, private val connection: ServerC
                 _state.update { it.copy(installing = false, error = e.message) }
             } catch (e: java.io.IOException) {
                 _state.update { it.copy(installing = false, error = e.message ?: e.javaClass.simpleName) }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                _state.update { it.copy(installing = false) }
+                throw e
             }
-            check()
         }
     }
 
-    companion object {
-        private const val CHECK_TIMEOUT_MS = 30_000L
-        private const val INSTALL_TIMEOUT_MS = 30 * 60_000L
-        private const val MAX_LOG = 40_000
-
-        fun factory(container: AppContainer): ViewModelProvider.Factory = viewModelFactory {
-            initializer { EnvViewModel(container.remoteExec, container.connectionManager) }
-        }
+    private companion object {
+        const val INSTALL_TIMEOUT_MS = 30 * 60_000L
+        const val MAX_LOG = 40_000
     }
 }
 
@@ -291,7 +324,11 @@ object EnvScripts {
             (if (git) listOf("git") else emptyList())
         return buildString {
             appendLine("set -e")
+            // A server started before 1.7.1 passes ANDROID_DATA/ANDROID_ROOT into the guest, and pip
+            // then dies in platformdirs ("Cannot find path to android app folder").
+            appendLine(GuestEnvironment.SHELL_UNSET)
             appendLine("SUDO=; [ \"\$(id -u)\" = 0 ] || SUDO='sudo -n'")
+
             // A server started before 1.7 runs proot without --link2symlink: dpkg then fails on the
             // first package that replaces a file. Say so instead of leaving apt's code 100.
             appendLine("probe=\$(mktemp 2>/dev/null || echo /tmp/.oc-link-probe); : > \"\$probe\"")
@@ -329,6 +366,7 @@ object EnvScripts {
             }
             if (python) {
                 appendLine("echo '>>> pip install uv'")
+                appendLine("export PIP_ROOT_USER_ACTION=ignore PIP_DISABLE_PIP_VERSION_CHECK=1")
                 appendLine("python3 -m pip install --upgrade uv 2>&1 || python3 -m pip install --upgrade --break-system-packages uv")
                 appendLine("echo \">>> \$(python3 --version), \$(uv --version 2>/dev/null || echo 'uv missing from PATH')\"")
             }

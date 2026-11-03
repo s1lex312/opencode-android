@@ -333,6 +333,7 @@ class LocalServerManager(
         ) + runCatching { extraBinds() }.getOrDefault(emptyList()) + listOf(
             "-w", "/root",
             "/usr/bin/env",
+        ) + GuestEnvironment.unsetArgs(System.getenv().keys + PROOT_VARIABLES) + listOf(
             "HOME=/root",
             "PATH=/usr/local/bin:/usr/bin:/bin",
             "TERM=dumb",
@@ -537,5 +538,8 @@ class LocalServerManager(
         const val DEFAULT_PORT = 4096
         const val DEFAULT_COMMAND = "opencode serve --hostname 127.0.0.1 --port {port}"
         const val PORT_FREE_TIMEOUT_MS = 8_000L
+
+        /** Set below for proot itself; the guest gets them removed by [GuestEnvironment]. */
+        val PROOT_VARIABLES = listOf("PROOT_TMP_DIR", "PROOT_NO_SECCOMP", "PROOT_LOADER", "PROOT_LOADER_32", "LD_LIBRARY_PATH")
     }
 }

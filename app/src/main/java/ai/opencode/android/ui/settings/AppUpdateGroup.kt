@@ -9,6 +9,7 @@ import ai.opencode.android.ui.components.SettingsItem
 import ai.opencode.android.ui.components.SettingsSwitchItem
 import ai.opencode.android.ui.setup.formatBytes
 import ai.opencode.android.update.AppUpdateState.Phase
+import android.os.Build
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -49,7 +50,11 @@ fun AppUpdateGroup(container: AppContainer) {
                 Phase.DOWNLOADING -> stringResource(R.string.app_update_downloading, (state.progress * 100).toInt())
                 Phase.READY -> stringResource(R.string.app_update_ready, state.latest.orEmpty())
                 Phase.INSTALLING -> stringResource(R.string.app_update_installing)
-                Phase.NEEDS_PERMISSION -> stringResource(R.string.app_update_needs_permission)
+                Phase.NEEDS_PERMISSION -> {
+                    val base = stringResource(R.string.app_update_needs_permission)
+                    if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) "$base\n${stringResource(R.string.app_update_samsung_hint)}" else base
+                }
+                Phase.CONFIRMING -> stringResource(R.string.app_update_confirming, state.latest.orEmpty())
                 Phase.SIGNATURE_MISMATCH -> stringResource(R.string.app_update_signature)
                 Phase.FAILED -> stringResource(R.string.app_update_failed, state.message.orEmpty())
             },
@@ -57,10 +62,13 @@ fun AppUpdateGroup(container: AppContainer) {
             trailing = {
                 when (state.phase) {
                     Phase.AVAILABLE -> Button(onClick = updater::update) { Text(stringResource(R.string.app_update_download)) }
-                    Phase.READY -> Button(onClick = updater::update) { Text(stringResource(R.string.app_update_install)) }
+                    Phase.READY, Phase.CONFIRMING -> Button(onClick = updater::update) { Text(stringResource(R.string.app_update_install)) }
                     Phase.NEEDS_PERMISSION -> Button(onClick = {
-                        runCatching { context.startActivity(updater.permissionIntent()) }
+                        // Already granted (the user flipped it and came back): install instead of
+                        // sending them to the same settings screen again.
+                        if (updater.canInstall()) updater.update() else runCatching { context.startActivity(updater.permissionIntent()) }
                     }) { Text(stringResource(R.string.app_update_allow)) }
+
                     else -> TextButton(onClick = updater::check, enabled = !state.busy) { Text(stringResource(R.string.app_update_check)) }
                 }
             },

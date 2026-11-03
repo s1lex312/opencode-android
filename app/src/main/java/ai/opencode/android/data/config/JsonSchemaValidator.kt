@@ -222,9 +222,18 @@ object Jsonc {
                     i += 2
                 }
                 c == ',' -> {
+                    // Look past whitespace and comments: `"a": 1, // last\n}` is a trailing comma too.
                     var j = i + 1
-                    while (j < text.length && text[j].isWhitespace()) j++
+                    while (j < text.length) {
+                        j = when {
+                            text[j].isWhitespace() -> j + 1
+                            text.startsWith("//", j) -> text.indexOf('\n', j).let { if (it < 0) text.length else it }
+                            text.startsWith("/*", j) -> text.indexOf("*/", j + 2).let { if (it < 0) text.length else it + 2 }
+                            else -> break
+                        }
+                    }
                     if (j < text.length && (text[j] == '}' || text[j] == ']')) i++ else {
+
                         out.append(c)
                         i++
                     }
