@@ -135,6 +135,8 @@ data class PluginsState(
     val catalogLoading: Boolean = false,
     val catalogError: String? = null,
     val busy: Set<String> = emptySet(),
+    /** Plugins being installed right now, id → name, so the screen can show them before they are recorded. */
+    val installing: Map<String, String> = emptyMap(),
 )
 
 class PluginException(message: String) : Exception(message)
@@ -205,7 +207,10 @@ class PluginManager(
 
     suspend fun install(preview: PluginPreview, enableHooks: Boolean): InstalledPlugin {
         val manifest = preview.manifest
-        busy(manifest.id, true)
+        // A second tap while an npx/uvx MCP server is still connecting (up to a minute) would save
+        // and connect it twice in parallel.
+        if (!acquire(manifest.id)) throw PluginException("\"${manifest.name}\" is already being installed")
+        _state.update { it.copy(installing = it.installing + (manifest.id to manifest.name)) }
         try {
             val previous = _state.value.installed.firstOrNull { it.manifest.id == manifest.id }
             if (previous != null) removeLocalParts(previous)
@@ -253,14 +258,16 @@ class PluginManager(
             persist(_state.value.installed.filterNot { it.manifest.id == manifest.id } + installed)
             return installed
         } finally {
-            busy(manifest.id, false)
+            _state.update { it.copy(installing = it.installing - manifest.id) }
+            release(manifest.id)
+
         }
     }
 
     /** Turns the plugin's MCP servers, agents, snippets and hooks off or back on; nothing is deleted. */
     suspend fun setEnabled(id: String, enabled: Boolean) {
         val plugin = _state.value.installed.firstOrNull { it.manifest.id == id } ?: return
-        busy(id, true)
+        if (!acquire(id)) return
         try {
             val warnings = applyServerParts(plugin.manifest, enabled)
             val prefix = "plugin:$id:"
@@ -272,13 +279,13 @@ class PluginManager(
             }
             persist(_state.value.installed.map { if (it.manifest.id == id) it.copy(enabled = enabled, warnings = warnings) else it })
         } finally {
-            busy(id, false)
+            release(id)
         }
     }
 
     suspend fun uninstall(id: String): List<String> {
         val plugin = _state.value.installed.firstOrNull { it.manifest.id == id } ?: return emptyList()
-        busy(id, true)
+        if (!acquire(id)) throw PluginException("\"${plugin.manifest.name}\" is busy, try again when it finishes")
         try {
             val warnings = mutableListOf<String>()
             val local = settings.current().isLocalMode
@@ -306,7 +313,7 @@ class PluginManager(
             if (restart) restartServer()
             return warnings
         } finally {
-            busy(id, false)
+            release(id)
         }
     }
 
@@ -362,7 +369,18 @@ class PluginManager(
         Snippet(id = "plugin:${manifest.id}:snippet-$index", name = snippet.name, body = snippet.body, description = snippet.description, send = snippet.send)
     }
 
-    private fun busy(id: String, on: Boolean) = _state.update { it.copy(busy = if (on) it.busy + id else it.busy - id) }
+    /** Marks [id] busy unless it already is; false means another install/toggle/removal owns it. */
+    private fun acquire(id: String): Boolean {
+        var acquired = false
+        _state.update {
+            acquired = id !in it.busy
+            if (acquired) it.copy(busy = it.busy + id) else it
+        }
+        return acquired
+    }
+
+    private fun release(id: String) = _state.update { it.copy(busy = it.busy - id) }
+
 
     private suspend fun download(url: String): ByteArray = withContext(Dispatchers.IO) {
         val uri = runCatching { URI(url) }.getOrNull()

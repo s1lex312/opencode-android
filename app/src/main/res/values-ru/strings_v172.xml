@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="plugins_badge_installing">устанавливается…</string>
+    <string name="plugins_installing_hint">Устанавливается: MCP-серверы через npx или uvx при первом запуске подключаются до минуты</string>
+</resources>

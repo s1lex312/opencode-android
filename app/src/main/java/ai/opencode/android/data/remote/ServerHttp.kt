@@ -130,16 +130,9 @@ class ServerHttp(
             .build()
 
     private fun execute(request: Request, httpClient: OkHttpClient = client): JsonElement? {
-        val started = System.currentTimeMillis()
         try {
+            // MetadataLoggingInterceptor already logs method/path/status/duration once per call.
             httpClient.newCall(request).execute().use { response ->
-                if (BuildConfig.DEBUG) {
-                    Log.d(
-                        LOG_TAG,
-                        "${request.method} ${Redaction.url(request.url.encodedPath)} -> ${response.code} " +
-                            "(${System.currentTimeMillis() - started} ms)",
-                    )
-                }
                 if (!response.isSuccessful) throw errorFor(response)
                 val body = response.body?.string().orEmpty()
                 if (body.isBlank()) return null
@@ -220,7 +213,8 @@ class ServerHttp(
             val response = chain.proceed(chain.request())
             Log.d(
                 LOG_TAG,
-                "${chain.request().method} ${chain.request().url.encodedPath} -> ${response.code} " +
+                "${chain.request().method} ${Redaction.url(chain.request().url.encodedPath)} -> ${response.code} " +
+
                     "(${System.currentTimeMillis() - started} ms)",
             )
             return response

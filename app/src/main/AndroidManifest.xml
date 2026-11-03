@@ -46,6 +46,7 @@
 
     <application
         android:name=".OpencodeApp"
+        android:enableOnBackInvokedCallback="true"
         android:allowBackup="true"
         android:backupAgent=".backup.OpencodeBackupAgent"
         android:fullBackupOnly="true"

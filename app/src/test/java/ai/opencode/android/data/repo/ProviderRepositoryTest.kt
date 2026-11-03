@@ -36,12 +36,17 @@ class ProviderRepositoryTest {
     private val requests = CopyOnWriteArrayList<Pair<String, String>>()
     private var globalConfig = """{"provider":{}}"""
 
+    /** Called with each PATCH body, the way 1.x writes the merged config back into its file. */
+    private var onPatch: (String) -> Unit = {}
+
     @Before
     fun setUp() {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 val path = request.path!!.substringBefore('?')
-                requests += "${request.method} $path" to request.body.readUtf8()
+                val body = request.body.readUtf8()
+                requests += "${request.method} $path" to body
+                if (request.method == "PATCH") onPatch(body)
                 return when ("${request.method} $path") {
                     "GET /provider" -> json("""{"all":[],"connected":[]}""")
                     "GET /global/config" -> json(globalConfig)
@@ -103,7 +108,24 @@ class ProviderRepositoryTest {
     }
 
     @Test
+    fun `an empty disabled list the server wrote back is dropped when the user never had one`() = runBlocking {
+        globalConfig = """{"provider":{"my-llm":{"npm":"@ai-sdk/openai-compatible"}}}"""
+        configFile().apply { parentFile!!.mkdirs() }.writeText("""{"provider":{"my-llm":{"npm":"@ai-sdk/openai-compatible"}}}""")
+        onPatch = { body ->
+            val list = (Json.parseToJsonElement(body) as JsonObject)["disabled_providers"]!!
+            val current = Json.parseToJsonElement(configFile().readText()) as JsonObject
+            configFile().writeText(JsonObject(current + ("disabled_providers" to list)).toString())
+        }
+        assertTrue(repository(local = true).disconnect(custom) is ApiResult.Ok)
+        val text = configFile().readText()
+        assertFalse(text, text.contains("disabled_providers"))
+        assertFalse(text, text.contains("my-llm"))
+        assertEquals(listOf(listOf("my-llm"), emptyList<String>()), patches())
+    }
+
+    @Test
     fun `on a remote server a custom provider is hidden, since the api cannot delete keys`() = runBlocking {
+
         globalConfig = """{"provider":{"my-llm":{"npm":"@ai-sdk/openai-compatible"}}}"""
         assertTrue(repository(local = false).disconnect(custom) is ApiResult.Ok)
         assertEquals(listOf(listOf("my-llm")), patches())

@@ -235,8 +235,14 @@ class ProviderRepository(
         val disabled = global.strList("disabled_providers")
         val edited = localConfig != null && isLocalServer() && localConfig.remove(listOf("provider", id))
         patchDisabled(http, (disabled + id).distinct())
-        if (edited) patchDisabled(http, disabled - id)
+        if (edited) {
+            patchDisabled(http, disabled - id)
+            // The server writes the patched list back into the file; an empty list the user never
+            // had is noise, and an absent key means the same.
+            if (!global.containsKey("disabled_providers")) localConfig?.remove(listOf("disabled_providers"))
+        }
     }
+
 
     /** Undoes [removeConfigured]'s hiding when the user connects the same provider again. */
     private suspend fun enable(http: ServerHttp, id: String) {

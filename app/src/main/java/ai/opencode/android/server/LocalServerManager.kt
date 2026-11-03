@@ -100,7 +100,11 @@ class LocalServerManager(
 
     fun stop() {
         userStopped = true
+        // The notification's Stop action stops the runtime and then the service, whose onDestroy
+        // stops it again: nothing left to stop means nothing to log.
+        if (process == null && supervisorJob == null && _state.value.phase in IDLE_PHASES) return
         logPumpJob?.cancel()
+
         supervisorJob?.cancel()
         supervisorJob = null
         val current = process
@@ -536,6 +540,8 @@ class LocalServerManager(
         const val HEALTH_TIMEOUT_MS = 180_000L
         const val MAX_HEALTH_FAILURES = 3
         const val DEFAULT_PORT = 4096
+        val IDLE_PHASES = setOf(LocalServerState.Phase.STOPPED, LocalServerState.Phase.STOPPING)
+
         const val DEFAULT_COMMAND = "opencode serve --hostname 127.0.0.1 --port {port}"
         const val PORT_FREE_TIMEOUT_MS = 8_000L
 

@@ -111,7 +111,7 @@ fun PluginsScreen(container: AppContainer, onBack: () -> Unit, onOpenEnv: () -> 
         )
 
         SettingsGroup(title = stringResource(R.string.plugins_installed)) {
-            if (state.installed.isEmpty()) {
+            if (state.installed.isEmpty() && state.installing.isEmpty()) {
                 Text(
                     stringResource(R.string.plugins_none),
                     style = MaterialTheme.typography.bodyMedium,
@@ -127,6 +127,10 @@ fun PluginsScreen(container: AppContainer, onBack: () -> Unit, onOpenEnv: () -> 
                     onToggle = { enabled -> work.launch { runCatching { manager.setEnabled(plugin.manifest.id, enabled) }.onFailure(::fail) } },
                     onRemove = { removing = plugin },
                 )
+            }
+            state.installing.filterKeys { id -> state.installed.none { it.manifest.id == id } }.forEach { (_, name) ->
+                if (state.installed.isNotEmpty()) SettingsDivider()
+                InstallingRow(name)
             }
         }
 
@@ -170,7 +174,11 @@ fun PluginsScreen(container: AppContainer, onBack: () -> Unit, onOpenEnv: () -> 
             }
             state.catalog.forEach { entry ->
                 SettingsDivider()
-                CatalogRow(entry, installed = state.installed.any { it.manifest.id == entry.id }) { open(entry.url, entry.sha256) }
+                CatalogRow(
+                    entry,
+                    installed = state.installed.any { it.manifest.id == entry.id },
+                    installing = entry.id in state.installing,
+                ) { open(entry.url, entry.sha256) }
             }
         }
     }
@@ -178,6 +186,7 @@ fun PluginsScreen(container: AppContainer, onBack: () -> Unit, onOpenEnv: () -> 
     preview?.let { current ->
         PreviewDialog(
             preview = current,
+            busy = current.manifest.id in state.busy,
             onDismiss = { preview = null },
             onOpenEnv = onOpenEnv,
             onInstall = { enableHooks ->
@@ -288,11 +297,26 @@ private fun InstalledRow(plugin: InstalledPlugin, busy: Boolean, onToggle: (Bool
 }
 
 @Composable
-private fun CatalogRow(entry: CatalogEntry, installed: Boolean, onOpen: () -> Unit) {
-    Column(Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(horizontal = 16.dp, vertical = 10.dp)) {
+private fun InstallingRow(name: String) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Default.Extension, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+            Text(name, style = MaterialTheme.typography.bodyLarge)
+            Text(stringResource(R.string.plugins_installing_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        CircularProgressIndicator(Modifier.padding(8.dp), strokeWidth = 2.dp)
+    }
+}
+
+@Composable
+private fun CatalogRow(entry: CatalogEntry, installed: Boolean, installing: Boolean, onOpen: () -> Unit) {
+    Column(Modifier.fillMaxWidth().clickable(enabled = !installing, onClick = onOpen).padding(horizontal = 16.dp, vertical = 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(entry.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-            if (installed) Text(stringResource(R.string.plugins_badge_installed), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            when {
+                installing -> Text(stringResource(R.string.plugins_badge_installing), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+                installed -> Text(stringResource(R.string.plugins_badge_installed), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            }
         }
         if (entry.description.isNotBlank()) {
             Text(entry.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -304,7 +328,7 @@ private fun CatalogRow(entry: CatalogEntry, installed: Boolean, onOpen: () -> Un
 }
 
 @Composable
-private fun PreviewDialog(preview: PluginPreview, onDismiss: () -> Unit, onOpenEnv: () -> Unit, onInstall: (Boolean) -> Unit) {
+private fun PreviewDialog(preview: PluginPreview, busy: Boolean, onDismiss: () -> Unit, onOpenEnv: () -> Unit, onInstall: (Boolean) -> Unit) {
     val manifest = preview.manifest
     val p = preview.permissions
     var enableHooks by rememberSaveable { mutableStateOf(false) }
@@ -341,7 +365,12 @@ private fun PreviewDialog(preview: PluginPreview, onDismiss: () -> Unit, onOpenE
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onInstall(enableHooks) }) { Text(stringResource(R.string.plugins_install)) } },
+        confirmButton = {
+            TextButton(enabled = !busy, onClick = { onInstall(enableHooks) }) {
+                Text(stringResource(if (busy) R.string.plugins_badge_installing else R.string.plugins_install))
+            }
+        },
+
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )
 }
