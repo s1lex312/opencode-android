@@ -21,6 +21,13 @@ import ai.opencode.android.ui.settings.ServerProfilesScreen
 import ai.opencode.android.ui.settings.SettingsScreen
 import ai.opencode.android.ui.settings.SystemPromptsScreen
 import ai.opencode.android.ui.terminal.TerminalScreen
+import ai.opencode.android.ui.git.GitScreen
+import ai.opencode.android.ui.share.ShareScreen
+import ai.opencode.android.ui.tools.EnvScreen
+import ai.opencode.android.ui.tools.HooksScreen
+import ai.opencode.android.ui.tools.SnippetsScreen
+import ai.opencode.android.ui.tools.StatsScreen
+import ai.opencode.android.ui.tools.TasksScreen
 import androidx.compose.runtime.LaunchedEffect
 import ai.opencode.android.ui.setup.SetupScreen
 import android.net.Uri
@@ -61,6 +68,15 @@ object Routes {
     const val PROVIDERS_CUSTOM = "providers/custom"
 
     const val TERMINAL = "terminal?cwd={cwd}"
+    const val GIT = "git?cwd={cwd}"
+    const val TASKS = "tasks"
+    const val SNIPPETS = "snippets"
+    const val HOOKS = "hooks"
+    const val STATS = "stats"
+    const val ENV = "settings/env"
+    const val SHARE = "share"
+
+    fun git(cwd: String?): String = if (cwd.isNullOrBlank()) "git" else "git?cwd=${Uri.encode(cwd)}"
 
     fun terminal(cwd: String?): String = if (cwd.isNullOrBlank()) "terminal" else "terminal?cwd=${Uri.encode(cwd)}"
 
@@ -75,7 +91,12 @@ private const val TRANSITION_MS = 260
 private fun NavHostController.open(route: String) = navigate(route) { launchSingleTop = true }
 
 @Composable
-fun OpencodeNavHost(container: AppContainer, openSessionRequest: String? = null, onSessionRequestHandled: () -> Unit = {}) {
+fun OpencodeNavHost(
+    container: AppContainer,
+    openSessionRequest: String? = null,
+    onSessionRequestHandled: () -> Unit = {},
+    shareRequest: Int = 0,
+) {
     val navController = rememberNavController()
     val back: () -> Unit = { navController.popBackStack() }
 
@@ -87,6 +108,11 @@ fun OpencodeNavHost(container: AppContainer, openSessionRequest: String? = null,
             launchSingleTop = true
         }
         onSessionRequestHandled()
+    }
+
+    // Something was shared from another app.
+    LaunchedEffect(shareRequest) {
+        if (shareRequest > 0 && container.pendingShare.value != null) navController.open(Routes.SHARE)
     }
 
     NavHost(
@@ -110,6 +136,8 @@ fun OpencodeNavHost(container: AppContainer, openSessionRequest: String? = null,
                 onOpenSettings = { navController.open(Routes.SETTINGS) },
                 onOpenSetup = { navController.open(Routes.SETUP) },
                 onOpenProviders = { navController.open(Routes.PROVIDERS) },
+                onOpenTasks = { navController.open(Routes.TASKS) },
+                onOpenStats = { navController.open(Routes.STATS) },
             )
         }
 
@@ -145,6 +173,59 @@ fun OpencodeNavHost(container: AppContainer, openSessionRequest: String? = null,
                         ChatDestination.DIFF -> navController.open(Routes.diff(sessionId))
                         ChatDestination.SYSTEM_PROMPTS -> navController.open(Routes.SETTINGS_SYSTEM_PROMPTS)
                         ChatDestination.PROVIDERS -> navController.open(Routes.PROVIDERS)
+                        ChatDestination.GIT -> navController.open(Routes.git(null))
+                        ChatDestination.TASKS -> navController.open(Routes.TASKS)
+                        ChatDestination.SNIPPETS -> navController.open(Routes.SNIPPETS)
+                        ChatDestination.HOOKS -> navController.open(Routes.HOOKS)
+                        ChatDestination.STATS -> navController.open(Routes.STATS)
+                        ChatDestination.ENV -> navController.open(Routes.ENV)
+                    }
+                },
+                onOpenGit = { cwd -> navController.open(Routes.git(cwd)) },
+            )
+        }
+
+        composable(
+            route = Routes.GIT,
+            arguments = listOf(
+                navArgument("cwd") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+            ),
+        ) { entry ->
+            GitScreen(container = container, cwd = entry.arguments?.getString("cwd"), onBack = back)
+        }
+
+        composable(Routes.TASKS) {
+            TasksScreen(container = container, onBack = back, onOpenSession = { navController.open(Routes.chat(it)) })
+        }
+
+        composable(Routes.SNIPPETS) {
+            SnippetsScreen(container = container, onBack = back)
+        }
+
+        composable(Routes.HOOKS) {
+            HooksScreen(container = container, onBack = back)
+        }
+
+        composable(Routes.STATS) {
+            StatsScreen(container = container, onBack = back)
+        }
+
+        composable(Routes.ENV) {
+            EnvScreen(container = container, onBack = back, onOpenMcp = { navController.open(Routes.SETTINGS_MCP) })
+        }
+
+        composable(Routes.SHARE) {
+            ShareScreen(
+                container = container,
+                onBack = back,
+                onOpenSession = { sessionId ->
+                    navController.navigate(Routes.chat(sessionId)) {
+                        popUpTo(Routes.SESSIONS)
+                        launchSingleTop = true
                     }
                 },
             )
@@ -159,7 +240,12 @@ fun OpencodeNavHost(container: AppContainer, openSessionRequest: String? = null,
         }
 
         composable(Routes.SETTINGS_MCP) {
-            McpScreen(container = container, onBack = back, onOpenPhoneAccess = { navController.open(Routes.SETTINGS_PHONE) })
+            McpScreen(
+                container = container,
+                onBack = back,
+                onOpenPhoneAccess = { navController.open(Routes.SETTINGS_PHONE) },
+                onOpenEnv = { navController.open(Routes.ENV) },
+            )
         }
 
         composable(Routes.SETTINGS_BEHAVIOUR) {
@@ -209,6 +295,11 @@ fun OpencodeNavHost(container: AppContainer, openSessionRequest: String? = null,
                 onOpenMcp = { navController.open(Routes.SETTINGS_MCP) },
                 onOpenBehaviour = { navController.open(Routes.SETTINGS_BEHAVIOUR) },
                 onOpenPhone = { navController.open(Routes.SETTINGS_PHONE) },
+                onOpenHooks = { navController.open(Routes.HOOKS) },
+                onOpenSnippets = { navController.open(Routes.SNIPPETS) },
+                onOpenStats = { navController.open(Routes.STATS) },
+                onOpenEnv = { navController.open(Routes.ENV) },
+                onOpenTasks = { navController.open(Routes.TASKS) },
             )
         }
 

@@ -231,7 +231,7 @@ private fun StatusChip(status: String) {
 }
 
 @Composable
-private fun HunkView(hunk: DiffHunk) {
+internal fun HunkView(hunk: DiffHunk) {
     val palette = diffPalette()
     Column(Modifier.fillMaxWidth()) {
         Text(

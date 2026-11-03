@@ -5,6 +5,9 @@ import ai.opencode.android.data.model.ChatMessage
 import ai.opencode.android.data.model.FileDiffPayload
 import ai.opencode.android.data.model.MessagePart
 import ai.opencode.android.data.model.PermissionRequest
+import ai.opencode.android.data.model.QuestionItem
+import ai.opencode.android.data.model.QuestionOption
+import ai.opencode.android.data.model.QuestionRequest
 import ai.opencode.android.data.model.Role
 import ai.opencode.android.data.model.ToolCall
 import ai.opencode.android.data.model.ToolStatus
@@ -191,6 +194,13 @@ object EventMapper {
                 }
             }
 
+            "question.asked", "question.v2.asked" -> question(data)?.let { OpencodeEvent.QuestionAsked(it) } ?: OpencodeEvent.Ignored
+
+            "question.replied", "question.rejected", "question.v2.replied", "question.v2.rejected" -> {
+                val requestId = data.str("requestID") ?: data.str("id")
+                if (sessionId == null || requestId == null) OpencodeEvent.Ignored else OpencodeEvent.QuestionResolved(sessionId, requestId)
+            }
+
             "session.created", "session.renamed", "session.deleted", "session.archived",
             "session.unarchived", "session.moved", "session.metadata.updated", "session.forked",
             -> OpencodeEvent.SessionsChanged
@@ -320,6 +330,14 @@ object EventMapper {
                 OpencodeEvent.PermissionResolved(sessionId, permissionId)
             }
 
+            "question.asked" -> question(props)?.let { OpencodeEvent.QuestionAsked(it) } ?: OpencodeEvent.Ignored
+
+            "question.replied", "question.rejected" -> {
+                val sessionId = props.str("sessionID") ?: return OpencodeEvent.Ignored
+                val requestId = props.str("requestID") ?: props.str("id") ?: return OpencodeEvent.Ignored
+                OpencodeEvent.QuestionResolved(sessionId, requestId)
+            }
+
             "session.created", "session.updated", "session.deleted" -> OpencodeEvent.SessionsChanged
 
             "session.diff" -> {
@@ -335,6 +353,26 @@ object EventMapper {
 
             else -> OpencodeEvent.Ignored
         }
+    }
+
+    /** A `QuestionRequest` object, from events and from `GET /question`. */
+    fun question(data: JsonObject): QuestionRequest? {
+        val id = data.str("id") ?: return null
+        val sessionId = data.str("sessionID") ?: return null
+        val questions = data.arr("questions")?.objects()?.mapNotNull { item ->
+            val text = item.str("question") ?: return@mapNotNull null
+            QuestionItem(
+                question = text,
+                header = item.str("header").orEmpty(),
+                options = item.arr("options")?.objects()?.mapNotNull { option ->
+                    option.str("label")?.let { QuestionOption(it, option.str("description").orEmpty()) }
+                }.orEmpty(),
+                multiple = item.bool("multiple") ?: false,
+                custom = item.bool("custom") ?: true,
+            )
+        }.orEmpty()
+        if (questions.isEmpty()) return null
+        return QuestionRequest(id, sessionId, questions, data.str("tool", "callID"))
     }
 
     private fun mcpAuthUrl(data: JsonObject): OpencodeEvent {

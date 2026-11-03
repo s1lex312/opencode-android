@@ -14,6 +14,8 @@ import ai.opencode.android.data.model.ModelRef
 import ai.opencode.android.data.model.PermissionDecision
 import ai.opencode.android.data.model.PromptRequest
 import ai.opencode.android.data.model.PtyInfo
+import ai.opencode.android.data.model.QuestionRequest
+import ai.opencode.android.data.events.EventMapper
 import ai.opencode.android.data.model.Role
 import ai.opencode.android.data.model.ServerInfo
 import ai.opencode.android.data.model.ServerSession
@@ -286,8 +288,8 @@ class V2Api(override val http: ServerHttp) : OpencodeApi {
         http.postJson("/api/session/${enc(sessionId)}/compact", buildJsonObject { })
     }
 
-    override suspend fun createPty(cwd: String?): PtyInfo {
-        val response = http.postJson("/api/pty", buildJsonObject { if (!cwd.isNullOrBlank()) put("cwd", cwd) }) as? JsonObject
+    override suspend fun createPty(cwd: String?, command: String?, args: List<String>, env: Map<String, String>): PtyInfo {
+        val response = http.postJson("/api/pty", ptyBody(cwd, command, args, env)) as? JsonObject
             ?: throw ApiException(null, "Malformed PTY response")
         val obj = response.obj("data") ?: response
         return PtyInfo(id = obj.str("id") ?: throw ApiException(null, "PTY response has no id"), cwd = obj.str("cwd"))
@@ -313,6 +315,29 @@ class V2Api(override val http: ServerHttp) : OpencodeApi {
     }
 
     override fun ptyConnectPath(ptyId: String): String = "/api/pty/${enc(ptyId)}/connect"
+
+    override suspend fun pendingQuestions(): List<QuestionRequest> {
+        val response = http.getJson("/api/question/request")
+        val array = (response as? JsonObject)?.arr("data") ?: response as? JsonArray ?: return emptyList()
+        return array.objects().mapNotNull(EventMapper::question)
+    }
+
+    override suspend fun replyQuestion(sessionId: String, requestId: String, answers: List<List<String>>) {
+        http.postJson("/api/session/${enc(sessionId)}/question/${enc(requestId)}/reply", questionAnswers(answers))
+    }
+
+    override suspend fun rejectQuestion(sessionId: String, requestId: String) {
+        http.postJson("/api/session/${enc(sessionId)}/question/${enc(requestId)}/reject")
+    }
+
+    override suspend fun sessionBusy(sessionId: String): Boolean? {
+        val response = http.getJson("/api/session/active")
+        val array = (response as? JsonObject)?.arr("data") ?: response as? JsonArray ?: return null
+        return array.any { element ->
+            val id = (element as? JsonObject)?.let { it.str("id") ?: it.str("sessionID") } ?: element.jsonPrimitiveOrNull()
+            id == sessionId
+        }
+    }
 
     override suspend fun abort(sessionId: String) {
         http.postJson("/api/session/${enc(sessionId)}/interrupt")

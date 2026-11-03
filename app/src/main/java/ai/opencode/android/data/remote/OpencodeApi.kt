@@ -13,6 +13,7 @@ import ai.opencode.android.data.model.ModelRef
 import ai.opencode.android.data.model.PermissionDecision
 import ai.opencode.android.data.model.PromptRequest
 import ai.opencode.android.data.model.PtyInfo
+import ai.opencode.android.data.model.QuestionRequest
 import ai.opencode.android.data.model.ServerInfo
 import ai.opencode.android.data.model.ServerSession
 import ai.opencode.android.data.model.SlashCommand
@@ -71,7 +72,13 @@ interface OpencodeApi {
     /** Summarises the conversation to free the context window. */
     suspend fun compact(sessionId: String, model: ModelRef?)
 
-    suspend fun createPty(cwd: String?): PtyInfo
+    /** A PTY running the login shell, or [command] with [args] when given (non-interactive jobs). */
+    suspend fun createPty(
+        cwd: String?,
+        command: String? = null,
+        args: List<String> = emptyList(),
+        env: Map<String, String> = emptyMap(),
+    ): PtyInfo
 
     suspend fun resizePty(ptyId: String, rows: Int, cols: Int)
 
@@ -140,6 +147,22 @@ interface OpencodeApi {
 
     /** Ids of the tools agents can call (built-in and MCP). */
     suspend fun toolIds(): List<String> = emptyList()
+
+    // ------------------------------------------------------------------ questions, status, checkpoints
+
+    /** Questions the `question` tool is waiting on, across sessions. */
+    suspend fun pendingQuestions(): List<QuestionRequest> = emptyList()
+
+    /** [answers] follow the order of the questions; each is the list of picked labels or typed text. */
+    suspend fun replyQuestion(sessionId: String, requestId: String, answers: List<List<String>>): Unit = unsupported("Agent questions")
+
+    suspend fun rejectQuestion(sessionId: String, requestId: String): Unit = unsupported("Agent questions")
+
+    /** Whether the server is still working on [sessionId]; `null` when it cannot tell. */
+    suspend fun sessionBusy(sessionId: String): Boolean? = null
+
+    /** Files changed by the turn of user message [messageId]. */
+    suspend fun messageDiff(sessionId: String, messageId: String): List<FileDiffPayload> = unsupported("Checkpoint diffs")
 
     fun eventStream(): Flow<StreamSignal> = SseStream(http.sseClient, http.sseRequest(eventPath)).signals()
 }

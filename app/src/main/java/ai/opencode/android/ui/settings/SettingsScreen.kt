@@ -30,6 +30,11 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Hub
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Webhook
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Info
@@ -82,6 +87,11 @@ fun SettingsScreen(
     onOpenMcp: () -> Unit,
     onOpenBehaviour: () -> Unit,
     onOpenPhone: () -> Unit,
+    onOpenHooks: () -> Unit = {},
+    onOpenSnippets: () -> Unit = {},
+    onOpenStats: () -> Unit = {},
+    onOpenEnv: () -> Unit = {},
+    onOpenTasks: () -> Unit = {},
 ) {
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(container))
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -149,6 +159,48 @@ fun SettingsScreen(
                 icon = Icons.Default.PhoneAndroid,
                 showChevron = true,
                 onClick = onOpenPhone,
+            )
+            SettingsDivider()
+            SettingsItem(
+                title = stringResource(R.string.env_title),
+                subtitle = stringResource(R.string.env_hub_subtitle),
+                icon = Icons.Default.Download,
+                showChevron = true,
+                onClick = onOpenEnv,
+            )
+        }
+
+        SettingsGroup(title = stringResource(R.string.settings_group_workflow)) {
+            SettingsItem(
+                title = stringResource(R.string.hooks_title),
+                subtitle = stringResource(R.string.hooks_hub_subtitle),
+                icon = Icons.Default.Webhook,
+                showChevron = true,
+                onClick = onOpenHooks,
+            )
+            SettingsDivider()
+            SettingsItem(
+                title = stringResource(R.string.snippets_title),
+                subtitle = stringResource(R.string.snippets_hub_subtitle),
+                icon = Icons.Default.Bolt,
+                showChevron = true,
+                onClick = onOpenSnippets,
+            )
+            SettingsDivider()
+            SettingsItem(
+                title = stringResource(R.string.tasks_title),
+                subtitle = stringResource(R.string.tasks_hub_subtitle),
+                icon = Icons.Default.Schedule,
+                showChevron = true,
+                onClick = onOpenTasks,
+            )
+            SettingsDivider()
+            SettingsItem(
+                title = stringResource(R.string.stats_title),
+                subtitle = stringResource(R.string.stats_hub_subtitle),
+                icon = Icons.Default.BarChart,
+                showChevron = true,
+                onClick = onOpenStats,
             )
         }
 

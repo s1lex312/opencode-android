@@ -177,3 +177,23 @@ fun JsonObject?.toTokenUsage(): ai.opencode.android.data.model.TokenUsage? {
     )
     return usage.takeUnless { it.isEmpty }
 }
+
+/** String content of a primitive element (`"x"` → `x`), `null` for objects, arrays and JSON null. */
+fun JsonElement.jsonPrimitiveOrNull(): String? =
+    (this as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it !is kotlinx.serialization.json.JsonNull }?.content
+
+/** `POST /pty` body; both API flavours take the same shape. */
+internal fun ptyBody(cwd: String?, command: String?, args: List<String>, env: Map<String, String>): JsonObject =
+    kotlinx.serialization.json.buildJsonObject {
+        if (!cwd.isNullOrBlank()) put("cwd", kotlinx.serialization.json.JsonPrimitive(cwd))
+        if (!command.isNullOrBlank()) {
+            put("command", kotlinx.serialization.json.JsonPrimitive(command))
+            put("args", JsonArray(args.map { kotlinx.serialization.json.JsonPrimitive(it) }))
+        }
+        if (env.isNotEmpty()) put("env", JsonObject(env.mapValues { kotlinx.serialization.json.JsonPrimitive(it.value) }))
+    }
+
+/** `{"answers": [["label", ...], ...]}` for the question reply endpoints. */
+internal fun questionAnswers(answers: List<List<String>>): JsonObject = JsonObject(
+    mapOf("answers" to JsonArray(answers.map { answer -> JsonArray(answer.map { kotlinx.serialization.json.JsonPrimitive(it) }) })),
+)

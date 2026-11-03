@@ -43,6 +43,8 @@ class AgentNotifier(
     private val repository: SessionRepository,
     private val settings: SettingsRepository,
     private val scope: CoroutineScope,
+    /** Background tasks post their own notification with the answer. */
+    private val isBackgroundTask: (String) -> Boolean = { false },
 ) {
 
     @Volatile
@@ -96,6 +98,25 @@ class AgentNotifier(
 
             is OpencodeEvent.PermissionResolved -> cancelPermission(event.permissionId)
 
+            is OpencodeEvent.QuestionAsked -> if (shouldNotify()) {
+                val question = event.request.questions.first()
+                notify(
+                    id = questionNotificationId(event.request.id),
+                    builder = base(CHANNEL_PERMISSION, event.request.sessionId)
+                        .setContentTitle(context.getString(R.string.notify_question_title))
+                        .setContentText(question.question)
+                        .setStyle(
+                            NotificationCompat.BigTextStyle().bigText(
+                                question.question + question.options.joinToString("") { "\n• " + it.label },
+                            ),
+                        )
+                        .setPriority(NotificationCompat.PRIORITY_HIGH),
+                )
+            }
+
+            is OpencodeEvent.QuestionResolved ->
+                NotificationManagerCompat.from(context).cancel(questionNotificationId(event.requestId))
+
             is OpencodeEvent.SessionFailed -> if (shouldNotify()) {
                 notify(
                     id = ERROR_ID,
@@ -112,7 +133,7 @@ class AgentNotifier(
 
     private fun finished(sessionId: String) {
         val wasBusy = synchronized(busySessions) { busySessions.remove(sessionId) }
-        if (!wasBusy || !shouldNotify()) return
+        if (!wasBusy || !shouldNotify() || isBackgroundTask(sessionId)) return
         scope.launch {
             val title = titles[sessionId] ?: (repository.session(sessionId) as? ApiResult.Ok)?.value?.title?.also { titles[sessionId] = it }
             notify(
@@ -197,7 +218,6 @@ class AgentNotifier(
     }
 
     private fun createChannels() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL_PERMISSION, context.getString(R.string.notify_channel_permission), NotificationManager.IMPORTANCE_HIGH),
@@ -209,11 +229,14 @@ class AgentNotifier(
 
     private fun permissionNotificationId(permissionId: String): Int = PERMISSION_BASE + (permissionId.hashCode() and 0xFFFF)
 
+    private fun questionNotificationId(requestId: String): Int = QUESTION_BASE + (requestId.hashCode() and 0xFFFF)
+
     companion object {
         private const val CHANNEL_PERMISSION = "opencode_permissions"
         private const val CHANNEL_DONE = "opencode_turns"
         private const val DONE_ID = 5100
         private const val ERROR_ID = 5101
         private const val PERMISSION_BASE = 6000
+        private const val QUESTION_BASE = 80_000
     }
 }

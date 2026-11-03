@@ -10,6 +10,12 @@ import ai.opencode.android.data.repo.ServerConnectionManager
 import ai.opencode.android.data.repo.SessionRepository
 import ai.opencode.android.data.repo.ApiResult
 import ai.opencode.android.notify.AgentNotifier
+import ai.opencode.android.data.hooks.HookRunner
+import ai.opencode.android.data.remote.RemoteExec
+import ai.opencode.android.data.share.DraftInbox
+import ai.opencode.android.data.stats.UsageStats
+import ai.opencode.android.data.tasks.BackgroundTasks
+import ai.opencode.android.settings.Workbench
 import ai.opencode.android.server.LocalServerState
 import ai.opencode.android.server.update.OpencodeUpdater
 import ai.opencode.android.settings.ServerProfileManager
@@ -164,8 +170,30 @@ class AppContainer(context: Context) {
 
     /** Background notifications for permission requests and finished turns. */
     val agentNotifier: AgentNotifier by lazy {
-        AgentNotifier(appContext, connectionManager, sessionRepository, settingsRepository, appScope)
+        AgentNotifier(appContext, connectionManager, sessionRepository, settingsRepository, appScope) { backgroundTasks.isTask(it) }
     }
+
+    /** Hooks, snippets, budget and background tasks (device-local JSON). */
+    val workbench: Workbench by lazy { Workbench(appContext) }
+
+    /** Non-interactive commands on the server through its PTY API (git, installs, hooks). */
+    val remoteExec: RemoteExec by lazy { RemoteExec(connectionManager) }
+
+    val hookRunner: HookRunner by lazy {
+        HookRunner(connectionManager, sessionRepository, settingsRepository, workbench, remoteExec, appScope)
+    }
+
+    val usageStats: UsageStats by lazy { UsageStats(appContext, sessionRepository, connectionManager) }
+
+    val backgroundTasks: BackgroundTasks by lazy {
+        BackgroundTasks(appContext, connectionManager, sessionRepository, settingsRepository, workbench, appScope)
+    }
+
+    /** Shared text/images on their way into a chat's composer. */
+    val draftInbox: DraftInbox by lazy { DraftInbox() }
+
+    /** Content from the system share sheet, waiting for the Share screen. */
+    val pendingShare = kotlinx.coroutines.flow.MutableStateFlow<ai.opencode.android.data.share.SharedContent?>(null)
 
     /** Keeps the Local-mode opencode binary current from GitHub releases. */
     val opencodeUpdater: OpencodeUpdater by lazy {
@@ -212,6 +240,8 @@ class AppContainer(context: Context) {
         appScope.launch { runCatching { provisioner.refresh() } }
         agentNotifier.start()
         phoneAccess.start()
+        hookRunner.start()
+        backgroundTasks.start()
         appScope.launch {
             settingsRepository.settings.collect { storageBindEnabled = it.phone.storage }
         }

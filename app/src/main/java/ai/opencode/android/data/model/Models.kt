@@ -307,3 +307,25 @@ data class BehaviourConfig(
     val subagentDepth: Int? = null,
     val username: String? = null,
 )
+
+/** One choice of an agent question (the `question` tool). */
+data class QuestionOption(val label: String, val description: String = "")
+
+data class QuestionItem(
+    val question: String,
+    /** Very short label, shown as a chip. */
+    val header: String = "",
+    val options: List<QuestionOption> = emptyList(),
+    /** Several options may be picked. */
+    val multiple: Boolean = false,
+    /** A free-text answer is allowed besides the options (opencode's default). */
+    val custom: Boolean = true,
+)
+
+/** The agent is blocked until these questions are answered or dismissed. */
+data class QuestionRequest(
+    val id: String,
+    val sessionId: String,
+    val questions: List<QuestionItem>,
+    val callId: String? = null,
+)

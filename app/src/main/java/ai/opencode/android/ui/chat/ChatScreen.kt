@@ -54,6 +54,12 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.Hub
+import androidx.compose.material.icons.filled.AccountTree
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Webhook
 import androidx.compose.material.icons.filled.IosShare
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Tune
@@ -124,6 +130,7 @@ fun ChatScreen(
     onOpenTerminal: (String?) -> Unit,
     onOpenSystemPrompts: () -> Unit,
     onNavigate: (ChatDestination) -> Unit,
+    onOpenGit: (String?) -> Unit = {},
 ) {
     val viewModel: ChatViewModel = viewModel(
         key = "chat-$sessionId",
@@ -136,6 +143,7 @@ fun ChatScreen(
     var usageSheet by rememberSaveable { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
     var helpSheet by rememberSaveable { mutableStateOf(false) }
+    var checkpointsSheet by rememberSaveable { mutableStateOf(false) }
     var selectedMessage by remember { mutableStateOf<ChatMessage?>(null) }
     val haptics = LocalHapticFeedback.current
     val claude = state.chat.style == ChatStyle.CLAUDE_CODE
@@ -168,6 +176,7 @@ fun ChatScreen(
                     ChatDestination.DIFF -> onOpenDiff()
                     ChatDestination.SYSTEM_PROMPTS -> onOpenSystemPrompts()
                     ChatDestination.PROVIDERS -> onOpenProviders()
+                    ChatDestination.GIT -> onOpenGit(state.directory)
                     else -> onNavigate(effect.destination)
                 }
                 ChatEffect.OpenModelPicker -> {
@@ -176,6 +185,7 @@ fun ChatScreen(
                 }
                 ChatEffect.OpenUsage -> usageSheet = true
                 ChatEffect.OpenHelp -> helpSheet = true
+                ChatEffect.OpenCheckpoints -> checkpointsSheet = true
                 ChatEffect.Close -> onBack()
             }
         }
@@ -266,6 +276,14 @@ fun ChatScreen(
                                 menuOpen = false
                                 viewModel.forkFrom(null)
                             }
+                            MenuItem(Icons.Default.History, stringResource(R.string.checkpoints_title)) {
+                                menuOpen = false
+                                checkpointsSheet = true
+                            }
+                            MenuItem(Icons.Default.AccountTree, stringResource(R.string.git_title)) {
+                                menuOpen = false
+                                onOpenGit(state.directory)
+                            }
                             MenuItem(Icons.Default.Compress, stringResource(R.string.usage_compact)) {
                                 menuOpen = false
                                 viewModel.compact()
@@ -291,6 +309,22 @@ fun ChatScreen(
                                 menuOpen = false
                                 onNavigate(ChatDestination.AGENTS)
                             }
+                            MenuItem(Icons.Default.Schedule, stringResource(R.string.tasks_title)) {
+                                menuOpen = false
+                                onNavigate(ChatDestination.TASKS)
+                            }
+                            MenuItem(Icons.Default.Bolt, stringResource(R.string.snippets_title)) {
+                                menuOpen = false
+                                onNavigate(ChatDestination.SNIPPETS)
+                            }
+                            MenuItem(Icons.Default.Webhook, stringResource(R.string.hooks_title)) {
+                                menuOpen = false
+                                onNavigate(ChatDestination.HOOKS)
+                            }
+                            MenuItem(Icons.Default.BarChart, stringResource(R.string.stats_title)) {
+                                menuOpen = false
+                                onNavigate(ChatDestination.STATS)
+                            }
                             MenuItem(Icons.Default.Tune, stringResource(R.string.chat_settings_title)) {
                                 menuOpen = false
                                 onNavigate(ChatDestination.CHAT_SETTINGS)
@@ -306,6 +340,13 @@ fun ChatScreen(
         },
         bottomBar = {
             Column(Modifier.imePadding()) {
+                state.questions.firstOrNull()?.let { question ->
+                    QuestionPrompt(
+                        request = question,
+                        onAnswer = { answers -> viewModel.answerQuestion(question, answers) },
+                        onDismiss = { viewModel.dismissQuestion(question) },
+                    )
+                }
                 val pending = state.permissions
                 pending.firstOrNull()?.let { permission ->
                     if (claude) {
@@ -406,6 +447,9 @@ fun ChatScreen(
             }
             state.error?.let { error ->
                 ErrorCard(message = error, onRetry = viewModel::retry, onDismiss = viewModel::dismissError)
+            }
+            state.budget?.takeIf { it.exceeded || it.warning }?.let { budget ->
+                BudgetBanner(budget = budget, onOpen = { onNavigate(ChatDestination.STATS) })
             }
             if (state.revertMessageId != null && state.revertedCount > 0) {
                 RevertBanner(count = state.revertedCount, onRestore = viewModel::unrevert)
@@ -509,6 +553,29 @@ fun ChatScreen(
         )
     }
 
+    if (checkpointsSheet) {
+        CheckpointsSheet(
+            messages = state.visibleMessages,
+            onPick = { message ->
+                checkpointsSheet = false
+                viewModel.previewRevert(message)
+            },
+            onDismiss = { checkpointsSheet = false },
+        )
+    }
+
+    state.revertPreview?.let { preview ->
+        RevertPreviewSheet(
+            preview = preview,
+            onConfirm = viewModel::confirmRevert,
+            onFork = {
+                viewModel.cancelRevert()
+                viewModel.forkFrom(preview.target)
+            },
+            onDismiss = viewModel::cancelRevert,
+        )
+    }
+
     selectedMessage?.let { message ->
         MessageActionsSheet(
             message = message,
@@ -518,7 +585,7 @@ fun ChatScreen(
             },
             onRevert = {
                 selectedMessage = null
-                viewModel.revertTo(message)
+                viewModel.previewRevert(message)
             },
             onFork = {
                 selectedMessage = null
@@ -530,6 +597,26 @@ fun ChatScreen(
 }
 
 private const val MAX_PICK = 6
+
+@Composable
+private fun BudgetBanner(budget: ai.opencode.android.data.stats.BudgetStatus, onOpen: () -> Unit) {
+    val color = if (budget.exceeded) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.tertiaryContainer
+    Surface(
+        color = color,
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).clickable(onClick = onOpen),
+    ) {
+        val parts = listOfNotNull(
+            budget.dailyLimit.takeIf { it > 0 }?.let { stringResource(R.string.budget_banner_day, formatCost(budget.daily), formatCost(it)) },
+            budget.monthlyLimit.takeIf { it > 0 }?.let { stringResource(R.string.budget_banner_month, formatCost(budget.monthly), formatCost(it)) },
+        )
+        Text(
+            text = stringResource(if (budget.exceeded) R.string.budget_banner_exceeded else R.string.budget_banner_warning) + " · " + parts.joinToString(" · "),
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+        )
+    }
+}
 
 /** `/root/projects/app` → `~/projects/app`, long paths keep their tail. */
 private fun shortPath(path: String): String {

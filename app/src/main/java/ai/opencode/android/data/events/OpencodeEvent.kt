@@ -4,6 +4,7 @@ import ai.opencode.android.data.model.ChatMessage
 import ai.opencode.android.data.model.FileDiffPayload
 import ai.opencode.android.data.model.MessagePart
 import ai.opencode.android.data.model.PermissionRequest
+import ai.opencode.android.data.model.QuestionRequest
 
 /**
  * Normalised server events. Both supported API flavours (opencode 2.x `HttpApi` and the legacy
@@ -77,6 +78,17 @@ sealed interface OpencodeEvent {
     data class PermissionResolved(
         override val sessionId: String,
         val permissionId: String,
+    ) : OpencodeEvent
+
+    /** The `question` tool is waiting for the user's answer. */
+    data class QuestionAsked(val request: QuestionRequest) : OpencodeEvent {
+        override val sessionId: String get() = request.sessionId
+    }
+
+    /** A question was answered or dismissed (here or on another client). */
+    data class QuestionResolved(
+        override val sessionId: String,
+        val requestId: String,
     ) : OpencodeEvent
 
     data class MessageUpserted(

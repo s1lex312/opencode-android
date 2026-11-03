@@ -31,6 +31,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Close
@@ -90,6 +92,8 @@ fun SessionsScreen(
     onOpenSettings: () -> Unit,
     onOpenSetup: () -> Unit,
     onOpenProviders: () -> Unit,
+    onOpenTasks: () -> Unit = {},
+    onOpenStats: () -> Unit = {},
 ) {
     val viewModel: SessionsViewModel = viewModel(factory = SessionsViewModel.factory(container))
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -156,6 +160,12 @@ fun SessionsScreen(
                             imageVector = if (searching) Icons.Default.Close else Icons.Default.Search,
                             contentDescription = stringResource(R.string.action_search),
                         )
+                    }
+                    IconButton(onClick = onOpenTasks) {
+                        Icon(Icons.Default.Schedule, contentDescription = stringResource(R.string.tasks_title))
+                    }
+                    IconButton(onClick = onOpenStats) {
+                        Icon(Icons.Default.BarChart, contentDescription = stringResource(R.string.stats_title))
                     }
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.action_settings))

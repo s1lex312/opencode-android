@@ -8,6 +8,7 @@ import ai.opencode.android.ui.components.EmptyState
 import ai.opencode.android.ui.components.LoadingIndicator
 import ai.opencode.android.ui.components.SettingsDivider
 import ai.opencode.android.ui.components.SettingsGroup
+import ai.opencode.android.ui.components.SettingsItem
 import ai.opencode.android.ui.components.StatusDot
 import ai.opencode.android.ui.settings.MessageSnackbar
 import ai.opencode.android.ui.settings.SettingsPage
@@ -31,6 +32,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
@@ -89,7 +91,7 @@ private val TEMPLATES = listOf(
 )
 
 @Composable
-fun McpScreen(container: AppContainer, onBack: () -> Unit, onOpenPhoneAccess: () -> Unit) {
+fun McpScreen(container: AppContainer, onBack: () -> Unit, onOpenPhoneAccess: () -> Unit, onOpenEnv: () -> Unit = {}) {
     val viewModel: McpViewModel = viewModel(factory = McpViewModel.factory(container))
     val state by viewModel.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -140,6 +142,13 @@ fun McpScreen(container: AppContainer, onBack: () -> Unit, onOpenPhoneAccess: ()
                     }
                     SettingsGroup(title = stringResource(R.string.mcp_templates)) {
                         TemplateChips { template -> editing = EditTarget(template.name, template.config, existing = false) }
+                        SettingsItem(
+                            title = stringResource(R.string.env_title),
+                            subtitle = stringResource(R.string.mcp_env_hint),
+                            icon = Icons.Default.Download,
+                            showChevron = true,
+                            onClick = onOpenEnv,
+                        )
                     }
                 }
             }

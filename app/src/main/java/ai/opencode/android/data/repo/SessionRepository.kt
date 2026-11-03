@@ -13,6 +13,7 @@ import ai.opencode.android.data.model.ModelRef
 import ai.opencode.android.data.model.PermissionDecision
 import ai.opencode.android.data.model.PromptRequest
 import ai.opencode.android.data.model.PtyInfo
+import ai.opencode.android.data.model.QuestionRequest
 import ai.opencode.android.data.model.ServerSession
 import ai.opencode.android.data.model.SlashCommand
 import kotlinx.serialization.json.JsonObject
@@ -81,6 +82,17 @@ class SessionRepository(
     suspend fun compact(sessionId: String, model: ModelRef?): ApiResult<Unit> = call { compact(sessionId, model) }
 
     suspend fun createPty(cwd: String?): ApiResult<PtyInfo> = call { createPty(cwd) }
+
+    suspend fun pendingQuestions(): ApiResult<List<QuestionRequest>> = call { pendingQuestions() }
+
+    suspend fun replyQuestion(sessionId: String, requestId: String, answers: List<List<String>>): ApiResult<Unit> =
+        call { replyQuestion(sessionId, requestId, answers) }
+
+    suspend fun rejectQuestion(sessionId: String, requestId: String): ApiResult<Unit> = call { rejectQuestion(sessionId, requestId) }
+
+    suspend fun sessionBusy(sessionId: String): ApiResult<Boolean?> = call { sessionBusy(sessionId) }
+
+    suspend fun messageDiff(sessionId: String, messageId: String): ApiResult<List<FileDiffPayload>> = call { messageDiff(sessionId, messageId) }
 
     suspend fun runShell(sessionId: String, command: String, agent: String, model: ModelRef?): ApiResult<Unit> =
         call { runShell(sessionId, command, agent, model) }

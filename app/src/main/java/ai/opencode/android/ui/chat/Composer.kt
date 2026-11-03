@@ -723,6 +723,7 @@ private fun commandSourceLabel(command: CommandSuggestion): String? = when {
     command.local -> stringResource(R.string.cmd_source_app)
     command.source == "mcp" -> "MCP"
     command.source == "skill" -> stringResource(R.string.cmd_source_skill)
+    command.source == ChatViewModel.SNIPPET_SOURCE -> stringResource(R.string.cmd_source_snippet)
     else -> null
 }
 

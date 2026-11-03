@@ -1,6 +1,5 @@
 package ai.opencode.android.data.remote
 
-import ai.opencode.android.data.events.EventMapper
 import ai.opencode.android.data.model.AgentDetail
 import ai.opencode.android.data.model.AgentOption
 import ai.opencode.android.data.model.ApiFlavor
@@ -15,6 +14,8 @@ import ai.opencode.android.data.model.ModelRef
 import ai.opencode.android.data.model.PermissionDecision
 import ai.opencode.android.data.model.PromptRequest
 import ai.opencode.android.data.model.PtyInfo
+import ai.opencode.android.data.model.QuestionRequest
+import ai.opencode.android.data.events.EventMapper
 import ai.opencode.android.data.model.Role
 import ai.opencode.android.data.model.ServerInfo
 import ai.opencode.android.data.model.ServerSession
@@ -359,8 +360,8 @@ class LegacyApi(override val http: ServerHttp) : OpencodeApi {
         return ModelRef(last.providerId.orEmpty(), last.model.orEmpty())
     }
 
-    override suspend fun createPty(cwd: String?): PtyInfo {
-        val obj = http.postJson("/pty", buildJsonObject { if (!cwd.isNullOrBlank()) put("cwd", cwd) }) as? JsonObject
+    override suspend fun createPty(cwd: String?, command: String?, args: List<String>, env: Map<String, String>): PtyInfo {
+        val obj = http.postJson("/pty", ptyBody(cwd, command, args, env)) as? JsonObject
             ?: throw ApiException(null, "Malformed PTY response")
         return PtyInfo(id = obj.str("id") ?: throw ApiException(null, "PTY response has no id"), cwd = obj.str("cwd"))
     }
@@ -385,6 +386,39 @@ class LegacyApi(override val http: ServerHttp) : OpencodeApi {
     }
 
     override fun ptyConnectPath(ptyId: String): String = "/pty/${enc(ptyId)}/connect"
+
+    override suspend fun pendingQuestions(): List<QuestionRequest> {
+        val array = http.getJson("/question") as? JsonArray ?: return emptyList()
+        return array.objects().mapNotNull(EventMapper::question)
+    }
+
+    override suspend fun replyQuestion(sessionId: String, requestId: String, answers: List<List<String>>) {
+        http.postJson("/question/${enc(requestId)}/reply", questionAnswers(answers))
+    }
+
+    override suspend fun rejectQuestion(sessionId: String, requestId: String) {
+        http.postJson("/question/${enc(requestId)}/reject")
+    }
+
+    override suspend fun sessionBusy(sessionId: String): Boolean? {
+        val status = http.getJson("/session/status") as? JsonObject ?: return null
+        // Idle sessions are dropped from the map, so a missing entry means idle.
+        val type = (status[sessionId] as? JsonObject)?.str("type") ?: return false
+        return type != "idle"
+    }
+
+    override suspend fun messageDiff(sessionId: String, messageId: String): List<FileDiffPayload> {
+        val array = http.getJson("/session/${enc(sessionId)}/diff", mapOf("messageID" to messageId)) as? JsonArray ?: return emptyList()
+        return array.objects().map { obj ->
+            FileDiffPayload(
+                file = obj.str("file").orEmpty(),
+                patch = obj.str("patch").orEmpty(),
+                additions = obj.int("additions"),
+                deletions = obj.int("deletions"),
+                status = obj.str("status"),
+            )
+        }
+    }
 
     override suspend fun abort(sessionId: String) {
         http.postJson("/session/${enc(sessionId)}/abort")

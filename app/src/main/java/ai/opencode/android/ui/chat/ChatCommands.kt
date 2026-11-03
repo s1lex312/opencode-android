@@ -40,6 +40,14 @@ enum class ClientCommand(
     SETTINGS("settings", listOf("config"), null, R.string.cmd_settings),
     THEME("theme", listOf("themes", "appearance"), null, R.string.cmd_theme),
     STATUS("status", emptyList(), null, R.string.cmd_status),
+    REWIND("rewind", listOf("checkpoints", "checkpoint"), null, R.string.cmd_rewind),
+    GIT("git", listOf("vcs"), null, R.string.cmd_git),
+    BACKGROUND("bg", listOf("background"), "<prompt>", R.string.cmd_bg),
+    TASKS("tasks", listOf("jobs"), null, R.string.cmd_tasks),
+    SNIPPETS("snippets", listOf("prompts", "saved"), null, R.string.cmd_snippets),
+    HOOKS("hooks", emptyList(), null, R.string.cmd_hooks),
+    STATS("stats", listOf("spending", "budget"), null, R.string.cmd_stats),
+    ENV("env", listOf("environment", "install-tools"), null, R.string.cmd_env),
     HELP("help", listOf("?", "commands"), null, R.string.cmd_help),
     EXIT("exit", listOf("quit", "q"), null, R.string.cmd_exit),
     ;
@@ -55,7 +63,10 @@ enum class ClientCommand(
 }
 
 /** Screens a command or menu item can open; mapped to routes by the nav host. */
-enum class ChatDestination { SESSIONS, SETTINGS, CHAT_SETTINGS, AGENTS, MCP, PERMISSIONS, TERMINAL, DIFF, SYSTEM_PROMPTS, PROVIDERS }
+enum class ChatDestination {
+    SESSIONS, SETTINGS, CHAT_SETTINGS, AGENTS, MCP, PERMISSIONS, TERMINAL, DIFF, SYSTEM_PROMPTS, PROVIDERS,
+    GIT, TASKS, SNIPPETS, HOOKS, STATS, ENV,
+}
 
 /** `/name args` split; `null` when [text] is not a command at all. */
 data class ParsedCommand(val name: String, val arguments: String)

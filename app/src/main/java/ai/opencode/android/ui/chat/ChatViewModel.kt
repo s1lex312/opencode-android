@@ -15,10 +15,20 @@ import ai.opencode.android.data.model.PermissionPolicy
 import ai.opencode.android.data.model.PermissionRequest
 import ai.opencode.android.data.model.PromptAttachment
 import ai.opencode.android.data.model.PromptRequest
+import ai.opencode.android.data.model.QuestionRequest
+import ai.opencode.android.data.model.FileDiffPayload
+import ai.opencode.android.data.hooks.HookRunner
+import ai.opencode.android.data.share.DraftInbox
+import ai.opencode.android.data.stats.BudgetStatus
+import ai.opencode.android.data.stats.UsageStats
+import ai.opencode.android.data.tasks.BackgroundTasks
+import ai.opencode.android.settings.Snippet
+import ai.opencode.android.settings.Workbench
 import ai.opencode.android.data.model.Role
 import ai.opencode.android.data.model.ServerSession
 import ai.opencode.android.data.model.SlashCommand
 import ai.opencode.android.data.model.TokenUsage
+import ai.opencode.android.data.model.ToolStatus
 import ai.opencode.android.data.remote.ConfigJson
 import ai.opencode.android.data.repo.ApiResult
 import ai.opencode.android.data.repo.ServerConnectionManager
@@ -34,12 +44,18 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -52,6 +68,20 @@ data class QueuedPrompt(
     val mentions: List<String> = emptyList(),
     val agents: List<String> = emptyList(),
 )
+
+/** Files changed by one user turn, for the checkpoint preview. */
+data class CheckpointTurn(val message: ChatMessage, val files: List<FileDiffPayload>)
+
+/** What reverting to [target] would undo; shown before the revert happens. */
+data class RevertPreview(
+    val target: ChatMessage,
+    val loading: Boolean = true,
+    val turns: List<CheckpointTurn> = emptyList(),
+    /** The server cannot report per-turn diffs; the revert still works. */
+    val unavailable: Boolean = false,
+) {
+    val fileCount: Int get() = turns.flatMap { turn -> turn.files.map { it.file } }.distinct().size
+}
 
 /** Where the context window size comes from. */
 enum class LimitSource { CATALOGUE, MODEL, CHAT }
@@ -102,6 +132,7 @@ sealed interface ChatEffect {
     data object OpenModelPicker : ChatEffect
     data object OpenUsage : ChatEffect
     data object OpenHelp : ChatEffect
+    data object OpenCheckpoints : ChatEffect
     data object Close : ChatEffect
 }
 
@@ -145,6 +176,11 @@ data class ChatUiState(
     val sessionContextLimit: Long? = null,
     /** User overrides per model (`provider/model` → tokens). */
     val modelContextLimits: Map<String, Long> = emptyMap(),
+    /** Questions the agent is blocked on (the `question` tool). */
+    val questions: List<QuestionRequest> = emptyList(),
+    val snippets: List<Snippet> = emptyList(),
+    val budget: BudgetStatus? = null,
+    val revertPreview: RevertPreview? = null,
 ) {
     val canSend: Boolean get() = connected && !sending
 
@@ -229,6 +265,11 @@ class ChatViewModel(
     private val connection: ServerConnectionManager,
     private val settingsRepository: SettingsRepository,
     private val sessionId: String,
+    private val hooks: HookRunner? = null,
+    private val workbench: Workbench? = null,
+    private val usageStats: UsageStats? = null,
+    private val tasks: BackgroundTasks? = null,
+    drafts: DraftInbox? = null,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ChatUiState(sessionId = sessionId))
@@ -252,6 +293,11 @@ class ChatViewModel(
 
     /** `@`-mentions the user picked from suggestions; sent as file parts when still in the text. */
     private val pickedMentions = linkedSetOf<String>()
+
+    /** Budget warnings already shown, so each threshold toasts once per chat screen. */
+    private var budgetWarned = false
+    private var snippetDepth = 0
+    private var budgetExceededShown = false
 
     init {
         viewModelScope.launch {
@@ -288,6 +334,7 @@ class ChatViewModel(
                     if (_state.value.models.isEmpty()) loadModels()
                     if (_state.value.agents.isEmpty()) loadAgents()
                     if (_state.value.commands.isEmpty()) loadCommands()
+                    loadQuestions()
                     if (_state.value.directory == null) {
                         _state.update { it.copy(directory = state.info.directory) }
                     }
@@ -295,6 +342,40 @@ class ChatViewModel(
             }
         }
         viewModelScope.launch { connection.events.collect(::handleEvent) }
+        workbench?.let { bench ->
+            viewModelScope.launch {
+                bench.data.collect { data ->
+                    _state.update { it.copy(snippets = data.snippets, budget = usageStats?.budgetStatus(data.budget)) }
+                }
+            }
+        }
+        usageStats?.let { stats ->
+            viewModelScope.launch {
+                stats.state.collect {
+                    val budget = workbench?.current?.budget ?: return@collect
+                    _state.update { it.copy(budget = stats.budgetStatus(budget)) }
+                }
+            }
+        }
+        drafts?.take(sessionId)?.let { draft ->
+            _state.update { it.copy(attachments = it.attachments + draft.attachments) }
+            if (draft.send) {
+                viewModelScope.launch {
+                    connection.state.first { it is ConnectionState.Connected }
+                    send(draft.text)
+                }
+            } else {
+                _effects.trySend(ChatEffect.RestoreInput(draft.text))
+            }
+        }
+        // SSE can drop the final status event (network change, server restart): ask the server
+        // directly every so often while a turn looks active, so the spinner never sticks.
+        viewModelScope.launch {
+            while (true) {
+                delay(BUSY_POLL_MS)
+                if (_state.value.busy && _state.value.connected) syncBusy()
+            }
+        }
         if (!connection.isConnected) connection.connect()
     }
 
@@ -317,6 +398,10 @@ class ChatViewModel(
                 runClientCommand(client, command.arguments)
                 return
             }
+            _state.value.snippets.firstOrNull { it.name.equals(command.name, ignoreCase = true) }?.let { snippet ->
+                runSnippet(snippet, command.arguments)
+                return
+            }
             if (_state.value.commands.any { it.name == command.name }) {
                 runServerCommand(command.name, command.arguments)
                 return
@@ -330,6 +415,11 @@ class ChatViewModel(
 
         if (trimmed.startsWith("!") && trimmed.length > 1 && attachments.isEmpty()) {
             runShell(trimmed.substring(1).trim())
+            return
+        }
+
+        if (budgetBlocks()) {
+            _effects.trySend(ChatEffect.RestoreInput(text))
             return
         }
 
@@ -367,16 +457,31 @@ class ChatViewModel(
                 revertMessageId = null,
             )
         }
-        val request = PromptRequest(
-            text = text,
-            model = model,
-            agent = agent.ifBlank { null },
-            system = systemPrompt,
-            attachments = attachments,
-            mentionedFiles = mentions,
-            mentionedAgents = agents,
-        )
         viewModelScope.launch {
+            val hook = hooks?.beforePrompt(sessionId, _state.value.directory, text)
+            if (hook?.blocked == true) {
+                _state.update {
+                    it.copy(
+                        sending = false,
+                        busy = false,
+                        turnStartedAt = null,
+                        messages = it.messages.filterNot { message -> message.id == optimistic.id },
+                        attachments = attachments,
+                    )
+                }
+                _effects.trySend(ChatEffect.Toast(UiText.of(R.string.hooks_prompt_blocked, hook.message.orEmpty())))
+                _effects.trySend(ChatEffect.RestoreInput(text))
+                return@launch
+            }
+            val request = PromptRequest(
+                text = hook?.context?.let { context -> "$text\n\n<hook-context>\n$context\n</hook-context>" } ?: text,
+                model = model,
+                agent = agent.ifBlank { null },
+                system = systemPrompt,
+                attachments = attachments,
+                mentionedFiles = mentions,
+                mentionedAgents = agents,
+            )
             when (val result = repository.sendPrompt(sessionId, request)) {
                 is ApiResult.Ok -> {
                     _state.update { it.copy(sending = false) }
@@ -503,7 +608,18 @@ class ChatViewModel(
             .filter { ClientCommand.find(it.name) == null }
             .map { CommandSuggestion(it.name, it.description, local = false, argHint = it.hints.joinToString(" ").ifBlank { null }, source = it.source) }
         val client = ClientCommand.entries.map { CommandSuggestion(it.id, null, local = true, argHint = it.argHint) }
-        val all = server + client
+        val snippets = _state.value.snippets
+            .filter { snippet -> ClientCommand.find(snippet.name) == null }
+            .map { snippet ->
+                CommandSuggestion(
+                    name = snippet.name,
+                    description = snippet.description.ifBlank { snippet.body.lineSequence().firstOrNull().orEmpty().take(80) },
+                    local = false,
+                    argHint = if (snippet.body.contains("\$ARGUMENTS") || snippet.body.contains("\$1")) "[args]" else null,
+                    source = SNIPPET_SOURCE,
+                )
+            }
+        val all = snippets + server.filter { command -> snippets.none { it.name == command.name } } + client
         if (prefix.isEmpty()) return all
         val lower = prefix.lowercase()
         val aliasHits = ClientCommand.entries
@@ -549,6 +665,65 @@ class ChatViewModel(
             ClientCommand.THEME -> _effects.trySend(ChatEffect.Navigate(ChatDestination.CHAT_SETTINGS))
             ClientCommand.STATUS -> statusToast()
             ClientCommand.HELP -> _effects.trySend(ChatEffect.OpenHelp)
+            ClientCommand.REWIND -> _effects.trySend(ChatEffect.OpenCheckpoints)
+            ClientCommand.GIT -> _effects.trySend(ChatEffect.Navigate(ChatDestination.GIT))
+            ClientCommand.BACKGROUND ->
+                if (arguments.isBlank()) _effects.trySend(ChatEffect.Navigate(ChatDestination.TASKS)) else startBackground(arguments)
+            ClientCommand.TASKS -> _effects.trySend(ChatEffect.Navigate(ChatDestination.TASKS))
+            ClientCommand.SNIPPETS -> _effects.trySend(ChatEffect.Navigate(ChatDestination.SNIPPETS))
+            ClientCommand.HOOKS -> _effects.trySend(ChatEffect.Navigate(ChatDestination.HOOKS))
+            ClientCommand.STATS -> _effects.trySend(ChatEffect.Navigate(ChatDestination.STATS))
+            ClientCommand.ENV -> _effects.trySend(ChatEffect.Navigate(ChatDestination.ENV))
+        }
+    }
+
+    /** `/name args` of a saved prompt: expanded, then sent or put into the composer. */
+    private fun runSnippet(snippet: Snippet, arguments: String) {
+        val expanded = Snippets.expand(snippet.body, arguments)
+        if (expanded.isBlank()) return
+        // A snippet may call another one; a cycle ends up in the composer instead of looping.
+        if (snippet.send && snippetDepth < MAX_SNIPPET_DEPTH) {
+            snippetDepth++
+            try {
+                send(expanded)
+            } finally {
+                snippetDepth--
+            }
+        } else {
+            _effects.trySend(ChatEffect.RestoreInput(expanded))
+        }
+    }
+
+    /** `/bg prompt`: a new chat that runs on its own and notifies with the answer. */
+    private fun startBackground(prompt: String) {
+        val runner = tasks ?: return
+        viewModelScope.launch {
+            when (val result = runner.launch(prompt, model = model, agent = agent.ifBlank { null })) {
+                is ApiResult.Ok -> toast(R.string.task_started)
+                is ApiResult.Err -> _state.update { it.copy(error = result.message) }
+            }
+        }
+    }
+
+    /** True (and tells the user) when the budget is spent and blocking is on. */
+    private fun budgetBlocks(): Boolean {
+        val budget = _state.value.budget ?: return false
+        if (workbench?.current?.budget?.block != true || !budget.exceeded) return false
+        toast(R.string.budget_blocked, formatCost(budget.daily), formatCost(budget.monthly))
+        return true
+    }
+
+    private fun checkBudget() {
+        val budget = _state.value.budget ?: return
+        when {
+            budget.exceeded && !budgetExceededShown -> {
+                budgetExceededShown = true
+                toast(R.string.budget_exceeded, formatCost(budget.daily), formatCost(budget.monthly))
+            }
+            budget.warning && !budgetWarned -> {
+                budgetWarned = true
+                toast(R.string.budget_warning, (maxOf(budget.dailyRatio, budget.monthlyRatio) * 100).toInt())
+            }
         }
     }
 
@@ -911,6 +1086,21 @@ class ChatViewModel(
                 }
             }
 
+            is OpencodeEvent.QuestionAsked -> {
+                if (event.sessionId == sessionId) {
+                    _state.update { current ->
+                        if (current.questions.any { it.id == event.request.id }) current
+                        else current.copy(questions = current.questions + event.request)
+                    }
+                }
+            }
+
+            is OpencodeEvent.QuestionResolved -> {
+                if (event.sessionId == sessionId) {
+                    _state.update { it.copy(questions = it.questions.filterNot { q -> q.id == event.requestId }) }
+                }
+            }
+
             is OpencodeEvent.Status -> {
                 if (event.sessionId == sessionId) {
                     _state.update {
@@ -950,7 +1140,13 @@ class ChatViewModel(
             else -> {
                 val updated = ChatStreamReducer.reduce(_state.value.messages, event, sessionId)
                 if (updated != null) {
-                    _state.update { it.copy(messages = updated, busy = true, turnStartedAt = it.turnStartedAt ?: System.currentTimeMillis()) }
+                    // Only streaming output proves a turn is running: late message/part updates
+                    // arrive after `session.idle` and must not bring the spinner back.
+                    if (isLiveOutput(event)) {
+                        _state.update { it.copy(messages = updated, busy = true, turnStartedAt = it.turnStartedAt ?: System.currentTimeMillis()) }
+                    } else {
+                        _state.update { it.copy(messages = updated) }
+                    }
                 }
             }
         }
@@ -961,9 +1157,105 @@ class ChatViewModel(
         viewModelScope.launch {
             // Let the final reload land before the next queued prompt starts a new turn.
             delay(QUEUE_DRAIN_DELAY_MS)
+            usageStats?.record(sessionId, _state.value.messages)
+            checkBudget()
             if (!maybeAutoCompact()) drainQueue()
         }
     }
+
+    /**
+     * Reconciles [ChatUiState.busy] with the server's own session status. Covers missed
+     * `session.idle` events and chats opened while a turn is already running elsewhere.
+     */
+    private suspend fun syncBusy() {
+        val serverBusy = (repository.sessionBusy(sessionId) as? ApiResult.Ok)?.value ?: return
+        val current = _state.value
+        when {
+            serverBusy && !current.busy ->
+                _state.update { it.copy(busy = true, turnStartedAt = it.turnStartedAt ?: System.currentTimeMillis()) }
+
+            !serverBusy && current.busy && !current.sending && !current.compacting -> {
+                val started = current.turnStartedAt ?: 0L
+                if (System.currentTimeMillis() - started < BUSY_GRACE_MS) return
+                _state.update { it.copy(busy = false, retryMessage = null, turnStartedAt = null) }
+                onTurnFinished()
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ agent questions
+
+    private fun loadQuestions() {
+        viewModelScope.launch {
+            val pending = (repository.pendingQuestions() as? ApiResult.Ok)?.value ?: return@launch
+            val mine = pending.filter { it.sessionId == sessionId }
+            _state.update { it.copy(questions = mine) }
+        }
+    }
+
+    /** [answers] in question order; each is the picked labels plus any typed text. */
+    fun answerQuestion(request: QuestionRequest, answers: List<List<String>>) {
+        _state.update { it.copy(questions = it.questions.filterNot { q -> q.id == request.id }) }
+        viewModelScope.launch {
+            when (val result = repository.replyQuestion(sessionId, request.id, answers)) {
+                is ApiResult.Ok -> Unit
+                is ApiResult.Err -> _state.update { it.copy(error = result.message, questions = it.questions + request) }
+            }
+        }
+    }
+
+    /** Tells the agent the user declined to answer; the tool call fails and the turn goes on. */
+    fun dismissQuestion(request: QuestionRequest) {
+        _state.update { it.copy(questions = it.questions.filterNot { q -> q.id == request.id }) }
+        viewModelScope.launch {
+            when (val result = repository.rejectQuestion(sessionId, request.id)) {
+                is ApiResult.Ok -> Unit
+                is ApiResult.Err -> _state.update { it.copy(error = result.message) }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ checkpoints
+
+    /** Loads what reverting to [message] would undo, then shows it for confirmation. */
+    fun previewRevert(message: ChatMessage) {
+        _state.update { it.copy(revertPreview = RevertPreview(message)) }
+        viewModelScope.launch {
+            val visible = _state.value.visibleMessages.filterNot { it.id.startsWith("local-") }
+            val start = visible.indexOfFirst { it.id == message.id }.coerceAtLeast(0)
+            val after = visible.drop(start).filter { it.role == Role.USER }
+            // Reverting an answer keeps its prompt but undoes that prompt's edits too.
+            val owner = if (message.role == Role.USER) null else visible.take(start).lastOrNull { it.role == Role.USER }
+            val users = listOfNotNull(owner) + after
+            val unavailable = AtomicBoolean(false)
+            val gate = Semaphore(DIFF_PARALLEL)
+            val turns = users.map { user ->
+                async {
+                    gate.withPermit {
+                        when (val diff = repository.messageDiff(sessionId, user.id)) {
+                            is ApiResult.Ok -> CheckpointTurn(user, diff.value.filter { it.file.isNotBlank() })
+                            is ApiResult.Err -> {
+                                unavailable.set(true)
+                                CheckpointTurn(user, emptyList())
+                            }
+                        }
+                    }
+                }
+            }.awaitAll().filter { it.files.isNotEmpty() }
+            _state.update {
+                if (it.revertPreview?.target?.id != message.id) it
+                else it.copy(revertPreview = RevertPreview(message, loading = false, turns = turns, unavailable = unavailable.get()))
+            }
+        }
+    }
+
+    fun confirmRevert() {
+        val preview = _state.value.revertPreview ?: return
+        _state.update { it.copy(revertPreview = null) }
+        revertTo(preview.target)
+    }
+
+    fun cancelRevert() = _state.update { it.copy(revertPreview = null) }
 
     /** Client-side auto-compaction at the user's threshold (Settings → Chat). */
     private fun maybeAutoCompact(): Boolean {
@@ -1002,12 +1294,16 @@ class ChatViewModel(
         if (showSpinner) _state.update { it.copy(loading = true) }
         viewModelScope.launch {
             when (val result = repository.messages(sessionId)) {
-                is ApiResult.Ok -> _state.update {
-                    it.copy(
-                        messages = result.value,
-                        loading = false,
-                        error = null,
-                    )
+                is ApiResult.Ok -> {
+                    _state.update {
+                        it.copy(
+                            messages = result.value,
+                            loading = false,
+                            error = null,
+                        )
+                    }
+                    syncBusy()
+                    if (_state.value.busy) loadQuestions()
                 }
 
                 is ApiResult.Err -> _state.update {
@@ -1046,6 +1342,23 @@ class ChatViewModel(
         private const val MAX_MENTION_SUGGESTIONS = 40
         private const val QUEUE_DRAIN_DELAY_MS = 600L
 
+        /** [CommandSuggestion.source] of saved prompts. */
+        const val SNIPPET_SOURCE = "snippet"
+        private const val MAX_SNIPPET_DEPTH = 3
+        private const val BUSY_POLL_MS = 12_000L
+
+        /** A just-sent prompt may not have reached the server's run loop yet. */
+        private const val BUSY_GRACE_MS = 4_000L
+        private const val DIFF_PARALLEL = 4
+
+        /** Events that only exist while the model is producing output. */
+        fun isLiveOutput(event: OpencodeEvent): Boolean = when (event) {
+            is OpencodeEvent.TextDelta, is OpencodeEvent.ToolStarted, is OpencodeEvent.ToolCalled -> true
+            is OpencodeEvent.PartUpserted -> event.delta != null ||
+                (event.part as? MessagePart.Tool)?.call?.status.let { it == ToolStatus.RUNNING || it == ToolStatus.PENDING }
+            else -> false
+        }
+
         fun factory(container: AppContainer, sessionId: String): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 ChatViewModel(
@@ -1053,6 +1366,11 @@ class ChatViewModel(
                     connection = container.connectionManager,
                     settingsRepository = container.settingsRepository,
                     sessionId = sessionId,
+                    hooks = container.hookRunner,
+                    workbench = container.workbench,
+                    usageStats = container.usageStats,
+                    tasks = container.backgroundTasks,
+                    drafts = container.draftInbox,
                 )
             }
         }
