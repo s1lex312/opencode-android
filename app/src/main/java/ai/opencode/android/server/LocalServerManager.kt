@@ -1,5 +1,6 @@
 package ai.opencode.android.server
 
+import ai.opencode.android.data.backup.ConfigBackup
 import ai.opencode.android.security.SecretStore
 import ai.opencode.android.server.provision.EnvProvisioner
 import ai.opencode.android.settings.LocalServerSettings
@@ -160,6 +161,10 @@ class LocalServerManager(
         var current: Process? = null
         try {
             while (currentCoroutineContext().isActive) {
+                // Config restored from a backup before the environment existed lands now.
+                if (runCatching { ConfigBackup.applyPendingServerFiles(context, provisioner.paths().rootfsDir) }.getOrDefault(false)) {
+                    appendLog("Applied opencode config restored from the settings backup")
+                }
                 if (!freePort(port)) {
                     fail(
                         "Port $port is already in use by another process. Pick another port in " +

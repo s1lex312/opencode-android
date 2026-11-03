@@ -18,8 +18,8 @@ android {
         applicationId = "ai.opencode.android"
         minSdk = 26
         targetSdk = 34
-        versionCode = 21
-        versionName = "1.5.1"
+        versionCode = 22
+        versionName = "1.6.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
@@ -53,6 +53,17 @@ android {
     }
 
     signingConfigs {
+        // Every published APK (the release workflow ships debug builds) is signed with the same
+        // committed key, so a new version installs over the old one. Gradle's default would be a
+        // fresh ~/.android/debug.keystore per CI runner: a different signature every release,
+        // which Android refuses as an update. OPENCODE_SIGNING_* env vars override it (CI secret).
+        getByName("debug") {
+            val customStore = System.getenv("OPENCODE_SIGNING_STORE")?.takeIf { it.isNotBlank() }?.let(::file)
+            storeFile = customStore?.takeIf { it.isFile } ?: file("debug.keystore")
+            storePassword = System.getenv("OPENCODE_SIGNING_STORE_PASSWORD")?.takeIf { customStore != null } ?: "android"
+            keyAlias = System.getenv("OPENCODE_SIGNING_KEY_ALIAS")?.takeIf { customStore != null } ?: "androiddebugkey"
+            keyPassword = System.getenv("OPENCODE_SIGNING_KEY_PASSWORD")?.takeIf { customStore != null } ?: "android"
+        }
         // Release signing is intentionally read from an untracked keystore.properties file.
         val keystorePropertiesFile = rootProject.file("keystore.properties")
         if (keystorePropertiesFile.exists()) {

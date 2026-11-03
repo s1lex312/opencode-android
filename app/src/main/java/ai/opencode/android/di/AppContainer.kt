@@ -4,7 +4,9 @@ import ai.opencode.android.BuildConfig
 import ai.opencode.android.bridge.PhoneAccessManager
 import ai.opencode.android.bridge.StorageAccess
 import ai.opencode.android.server.LocalConfigFile
+import ai.opencode.android.data.backup.ConfigBackup
 import ai.opencode.android.data.cache.SessionCache
+import ai.opencode.android.update.AppUpdater
 import ai.opencode.android.data.repo.ProviderRepository
 import ai.opencode.android.data.repo.ServerConnectionManager
 import ai.opencode.android.data.repo.SessionRepository
@@ -208,6 +210,22 @@ class AppContainer(context: Context) {
         )
     }
 
+    /** Settings backup: file in Downloads plus Android's cloud backup; survives an uninstall. */
+    val configBackup: ConfigBackup by lazy {
+        ConfigBackup(appContext, settingsRepository, secretStore, workbench, { envPaths.rootfsDir }, appScope)
+    }
+
+    /** Updates the APK itself from this repository's GitHub releases. */
+    val appUpdater: AppUpdater by lazy {
+        AppUpdater(appContext, downloadClient, settingsRepository, appScope) {
+            if (connectionManager.api == null) {
+                false
+            } else {
+                (sessionRepository.loadSessions() as? ApiResult.Ok)?.value?.any { it.busy } ?: false
+            }
+        }
+    }
+
     val serverProfiles: ServerProfileManager by lazy {
         ServerProfileManager(settingsRepository, secretStore, connectionManager) { localRuntime }
     }
@@ -242,6 +260,8 @@ class AppContainer(context: Context) {
         phoneAccess.start()
         hookRunner.start()
         backgroundTasks.start()
+        configBackup.start()
+        appUpdater.start()
         appScope.launch {
             settingsRepository.settings.collect { storageBindEnabled = it.phone.storage }
         }

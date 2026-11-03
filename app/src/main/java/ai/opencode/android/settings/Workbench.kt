@@ -120,6 +120,16 @@ class Workbench(private val file: File) {
         }
     }
 
+    /** Hooks, snippets and budget for a settings backup; background tasks belong to this install. */
+    fun exportJson(): String = JSON.encodeToString(WorkbenchData.serializer(), current.copy(tasks = emptyList()))
+
+    /** Replaces hooks, snippets and budget from [exportJson] output; keeps this install's tasks. */
+    suspend fun importJson(text: String): Boolean {
+        val imported = runCatching { JSON.decodeFromString(WorkbenchData.serializer(), text) }.getOrNull() ?: return false
+        update { it.copy(hooks = imported.hooks, snippets = imported.snippets, budget = imported.budget) }
+        return true
+    }
+
     private fun load(): WorkbenchData = runCatching {
         if (file.exists()) JSON.decodeFromString(WorkbenchData.serializer(), file.readText()) else WorkbenchData()
     }.getOrDefault(WorkbenchData())

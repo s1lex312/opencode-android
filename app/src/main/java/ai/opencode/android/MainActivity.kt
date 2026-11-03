@@ -3,6 +3,7 @@ package ai.opencode.android
 import ai.opencode.android.di.AppContainer
 import ai.opencode.android.server.LocalServerService
 import ai.opencode.android.settings.AppearanceSettings
+import ai.opencode.android.ui.backup.BackupAndUpdatePrompts
 import ai.opencode.android.ui.navigation.OpencodeNavHost
 import ai.opencode.android.ui.theme.OpencodeTheme
 import ai.opencode.android.ui.theme.isDark
@@ -72,6 +73,7 @@ class MainActivity : AppCompatActivity() {
                     onSessionRequestHandled = { openSessionRequest.value = null },
                     shareRequest = shareRequest.intValue,
                 )
+                BackupAndUpdatePrompts(container)
             }
         }
 

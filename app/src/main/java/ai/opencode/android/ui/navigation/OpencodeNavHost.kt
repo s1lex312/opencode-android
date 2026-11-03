@@ -55,6 +55,7 @@ object Routes {
     const val SETTINGS_AGENT = "settings/agent"
     const val SETTINGS_APPEARANCE = "settings/appearance"
     const val SETTINGS_ABOUT = "settings/about"
+    const val SETTINGS_BACKUP = "settings/backup"
 
     const val SETTINGS_SERVERS = "settings/servers"
     const val SETTINGS_SYSTEM_PROMPTS = "settings/system-prompts"
@@ -300,7 +301,12 @@ fun OpencodeNavHost(
                 onOpenStats = { navController.open(Routes.STATS) },
                 onOpenEnv = { navController.open(Routes.ENV) },
                 onOpenTasks = { navController.open(Routes.TASKS) },
+                onOpenBackup = { navController.open(Routes.SETTINGS_BACKUP) },
             )
+        }
+
+        composable(Routes.SETTINGS_BACKUP) {
+            ai.opencode.android.ui.backup.BackupScreen(container = container, onBack = back)
         }
 
         composable(Routes.SETTINGS_CONNECTION) {

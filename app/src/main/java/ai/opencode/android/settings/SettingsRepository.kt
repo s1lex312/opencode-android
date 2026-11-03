@@ -8,7 +8,11 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.doublePreferencesKey
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -31,6 +35,31 @@ class SettingsRepository(context: Context) {
         .distinctUntilChanged()
 
     suspend fun current(): AppSettings = settings.first()
+
+    /** Fires on every write, including keys [AppSettings] does not model. */
+    val changes: Flow<Unit> = store.data.map { }
+
+    /** Every stored preference by name, for the settings backup. */
+    suspend fun exportRaw(): Map<String, Any> = store.data.first().asMap().mapKeys { it.key.name }
+
+    /** Replaces all preferences with [values] (output of [exportRaw]); unknown value types are skipped. */
+    suspend fun importRaw(values: Map<String, Any>) {
+        store.edit { prefs ->
+            prefs.clear()
+            values.forEach { (name, value) ->
+                @Suppress("UNCHECKED_CAST")
+                when (value) {
+                    is String -> prefs[stringPreferencesKey(name)] = value
+                    is Boolean -> prefs[booleanPreferencesKey(name)] = value
+                    is Int -> prefs[intPreferencesKey(name)] = value
+                    is Long -> prefs[longPreferencesKey(name)] = value
+                    is Float -> prefs[floatPreferencesKey(name)] = value
+                    is Double -> prefs[doublePreferencesKey(name)] = value
+                    is Set<*> -> prefs[stringSetPreferencesKey(name)] = value.filterIsInstance<String>().toSet()
+                }
+            }
+        }
+    }
 
     suspend fun update(transform: (AppSettings) -> AppSettings) {
         store.edit { prefs ->
@@ -72,6 +101,8 @@ class SettingsRepository(context: Context) {
             serverProfiles = ProfileCodec.decodeServers(this[KEY_SERVER_PROFILES]),
             opencodeAutoUpdate = this[KEY_OPENCODE_AUTO_UPDATE] ?: true,
             opencodeLastUpdateCheck = this[KEY_OPENCODE_LAST_CHECK] ?: 0L,
+            appAutoUpdate = this[KEY_APP_AUTO_UPDATE] ?: true,
+            appAutoInstall = this[KEY_APP_AUTO_INSTALL] ?: true,
             chat = ChatSettings(
                 style = this[KEY_CHAT_STYLE]?.toEnum<ChatStyle>() ?: ChatStyle.CLAUDE_CODE,
                 monospace = this[KEY_CHAT_MONOSPACE] ?: false,
@@ -130,6 +161,8 @@ class SettingsRepository(context: Context) {
         this[KEY_SERVER_PROFILES] = ProfileCodec.encodeServers(value.serverProfiles)
         this[KEY_OPENCODE_AUTO_UPDATE] = value.opencodeAutoUpdate
         this[KEY_OPENCODE_LAST_CHECK] = value.opencodeLastUpdateCheck
+        this[KEY_APP_AUTO_UPDATE] = value.appAutoUpdate
+        this[KEY_APP_AUTO_INSTALL] = value.appAutoInstall
         this[KEY_CHAT_STYLE] = value.chat.style.name
         this[KEY_CHAT_MONOSPACE] = value.chat.monospace
         this[KEY_CHAT_EXPAND_REASONING] = value.chat.expandReasoning
@@ -180,7 +213,9 @@ class SettingsRepository(context: Context) {
         val KEY_ACTIVE_SYSTEM_PROMPT = stringPreferencesKey("active_system_prompt")
         val KEY_SERVER_PROFILES = stringPreferencesKey("server_profiles")
         val KEY_OPENCODE_AUTO_UPDATE = booleanPreferencesKey("opencode_auto_update")
-        val KEY_OPENCODE_LAST_CHECK = androidx.datastore.preferences.core.longPreferencesKey("opencode_last_update_check")
+        val KEY_OPENCODE_LAST_CHECK = longPreferencesKey("opencode_last_update_check")
+        val KEY_APP_AUTO_UPDATE = booleanPreferencesKey("app_auto_update")
+        val KEY_APP_AUTO_INSTALL = booleanPreferencesKey("app_auto_install")
 
         val KEY_CHAT_STYLE = stringPreferencesKey("chat_style")
         val KEY_CHAT_MONOSPACE = booleanPreferencesKey("chat_monospace")

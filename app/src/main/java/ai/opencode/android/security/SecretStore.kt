@@ -44,7 +44,35 @@ interface SecretStore {
 
     fun setProfileSecret(key: String, value: String?) = Unit
 
+    /** Every stored secret, for an (encrypted) settings backup. */
+    fun exportAll(): Map<String, String> = buildMap {
+        password()?.let { put(KEY_PASSWORD, it) }
+        token()?.let { put(KEY_TOKEN, it) }
+        localPassword()?.let { put(KEY_LOCAL_PASSWORD, it) }
+    }
+
+    /** Writes back [exportAll] output; keys absent from [values] are left alone. */
+    fun importAll(values: Map<String, String>) {
+        values.forEach { (key, value) ->
+            when (key) {
+                KEY_PASSWORD -> setPassword(value)
+                KEY_TOKEN -> setToken(value)
+                KEY_LOCAL_PASSWORD -> setLocalPassword(value)
+                else -> setProfileSecret(key, value)
+            }
+        }
+    }
+
     fun clear()
+
+    companion object {
+        const val KEY_PASSWORD = "server_password"
+        const val KEY_TOKEN = "server_token"
+        const val KEY_LOCAL_PASSWORD = "local_server_password"
+
+        /** Password that encrypts the keys inside the backup file; never itself backed up. */
+        const val KEY_BACKUP_PASSWORD = "backup_file_password"
+    }
 }
 
 class EncryptedSecretStore(context: Context) : SecretStore {
@@ -143,6 +171,17 @@ class EncryptedSecretStore(context: Context) : SecretStore {
         Unit
     }
 
+    override fun exportAll(): Map<String, String> = synchronized(lock) {
+        val stored = prefs?.all.orEmpty().mapNotNull { (key, value) -> (value as? String)?.let { key to it } }.toMap()
+        val memory = buildMap {
+            memoryPassword?.let { put(KEY_PASSWORD, it) }
+            memoryToken?.let { put(KEY_TOKEN, it) }
+            memoryLocalPassword?.let { put(KEY_LOCAL_PASSWORD, it) }
+            putAll(memoryProfiles)
+        }
+        (memory + stored) - SecretStore.KEY_BACKUP_PASSWORD
+    }
+
     override fun clear() = synchronized(lock) {
         memoryProfiles.clear()
         prefs?.edit()?.clear()?.apply()
@@ -154,9 +193,9 @@ class EncryptedSecretStore(context: Context) : SecretStore {
     private companion object {
         const val TAG = "SecretStore"
         const val FILE_NAME = "opencode_secrets"
-        const val KEY_PASSWORD = "server_password"
-        const val KEY_TOKEN = "server_token"
-        const val KEY_LOCAL_PASSWORD = "local_server_password"
+        const val KEY_PASSWORD = SecretStore.KEY_PASSWORD
+        const val KEY_TOKEN = SecretStore.KEY_TOKEN
+        const val KEY_LOCAL_PASSWORD = SecretStore.KEY_LOCAL_PASSWORD
     }
 }
 

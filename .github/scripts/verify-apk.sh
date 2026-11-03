@@ -30,6 +30,20 @@ if BT="$(ls -d "$SDK"/build-tools/* 2>/dev/null | sort -V | tail -n 1)" && [ -x 
   "$BT/aapt" dump badging "$APK" | head -n 6
 fi
 
+# ---- Signature: every release must carry the same certificate, or it cannot update the last one.
+# Default: app/debug.keystore. Override with EXPECT_CERT_SHA256 when signing with a CI secret.
+EXPECTED_CERT="${EXPECT_CERT_SHA256:-d094dce9ca499f2c426971d4c086f64ebfd86893ca1234ce70cc8d0e89bdd0eb}"
+if BT="$(ls -d "$SDK"/build-tools/* 2>/dev/null | sort -V | tail -n 1)" && [ -x "$BT/apksigner" ]; then
+  CERT="$("$BT/apksigner" verify --print-certs "$APK" | awk -F': ' '/certificate SHA-256 digest/ {print $2; exit}')"
+  echo "signing certificate SHA-256: $CERT"
+  if [ "$CERT" != "$EXPECTED_CERT" ]; then
+    echo "::error title=wrong signing key::$APK is signed with $CERT, expected $EXPECTED_CERT; users could not update over the previous release"
+    exit 1
+  fi
+else
+  echo "::warning title=no apksigner::cannot verify the signing certificate of $APK"
+fi
+
 # ---- Variant specific checks ------------------------------------------------------------------
 VERSION_LINE=""
 if BT="$(ls -d "$SDK"/build-tools/* 2>/dev/null | sort -V | tail -n 1)" && [ -x "$BT/aapt" ]; then

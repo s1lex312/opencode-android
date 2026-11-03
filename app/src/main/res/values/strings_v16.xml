@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Settings backup -->
+    <string name="backup_title">Backup</string>
+    <string name="backup_hub_subtitle">Settings survive reinstalling the app</string>
+    <string name="backup_group_file">Settings file</string>
+    <string name="backup_auto">Save automatically</string>
+    <string name="backup_auto_never">Not saved yet</string>
+    <string name="backup_auto_saved">%1$s · saved %2$s</string>
+    <string name="backup_auto_error">Could not save: %1$s</string>
+    <string name="backup_no_storage">Android 8–9 needs storage access: choose a place with “Save to…”</string>
+    <string name="backup_save_now">Save now</string>
+    <string name="backup_saved">Saved</string>
+    <string name="backup_save_failed">Could not save the backup</string>
+    <string name="backup_save_as">Save to…</string>
+    <string name="backup_save_as_hint">Pick a file, e.g. on a cloud drive; the automatic copy goes there from then on</string>
+    <string name="backup_restore">Restore from file</string>
+    <string name="backup_restore_hint">Download/opencode/opencode-settings.json from an earlier install</string>
+    <string name="backup_password">Password for keys</string>
+    <string name="backup_password_on">API keys, server passwords and provider sign-ins are saved encrypted</string>
+    <string name="backup_password_off">Not set: API keys and passwords are left out of the file</string>
+    <string name="backup_password_title">Backup password</string>
+    <string name="backup_password_text">Keys and passwords in the file are encrypted with this password (AES-256). Remember it: without it they cannot be restored.</string>
+    <string name="backup_password_field">Password</string>
+    <string name="backup_password_repeat">Repeat password</string>
+    <string name="backup_password_mismatch">Passwords do not match</string>
+    <string name="backup_password_short">At least 6 characters</string>
+    <string name="backup_password_remove">Remove</string>
+    <string name="backup_group_cloud">Google account</string>
+    <string name="backup_cloud">Android backup</string>
+    <string name="backup_cloud_hint">If backup is on in the phone settings, Android saves the settings to your Google account about once a day and puts them back while the app is installed again. Keys go along only when the backup is end-to-end encrypted with the screen lock.</string>
+    <string name="backup_what">What is saved</string>
+    <string name="backup_what_hint">All app settings, servers, system prompts, hooks, snippets, budget, and the in-app server’s opencode config (MCP, agents, commands, providers). Chat history is not included.</string>
+
+    <!-- Restore -->
+    <string name="restore_offer_title">Restore settings?</string>
+    <string name="restore_offer_text">If you used opencode on this phone before, pick the backup file: Download/opencode/opencode-settings.json.</string>
+    <string name="restore_offer_pick">Choose file</string>
+    <string name="restore_offer_skip">Start fresh</string>
+    <string name="restore_password_title">Backup password</string>
+    <string name="restore_password_text">Keys and passwords in this backup are encrypted. Enter the backup password, or restore everything else without them.</string>
+    <string name="restore_password_wrong">Wrong password</string>
+    <string name="restore_without_keys">Without keys</string>
+    <string name="restore_action">Restore</string>
+    <string name="restore_working">Restoring…</string>
+    <string name="restore_done_title">Settings restored</string>
+    <string name="restore_done_text">The app restarts to apply them.</string>
+    <string name="restore_done_no_keys">Keys and passwords were not restored: enter them again in Settings.</string>
+    <string name="restore_failed">Could not restore: %1$s</string>
+    <string name="restore_cloud_title">Settings are back</string>
+    <string name="restore_cloud_text">Android restored your settings from the Google account backup.</string>
+    <string name="restart_app">Restart</string>
+
+    <!-- App update -->
+    <string name="app_update_group">App update</string>
+    <string name="app_update_current">Version %1$s</string>
+    <string name="app_update_idle">Updates come from GitHub releases</string>
+    <string name="app_update_checking">Checking…</string>
+    <string name="app_update_up_to_date">Latest version</string>
+    <string name="app_update_available">Version %1$s is available (%2$s)</string>
+    <string name="app_update_downloading">Downloading %1$d%%</string>
+    <string name="app_update_ready">Version %1$s is downloaded</string>
+    <string name="app_update_installing">Installing…</string>
+    <string name="app_update_needs_permission">Allow this app to install updates</string>
+    <string name="app_update_signature">This release is signed with another key: install it by hand once (uninstall first, then restore settings from the backup)</string>
+    <string name="app_update_failed">Update failed: %1$s</string>
+    <string name="app_update_check">Check</string>
+    <string name="app_update_install">Install</string>
+    <string name="app_update_download">Update</string>
+    <string name="app_update_allow">Allow</string>
+    <string name="app_update_auto">Update automatically</string>
+    <string name="app_update_auto_hint">Check every 6 hours and download in the background (Full only over Wi-Fi)</string>
+    <string name="app_update_auto_install">Install without asking</string>
+    <string name="app_update_auto_install_hint">When the app is in the background and no agent is working. Android 12+ skips the confirmation after the first in-app update</string>
+    <string name="app_update_channel">App updates</string>
+    <string name="app_update_notify_title">opencode %1$s</string>
+    <string name="app_update_notify_available">A new version is available</string>
+    <string name="app_update_notify_ready">Downloaded, ready to install</string>
+    <string name="app_update_notify_confirm">Tap to install the update</string>
+    <string name="app_update_done_title">Updated to %1$s</string>
+    <string name="app_update_done_body">Settings and the environment were kept</string>
+    <string name="app_update_permission_title">Allow updates</string>
+    <string name="app_update_permission_text">To update itself, opencode needs the “Install unknown apps” permission. Turn it on and come back; the update then installs.</string>
+    <string name="app_update_later">Later</string>
+</resources>

@@ -116,6 +116,10 @@ data class AppSettings(
     /** Keep the bundled opencode binary up to date from GitHub releases (Local mode). */
     val opencodeAutoUpdate: Boolean = true,
     val opencodeLastUpdateCheck: Long = 0L,
+    /** Check GitHub releases for a newer APK and download it in the background. */
+    val appAutoUpdate: Boolean = true,
+    /** Install a downloaded update without asking (silent on Android 12+ once the app installed itself). */
+    val appAutoInstall: Boolean = true,
     val chat: ChatSettings = ChatSettings(),
     val phone: PhoneAccessSettings = PhoneAccessSettings(),
     /** User context window per model (`provider/model` → tokens), overrides the catalogue. */

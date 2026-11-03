@@ -27,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Hub
@@ -92,6 +93,7 @@ fun SettingsScreen(
     onOpenStats: () -> Unit = {},
     onOpenEnv: () -> Unit = {},
     onOpenTasks: () -> Unit = {},
+    onOpenBackup: () -> Unit = {},
 ) {
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(container))
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -240,6 +242,14 @@ fun SettingsScreen(
 
         Spacer(Modifier.height(16.dp))
         SettingsGroup {
+            SettingsItem(
+                title = stringResource(R.string.backup_title),
+                subtitle = stringResource(R.string.backup_hub_subtitle),
+                icon = Icons.Default.Backup,
+                showChevron = true,
+                onClick = onOpenBackup,
+            )
+            SettingsDivider()
             SettingsItem(
                 title = stringResource(R.string.settings_about),
                 subtitle = stringResource(R.string.settings_about_subtitle),

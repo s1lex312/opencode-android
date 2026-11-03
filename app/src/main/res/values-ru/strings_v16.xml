@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Settings backup -->
+    <string name="backup_title">Резервная копия</string>
+    <string name="backup_hub_subtitle">Настройки переживают переустановку</string>
+    <string name="backup_group_file">Файл настроек</string>
+    <string name="backup_auto">Сохранять автоматически</string>
+    <string name="backup_auto_never">Ещё не сохранялась</string>
+    <string name="backup_auto_saved">%1$s · сохранено %2$s</string>
+    <string name="backup_auto_error">Не удалось сохранить: %1$s</string>
+    <string name="backup_no_storage">На Android 8–9 нужен доступ к памяти: выберите место через «Сохранить в…»</string>
+    <string name="backup_save_now">Сохранить сейчас</string>
+    <string name="backup_saved">Сохранено</string>
+    <string name="backup_save_failed">Не удалось сохранить копию</string>
+    <string name="backup_save_as">Сохранить в…</string>
+    <string name="backup_save_as_hint">Выберите файл, например на облачном диске; дальше копия будет сохраняться туда</string>
+    <string name="backup_restore">Восстановить из файла</string>
+    <string name="backup_restore_hint">Download/opencode/opencode-settings.json от прошлой установки</string>
+    <string name="backup_password">Пароль для ключей</string>
+    <string name="backup_password_on">Ключи API, пароли серверов и вход в провайдеров сохраняются зашифрованными</string>
+    <string name="backup_password_off">Не задан: ключи API и пароли в файл не попадают</string>
+    <string name="backup_password_title">Пароль копии</string>
+    <string name="backup_password_text">Ключи и пароли в файле шифруются этим паролем (AES-256). Запомните его: без него их не восстановить.</string>
+    <string name="backup_password_field">Пароль</string>
+    <string name="backup_password_repeat">Повторите пароль</string>
+    <string name="backup_password_mismatch">Пароли не совпадают</string>
+    <string name="backup_password_short">Не меньше 6 символов</string>
+    <string name="backup_password_remove">Убрать</string>
+    <string name="backup_group_cloud">Аккаунт Google</string>
+    <string name="backup_cloud">Резервное копирование Android</string>
+    <string name="backup_cloud_hint">Если в настройках телефона включено резервное копирование, Android примерно раз в сутки сохраняет настройки в аккаунт Google и возвращает их при повторной установке. Ключи попадают туда, только если копия зашифрована блокировкой экрана.</string>
+    <string name="backup_what">Что сохраняется</string>
+    <string name="backup_what_hint">Все настройки приложения, серверы, системные промпты, хуки, сниппеты, бюджет и конфиг opencode встроенного сервера (MCP, агенты, команды, провайдеры). История чатов не сохраняется.</string>
+
+    <!-- Restore -->
+    <string name="restore_offer_title">Восстановить настройки?</string>
+    <string name="restore_offer_text">Если вы уже пользовались opencode на этом телефоне, выберите файл копии: Download/opencode/opencode-settings.json.</string>
+    <string name="restore_offer_pick">Выбрать файл</string>
+    <string name="restore_offer_skip">Начать с нуля</string>
+    <string name="restore_password_title">Пароль копии</string>
+    <string name="restore_password_text">Ключи и пароли в этой копии зашифрованы. Введите пароль копии или восстановите всё остальное без них.</string>
+    <string name="restore_password_wrong">Неверный пароль</string>
+    <string name="restore_without_keys">Без ключей</string>
+    <string name="restore_action">Восстановить</string>
+    <string name="restore_working">Восстанавливаю…</string>
+    <string name="restore_done_title">Настройки восстановлены</string>
+    <string name="restore_done_text">Приложение перезапустится, чтобы их применить.</string>
+    <string name="restore_done_no_keys">Ключи и пароли не восстановлены: введите их заново в настройках.</string>
+    <string name="restore_failed">Не удалось восстановить: %1$s</string>
+    <string name="restore_cloud_title">Настройки вернулись</string>
+    <string name="restore_cloud_text">Android восстановил настройки из резервной копии в аккаунте Google.</string>
+    <string name="restart_app">Перезапустить</string>
+
+    <!-- App update -->
+    <string name="app_update_group">Обновление приложения</string>
+    <string name="app_update_current">Версия %1$s</string>
+    <string name="app_update_idle">Обновления берутся из релизов на GitHub</string>
+    <string name="app_update_checking">Проверяю…</string>
+    <string name="app_update_up_to_date">Последняя версия</string>
+    <string name="app_update_available">Доступна версия %1$s (%2$s)</string>
+    <string name="app_update_downloading">Скачиваю: %1$d%%</string>
+    <string name="app_update_ready">Версия %1$s скачана</string>
+    <string name="app_update_installing">Устанавливаю…</string>
+    <string name="app_update_needs_permission">Разрешите приложению устанавливать обновления</string>
+    <string name="app_update_signature">Этот релиз подписан другим ключом: один раз поставьте его вручную (сначала удалите старую версию, потом верните настройки из копии)</string>
+    <string name="app_update_failed">Не удалось обновить: %1$s</string>
+    <string name="app_update_check">Проверить</string>
+    <string name="app_update_install">Установить</string>
+    <string name="app_update_download">Обновить</string>
+    <string name="app_update_allow">Разрешить</string>
+    <string name="app_update_auto">Обновлять автоматически</string>
+    <string name="app_update_auto_hint">Проверять каждые 6 часов и скачивать в фоне (Full — только по Wi-Fi)</string>
+    <string name="app_update_auto_install">Устанавливать без вопросов</string>
+    <string name="app_update_auto_install_hint">Когда приложение свёрнуто и агент не работает. На Android 12+ после первого обновления из приложения подтверждение больше не спрашивается</string>
+    <string name="app_update_channel">Обновления приложения</string>
+    <string name="app_update_notify_title">opencode %1$s</string>
+    <string name="app_update_notify_available">Вышла новая версия</string>
+    <string name="app_update_notify_ready">Скачана, можно устанавливать</string>
+    <string name="app_update_notify_confirm">Нажмите, чтобы установить обновление</string>
+    <string name="app_update_done_title">Обновлено до %1$s</string>
+    <string name="app_update_done_body">Настройки и окружение сохранены</string>
+    <string name="app_update_permission_title">Разрешить обновления</string>
+    <string name="app_update_permission_text">Чтобы обновляться самому, opencode нужно разрешение «Установка неизвестных приложений». Включите его и вернитесь, после этого обновление установится.</string>
+    <string name="app_update_later">Позже</string>
+</resources>
