@@ -137,6 +137,11 @@ data class PluginsState(
     val busy: Set<String> = emptySet(),
     /** Plugins being installed right now, id → name, so the screen can show them before they are recorded. */
     val installing: Map<String, String> = emptyMap(),
+    /** Plugin id → the MCP server whose packages are being downloaded ahead of its first connect. */
+    val downloading: Map<String, String> = emptyMap(),
+    /** Installed plugins whose source now serves different content, id → the new version. */
+    val updates: Map<String, PluginPreview> = emptyMap(),
+    val checkingUpdates: Boolean = false,
 )
 
 class PluginException(message: String) : Exception(message)
@@ -154,6 +159,8 @@ class PluginManager(
     private val workbench: Workbench,
     private val localConfig: LocalConfigFile,
     private val restartServer: () -> Unit,
+    /** Downloads the packages of local MCP servers (name → argv) before they connect; returns warnings. */
+    private val prepareMcp: suspend (Map<String, List<String>>, (String) -> Unit) -> List<String> = { _, _ -> emptyList() },
 ) {
     private val file = File(context.filesDir, "plugins.json")
     private val _state = MutableStateFlow(PluginsState(installed = load()))
@@ -213,8 +220,24 @@ class PluginManager(
         _state.update { it.copy(installing = it.installing + (manifest.id to manifest.name)) }
         try {
             val previous = _state.value.installed.firstOrNull { it.manifest.id == manifest.id }
-            if (previous != null) removeLocalParts(previous)
-            val warnings = applyServerParts(manifest, enabled = true)
+            val warnings = mutableListOf<String>()
+            var restart = false
+            if (previous != null) {
+                removeLocalParts(previous)
+                // An update may drop servers, agents or commands the old version added.
+                val (dropped, needsRestart) = removeServerParts(
+                    mcp = previous.manifest.mcp.keys - manifest.mcp.keys,
+                    agents = previous.manifest.agent.keys - manifest.agent.keys,
+                    commands = previous.manifest.command.keys - manifest.command.keys,
+                )
+                warnings += dropped
+                restart = needsRestart
+            }
+            warnings += prepareMcp(localCommands(manifest)) { server ->
+                _state.update { it.copy(downloading = it.downloading + (manifest.id to server)) }
+            }
+            _state.update { it.copy(downloading = it.downloading - manifest.id) }
+            warnings += applyServerParts(manifest, enabled = true)
             val prefix = "plugin:${manifest.id}:"
             val prompts = manifest.systemPrompts.mapIndexed { index, prompt ->
                 SystemPromptProfile(id = "$prefix$index", name = prompt.name, text = prompt.text)
@@ -256,11 +279,37 @@ class PluginManager(
                 warnings = warnings,
             )
             persist(_state.value.installed.filterNot { it.manifest.id == manifest.id } + installed)
+            _state.update { it.copy(updates = it.updates - manifest.id) }
+            if (restart) restartServer()
             return installed
         } finally {
-            _state.update { it.copy(installing = it.installing - manifest.id) }
+            _state.update { it.copy(installing = it.installing - manifest.id, downloading = it.downloading - manifest.id) }
             release(manifest.id)
+        }
+    }
 
+    /**
+     * Re-downloads every installed plugin from its https source and records those whose content
+     * changed. A plugin listed in the catalogue with a pinned SHA-256 must match that pin.
+     */
+    suspend fun checkUpdates() {
+        if (_state.value.checkingUpdates) return
+        _state.update { it.copy(checkingUpdates = true) }
+        try {
+            val catalog = _state.value.catalog.associateBy { it.id }
+            val found = mutableMapOf<String, PluginPreview>()
+            _state.value.installed.forEach { plugin ->
+                val entry = catalog[plugin.manifest.id]
+                val url = entry?.url ?: plugin.source
+                if (!url.startsWith("https://")) return@forEach
+                // The catalogue pins what it lists: an unchanged pin means no download is needed.
+                if (entry != null && entry.sha256.isNotBlank() && entry.sha256.equals(plugin.sha256, ignoreCase = true)) return@forEach
+                val fresh = runCatching { preview(url, entry?.sha256) }.getOrNull() ?: return@forEach
+                if (fresh.sha256 != plugin.sha256 && fresh.manifest.id == plugin.manifest.id) found[plugin.manifest.id] = fresh
+            }
+            _state.update { it.copy(updates = found) }
+        } finally {
+            _state.update { it.copy(checkingUpdates = false) }
         }
     }
 
@@ -287,29 +336,10 @@ class PluginManager(
         val plugin = _state.value.installed.firstOrNull { it.manifest.id == id } ?: return emptyList()
         if (!acquire(id)) throw PluginException("\"${plugin.manifest.name}\" is busy, try again when it finishes")
         try {
-            val warnings = mutableListOf<String>()
-            val local = settings.current().isLocalMode
-            var restart = false
-            plugin.manifest.mcp.keys.forEach { name ->
-                when (val result = repository.mcpRemove(name)) {
-                    is ApiResult.Ok -> if (!result.value) {
-                        if (local && localConfig.remove(listOf("mcp", name))) restart = true else warnings += "mcp $name: disabled, not deleted"
-                    }
-                    is ApiResult.Err -> if (local && localConfig.remove(listOf("mcp", name))) restart = true else warnings += "mcp $name: ${result.message}"
-                }
-            }
-            listOf("agent" to plugin.manifest.agent.keys, "command" to plugin.manifest.command.keys).forEach { (section, names) ->
-                names.forEach { name ->
-                    if (local && localConfig.remove(listOf(section, name))) {
-                        restart = true
-                    } else {
-                        if (section == "agent") repository.patchGlobalConfig(buildJsonObject { put("agent", buildJsonObject { put(name, buildJsonObject { put("disable", true) }) }) })
-                        warnings += "$section $name: ${if (section == "agent") "disabled" else "left in the server config"}"
-                    }
-                }
-            }
+            val (warnings, restart) = removeServerParts(plugin.manifest.mcp.keys, plugin.manifest.agent.keys, plugin.manifest.command.keys)
             removeLocalParts(plugin)
             persist(_state.value.installed.filterNot { it.manifest.id == id })
+            _state.update { it.copy(updates = it.updates - id) }
             if (restart) restartServer()
             return warnings
         } finally {
@@ -318,6 +348,43 @@ class PluginManager(
     }
 
     // ------------------------------------------------------------------ internals
+
+    /** Local MCP servers the manifest adds, name → argv, for [prepareMcp]. */
+    private fun localCommands(manifest: PluginManifest): Map<String, List<String>> =
+        manifest.mcp.mapNotNull { (name, obj) ->
+            (ConfigJson.decodeMcp(obj) as? ai.opencode.android.data.model.McpConfig.Local)?.let { name to it.command }
+        }.toMap()
+
+    /**
+     * Deletes MCP servers, agents and commands from the server config. 1.x cannot delete over the
+     * API, so on the in-app server the config file is edited (then the server must restart);
+     * elsewhere agents are disabled and the rest is reported as left behind.
+     */
+    private suspend fun removeServerParts(mcp: Set<String>, agents: Set<String>, commands: Set<String>): Pair<List<String>, Boolean> {
+        val warnings = mutableListOf<String>()
+        val local = settings.current().isLocalMode
+        var restart = false
+        mcp.forEach { name ->
+            when (val result = repository.mcpRemove(name)) {
+                is ApiResult.Ok -> if (!result.value) {
+                    if (local && localConfig.remove(listOf("mcp", name))) restart = true else warnings += "mcp $name: disabled, not deleted"
+                }
+                is ApiResult.Err -> if (local && localConfig.remove(listOf("mcp", name))) restart = true else warnings += "mcp $name: ${result.message}"
+            }
+        }
+        listOf("agent" to agents, "command" to commands).forEach { (section, names) ->
+            names.forEach { name ->
+                if (local && localConfig.remove(listOf(section, name))) {
+                    restart = true
+                } else {
+                    if (section == "agent") repository.patchGlobalConfig(buildJsonObject { put("agent", buildJsonObject { put(name, buildJsonObject { put("disable", true) }) }) })
+                    warnings += "$section $name: ${if (section == "agent") "disabled" else "left in the server config"}"
+                }
+            }
+        }
+        return warnings to restart
+    }
+
 
     private suspend fun applyServerParts(manifest: PluginManifest, enabled: Boolean): List<String> {
         val warnings = mutableListOf<String>()

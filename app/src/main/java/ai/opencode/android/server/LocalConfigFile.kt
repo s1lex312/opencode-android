@@ -1,6 +1,8 @@
 package ai.opencode.android.server
 
+import ai.opencode.android.data.config.ConfigHistory
 import ai.opencode.android.data.config.JsoncEdit
+
 import ai.opencode.android.server.provision.EnvPaths
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -12,9 +14,9 @@ import java.io.File
  * override, a custom provider) is only possible by editing the files; the caller then makes the
  * server reload them.
  */
-class LocalConfigFile(private val paths: EnvPaths) {
+class LocalConfigFile(private val paths: EnvPaths, private val history: ConfigHistory? = null) {
 
-    private val dir: File get() = File(paths.rootfsDir, "root/.config/opencode")
+    val dir: File get() = File(paths.rootfsDir, "root/.config/opencode")
 
     /** The file opencode writes to: same lookup order as its `globalConfigFile()`. */
     fun file(): File? = CANDIDATES.map { File(dir, it) }.firstOrNull { it.isFile }
@@ -30,6 +32,7 @@ class LocalConfigFile(private val paths: EnvPaths) {
         CANDIDATES.map { File(dir, it) }.filter { it.isFile }.forEach { file ->
             val text = runCatching { file.readText() }.getOrNull() ?: return@forEach
             val updated = JsoncEdit.remove(text, path) ?: return@forEach
+            history?.keep(text, ConfigHistory.Source.APP)
             write(file, updated)
             changed = true
         }

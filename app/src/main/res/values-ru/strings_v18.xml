@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="config_history_source_editor">сохранено в редакторе</string>
+    <string name="config_history_source_app">до правки приложением</string>
+    <string name="config_history_source_external">до правки сервером или агентом</string>
+
+    <string name="plugins_check_updates">Проверить обновления</string>
+    <string name="plugins_checking_updates">Проверка…</string>
+    <string name="plugins_no_updates">Все плагины свежие</string>
+    <string name="plugins_updates_found">Доступно обновлений: %1$d</string>
+    <string name="plugins_downloading">Скачиваются пакеты для %1$s…</string>
+    <string name="plugins_update_to">Обновить: %1$s</string>
+    <string name="plugins_same_version_changed">%1$s (изменён)</string>
+    <string name="plugins_update_title">Обновление %1$s: %2$s</string>
+    <string name="plugins_update">Обновить</string>
+
+    <string name="mcp_status_title">Состояние</string>
+    <string name="mcp_summary_connected">Подключено: %1$d</string>
+    <string name="mcp_summary_pending">Подключается: %1$d</string>
+    <string name="mcp_summary_auth">Нужен вход: %1$d</string>
+    <string name="mcp_summary_failed">С ошибкой: %1$d</string>
+    <string name="mcp_summary_disabled">Выключено: %1$d</string>
+    <string name="mcp_reconnect_failed">Переподключить упавшие (%1$d)</string>
+    <string name="mcp_status_since">%1$s, %2$s</string>
+    <string name="mcp_error">Ошибка</string>
+    <string name="mcp_last_error_at">Последняя ошибка (%1$s)</string>
+    <string name="mcp_copy_error">Скопировать ошибку</string>
+    <string name="mcp_connects">Подключения</string>
+    <string name="mcp_connect_ok">успешно</string>
+    <string name="mcp_history">Смена статусов</string>
+    <string name="mcp_history_empty">С запуска приложения подключений и смены статуса не было.</string>
+    <string name="mcp_connected_in">подключён за %1$s</string>
+    <string name="duration_ms">%1$d мс</string>
+    <string name="duration_s">%1$d с</string>
+    <string name="duration_min_s">%1$d мин %2$d с</string>
+
+    <string name="providers_probe_title">Модели эндпоинта</string>
+    <string name="providers_probe_hint">Получите список, который эндпоинт отдаёт по /models, отметьте модели и отправьте им однострочный тестовый запрос: добавятся только отвечающие модели.</string>
+    <string name="providers_probe_fetch">Получить модели</string>
+    <string name="providers_probe_refetch">Получить заново</string>
+    <string name="providers_probe_empty">Эндпоинт вернул пустой список моделей, впишите их ниже.</string>
+    <string name="providers_probe_fetch_failed">Не удалось получить модели: %1$s</string>
+    <string name="providers_probe_counts">Моделей %1$d · отмечено %2$d · ответили %3$d · с ошибкой %4$d</string>
+    <string name="providers_probe_all">Все</string>
+    <string name="providers_probe_all_found">Все найденные</string>
+    <string name="providers_probe_none">Снять</string>
+    <string name="providers_probe_test_selected">Проверить отмеченные (%1$d)</string>
+    <string name="providers_probe_stop">Стоп (осталось %1$d)</string>
+    <string name="providers_probe_keep_working">Оставить рабочие</string>
+    <string name="providers_probe_more">Ещё %1$d: уточните поиск</string>
+    <string name="providers_probe_context">контекст %1$s</string>
+    <string name="providers_probe_test_one">Проверить</string>
+    <string name="providers_probe_ok">ответила за %1$d мс: %2$s</string>
+    <string name="providers_probe_failed">нет ответа: %1$s</string>
+    <string name="providers_probe_manual">Ещё модели вручную (через запятую или по строке)</string>
+    <string name="providers_probe_test_manual">Проверить вписанные (%1$d)</string>
+</resources>

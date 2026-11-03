@@ -35,6 +35,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
@@ -69,6 +70,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 /** A ready-made MCP server the user can add with one tap and then adjust. */
@@ -98,6 +100,11 @@ fun McpScreen(container: AppContainer, onBack: () -> Unit, onOpenPhoneAccess: ()
     val context = LocalContext.current
     var editing by remember { mutableStateOf<EditTarget?>(null) }
     var codeFor by remember { mutableStateOf<String?>(null) }
+    var detailsFor by remember { mutableStateOf<String?>(null) }
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) { viewModel.autoRefresh() }
+    }
 
     MessageSnackbar(state.message, snackbar, viewModel::messageShown)
     LaunchedEffect(state.pendingAuthUrl) {
@@ -122,13 +129,16 @@ fun McpScreen(container: AppContainer, onBack: () -> Unit, onOpenPhoneAccess: ()
                     if (state.servers.isEmpty()) {
                         EmptyState(title = stringResource(R.string.mcp_empty), message = stringResource(R.string.mcp_empty_body))
                     } else {
+                        StatusSummary(state.servers, onReconnectFailed = viewModel::reconnectFailed, onRefresh = { viewModel.refresh() })
                         SettingsGroup(title = stringResource(R.string.mcp_servers)) {
                             state.servers.forEachIndexed { index, server ->
                                 if (index > 0) SettingsDivider()
                                 McpRow(
                                     server = server,
+                                    health = state.health[server.name],
                                     working = server.name in state.working,
                                     onToggle = { viewModel.toggle(server, it) },
+                                    onOpen = { detailsFor = server.name },
                                     onEdit = { editing = EditTarget(server.name, server.config, existing = true) },
                                     onReconnect = { viewModel.reconnect(server.name) },
                                     onAuth = { viewModel.authenticate(server.name) },
@@ -173,6 +183,24 @@ fun McpScreen(container: AppContainer, onBack: () -> Unit, onOpenPhoneAccess: ()
             },
             onDismiss = { editing = null },
         )
+    }
+    detailsFor?.let { name ->
+        val server = state.servers.firstOrNull { it.name == name }
+        if (server == null) {
+            detailsFor = null
+        } else {
+            McpDetails(
+                server = server,
+                health = state.health[name],
+                working = name in state.working,
+                onReconnect = { viewModel.reconnect(name) },
+                onEdit = {
+                    detailsFor = null
+                    if (name == ANDROID_MCP) onOpenPhoneAccess() else editing = EditTarget(name, server.config, existing = true)
+                },
+                onDismiss = { detailsFor = null },
+            )
+        }
     }
     codeFor?.let { name ->
         CodeDialog(
@@ -219,11 +247,159 @@ private fun statusText(status: McpServerInfo.Status): Pair<String, Color> = when
     McpServerInfo.Status.UNKNOWN -> stringResource(R.string.mcp_status_unknown) to MaterialTheme.colorScheme.outline
 }
 
+/** Counts by status, with one-tap reconnect of the failed ones. */
+@Composable
+private fun StatusSummary(servers: List<McpServerInfo>, onReconnectFailed: () -> Unit, onRefresh: () -> Unit) {
+    val connected = servers.count { it.status == McpServerInfo.Status.CONNECTED }
+    val failed = servers.count { it.status == McpServerInfo.Status.FAILED }
+    val pending = servers.count { it.status == McpServerInfo.Status.PENDING }
+    val auth = servers.count { it.status == McpServerInfo.Status.NEEDS_AUTH || it.status == McpServerInfo.Status.NEEDS_REGISTRATION }
+    val off = servers.count { it.status == McpServerInfo.Status.DISABLED }
+    SettingsGroup(title = stringResource(R.string.mcp_status_title)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                SummaryLine(StatusColors.ok, stringResource(R.string.mcp_summary_connected, connected))
+                if (pending > 0) SummaryLine(StatusColors.warn, stringResource(R.string.mcp_summary_pending, pending))
+                if (auth > 0) SummaryLine(StatusColors.warn, stringResource(R.string.mcp_summary_auth, auth))
+                if (failed > 0) SummaryLine(MaterialTheme.colorScheme.error, stringResource(R.string.mcp_summary_failed, failed))
+                if (off > 0) SummaryLine(MaterialTheme.colorScheme.outline, stringResource(R.string.mcp_summary_disabled, off))
+            }
+            IconButton(onClick = onRefresh) {
+                Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.action_reload))
+            }
+        }
+        if (failed > 0) {
+            TextButton(onClick = onReconnectFailed, modifier = Modifier.padding(start = 8.dp, bottom = 4.dp)) {
+                Text(stringResource(R.string.mcp_reconnect_failed, failed))
+            }
+        }
+    }
+}
+
+@Composable
+private fun SummaryLine(color: Color, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        StatusDot(color)
+        Spacer(Modifier.width(10.dp))
+        Text(text, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+/** "31 s", "2 min 5 s", "800 ms". */
+@Composable
+internal fun formatMillis(millis: Long): String = when {
+    millis < 1_000 -> stringResource(R.string.duration_ms, millis)
+    millis < 60_000 -> stringResource(R.string.duration_s, (millis + 500) / 1_000)
+    else -> stringResource(R.string.duration_min_s, millis / 60_000, (millis % 60_000) / 1_000)
+}
+
+@Composable
+private fun relativeTime(at: Long): String =
+    android.text.format.DateUtils.getRelativeTimeSpanString(at, System.currentTimeMillis(), android.text.format.DateUtils.SECOND_IN_MILLIS).toString()
+
+@Composable
+private fun McpDetails(
+    server: McpServerInfo,
+    health: ai.opencode.android.data.mcp.McpMonitor.Health?,
+    working: Boolean,
+    onReconnect: () -> Unit,
+    onEdit: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val (label, color) = statusText(server.status)
+    val timeFormat = remember { java.text.DateFormat.getTimeInstance(java.text.DateFormat.MEDIUM) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+        modifier = Modifier.padding(16.dp),
+        title = { Text(server.name) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    StatusDot(color)
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        health?.since?.let { stringResource(R.string.mcp_status_since, label, relativeTime(it)) } ?: label,
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    if (working) {
+                        Spacer(Modifier.width(10.dp))
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    }
+                }
+                server.config?.let {
+                    Text(summary(it), style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                val error = server.error?.takeIf { it.isNotBlank() } ?: health?.lastError
+                if (error != null) {
+                    Text(
+                        if (server.error.isNullOrBlank()) {
+                            stringResource(R.string.mcp_last_error_at, health?.lastErrorAt?.let { timeFormat.format(java.util.Date(it)) }.orEmpty())
+                        } else {
+                            stringResource(R.string.mcp_error)
+                        },
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                    androidx.compose.foundation.text.selection.SelectionContainer {
+                        Text(error, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.error)
+                    }
+                    TextButton(
+                        onClick = {
+                            val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
+                            clipboard?.setPrimaryClip(android.content.ClipData.newPlainText(server.name, error))
+                        },
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                    ) { Text(stringResource(R.string.mcp_copy_error)) }
+                }
+                val connects = health?.connects.orEmpty()
+                if (connects.isNotEmpty()) {
+                    Text(stringResource(R.string.mcp_connects), style = MaterialTheme.typography.labelLarge)
+                    connects.asReversed().forEach { connect ->
+                        Text(
+                            "${timeFormat.format(java.util.Date(connect.at))} · ${formatMillis(connect.millis)} · " +
+                                (if (connect.ok) stringResource(R.string.mcp_connect_ok) else connect.error.orEmpty().take(120)),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (connect.ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+                val changes = health?.changes.orEmpty()
+                if (changes.size > 1) {
+                    Text(stringResource(R.string.mcp_history), style = MaterialTheme.typography.labelLarge)
+                    changes.asReversed().forEach { change ->
+                        val (text, tint) = statusText(change.status)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            StatusDot(tint)
+                            Spacer(Modifier.width(8.dp))
+                            Text("${timeFormat.format(java.util.Date(change.at))} · $text", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+                if (connects.isEmpty() && changes.size <= 1) {
+                    Text(stringResource(R.string.mcp_history_empty), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = !working, onClick = onReconnect) { Text(stringResource(R.string.mcp_reconnect)) }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = onEdit) { Text(stringResource(R.string.action_edit)) }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
+            }
+        },
+    )
+}
+
 @Composable
 private fun McpRow(
     server: McpServerInfo,
+    health: ai.opencode.android.data.mcp.McpMonitor.Health?,
     working: Boolean,
     onToggle: (Boolean) -> Unit,
+    onOpen: () -> Unit,
     onEdit: () -> Unit,
     onReconnect: () -> Unit,
     onAuth: () -> Unit,
@@ -239,7 +415,7 @@ private fun McpRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = if (phone) onPhoneAccess else onEdit)
+            .clickable(onClick = onOpen)
             .padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -247,8 +423,10 @@ private fun McpRow(
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(server.name, style = MaterialTheme.typography.bodyLarge)
+            val connectTime = health?.lastConnect?.takeIf { it.ok }?.let { stringResource(R.string.mcp_connected_in, formatMillis(it.millis)) }
             Text(
-                text = listOfNotNull(label, server.config?.let(::summary)).joinToString(" · "),
+                text = listOfNotNull(label, connectTime, server.config?.let(::summary)).joinToString(" · "),
+
                 style = MaterialTheme.typography.bodySmall,
                 fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -272,7 +450,7 @@ private fun McpRow(
         Box {
             IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.chat_more)) }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                DropdownMenuItem(text = { Text(stringResource(R.string.action_edit)) }, onClick = { menu = false; onEdit() })
+                DropdownMenuItem(text = { Text(stringResource(R.string.action_edit)) }, onClick = { menu = false; if (phone) onPhoneAccess() else onEdit() })
                 DropdownMenuItem(text = { Text(stringResource(R.string.mcp_reconnect)) }, onClick = { menu = false; onReconnect() })
                 if (server.config is McpConfig.Remote || server.status == McpServerInfo.Status.NEEDS_AUTH) {
                     DropdownMenuItem(text = { Text(stringResource(R.string.mcp_sign_in)) }, onClick = { menu = false; onAuth() })

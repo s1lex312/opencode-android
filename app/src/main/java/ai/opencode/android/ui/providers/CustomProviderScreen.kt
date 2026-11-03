@@ -18,6 +18,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
+
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -58,7 +60,9 @@ fun CustomProviderScreen(container: AppContainer, onBack: () -> Unit) {
     var models by rememberSaveable { mutableStateOf("") }
     var showErrors by rememberSaveable { mutableStateOf(false) }
 
-    val modelList = models.split(',', '\n').map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+    val manualModels = models.split(',', '\n').map { it.trim() }.filter { it.isNotEmpty() }
+    val pickedModels = state.remoteModels.map { it.id }.filter { it in state.selected }
+    val modelList = (pickedModels + manualModels).distinct()
     val idOk = CustomProviderViewModel.ID_PATTERN.matches(id)
     val urlOk = url.trim().let { it.startsWith("http://") || it.startsWith("https://") }
     val modelsOk = modelList.isNotEmpty()
@@ -146,10 +150,27 @@ fun CustomProviderScreen(container: AppContainer, onBack: () -> Unit) {
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     modifier = Modifier.fillMaxWidth(),
                 )
+                RemoteModelsSection(
+                    state = state,
+                    canFetch = urlOk,
+                    onFetch = { viewModel.fetchModels(url.trim(), key) },
+                    onToggle = viewModel::toggle,
+                    onSelect = viewModel::select,
+                    onSelectWorking = viewModel::selectWorking,
+                    onTest = { ids -> viewModel.test(url.trim(), key, ids) },
+                    onStop = viewModel::stopTests,
+                )
+                if (manualModels.isNotEmpty()) {
+                    OutlinedButton(
+                        onClick = { viewModel.test(url.trim(), key, manualModels) },
+                        enabled = urlOk && state.testing.isEmpty(),
+                    ) { Text(stringResource(R.string.providers_probe_test_manual, manualModels.size)) }
+                    manualModels.forEach { model -> state.tests[model]?.let { TestLine(model, it) } }
+                }
                 OutlinedTextField(
                     value = models,
                     onValueChange = { models = it },
-                    label = { Text(stringResource(R.string.providers_custom_models)) },
+                    label = { Text(stringResource(if (state.remoteModels.isEmpty()) R.string.providers_custom_models else R.string.providers_probe_manual)) },
                     supportingText = {
                         Text(stringResource(if (showErrors && !modelsOk) R.string.providers_custom_err_models else R.string.providers_custom_models_hint))
                     },

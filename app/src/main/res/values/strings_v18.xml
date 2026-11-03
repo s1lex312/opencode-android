@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="config_history_source_editor">saved in the editor</string>
+    <string name="config_history_source_app">before an app change</string>
+    <string name="config_history_source_external">before a server or agent change</string>
+
+    <string name="plugins_check_updates">Check for updates</string>
+    <string name="plugins_checking_updates">Checking…</string>
+    <string name="plugins_no_updates">All plugins are up to date</string>
+    <string name="plugins_updates_found">Updates available: %1$d</string>
+    <string name="plugins_downloading">Downloading packages for %1$s…</string>
+    <string name="plugins_update_to">Update: %1$s</string>
+    <string name="plugins_same_version_changed">%1$s (changed)</string>
+    <string name="plugins_update_title">Update %1$s: %2$s</string>
+    <string name="plugins_update">Update</string>
+
+    <string name="mcp_status_title">Status</string>
+    <string name="mcp_summary_connected">Connected: %1$d</string>
+    <string name="mcp_summary_pending">Connecting: %1$d</string>
+    <string name="mcp_summary_auth">Need sign-in: %1$d</string>
+    <string name="mcp_summary_failed">Failed: %1$d</string>
+    <string name="mcp_summary_disabled">Off: %1$d</string>
+    <string name="mcp_reconnect_failed">Reconnect failed (%1$d)</string>
+    <string name="mcp_status_since">%1$s, %2$s</string>
+    <string name="mcp_error">Error</string>
+    <string name="mcp_last_error_at">Last error (%1$s)</string>
+    <string name="mcp_copy_error">Copy the error</string>
+    <string name="mcp_connects">Connects</string>
+    <string name="mcp_connect_ok">success</string>
+    <string name="mcp_history">Status changes</string>
+    <string name="mcp_history_empty">No connects or status changes seen since the app started.</string>
+    <string name="mcp_connected_in">connected in %1$s</string>
+    <string name="duration_ms">%1$d ms</string>
+    <string name="duration_s">%1$d s</string>
+    <string name="duration_min_s">%1$d min %2$d s</string>
+
+    <string name="providers_probe_title">Models of the endpoint</string>
+    <string name="providers_probe_hint">Fetch the list the endpoint serves under /models, pick models and send them a one-line test prompt, so only models that answer are added.</string>
+    <string name="providers_probe_fetch">Fetch models</string>
+    <string name="providers_probe_refetch">Fetch again</string>
+    <string name="providers_probe_empty">The endpoint answered with an empty model list; type the models below.</string>
+    <string name="providers_probe_fetch_failed">Could not fetch the models: %1$s</string>
+    <string name="providers_probe_counts">Models: %1$d · picked: %2$d · answered: %3$d · failed: %4$d</string>
+    <string name="providers_probe_all">All</string>
+    <string name="providers_probe_all_found">All found</string>
+    <string name="providers_probe_none">None</string>
+    <string name="providers_probe_test_selected">Test picked (%1$d)</string>
+    <string name="providers_probe_stop">Stop (left: %1$d)</string>
+    <string name="providers_probe_keep_working">Keep only working</string>
+    <string name="providers_probe_more">Not shown: %1$d, narrow the search</string>
+    <string name="providers_probe_context">context %1$s</string>
+    <string name="providers_probe_test_one">Test</string>
+    <string name="providers_probe_ok">answered in %1$d ms: %2$s</string>
+    <string name="providers_probe_failed">no answer: %1$s</string>
+    <string name="providers_probe_manual">More models, typed (comma or one per line)</string>
+    <string name="providers_probe_test_manual">Test typed models (%1$d)</string>
+</resources>

@@ -14,9 +14,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.io.IOException
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /** The config being edited: the in-app server's file, or the remote server's merged config. */
 data class ConfigDocument(
@@ -25,7 +22,6 @@ data class ConfigDocument(
     val path: String?,
 )
 
-data class ConfigVersion(val file: File, val createdAt: Long, val sizeBytes: Long)
 
 sealed interface ConfigCheck {
     data class SyntaxError(val message: String) : ConfigCheck
@@ -43,8 +39,8 @@ class ConfigEditor(
     private val settings: SettingsRepository,
     private val repository: SessionRepository,
     private val client: OkHttpClient,
+    private val versions: ConfigHistory,
 ) {
-    private val historyDir = File(context.filesDir, "config-history")
     private val schemaFile = File(context.filesDir, "opencode-config-schema.json")
     private val pretty = Json { prettyPrint = true }
 
@@ -99,7 +95,7 @@ class ConfigEditor(
         } else {
             val file = File(path)
             file.parentFile?.mkdirs()
-            if (file.isFile) snapshot(file.readText())
+            if (file.isFile) versions.keep(file.readText(), ConfigHistory.Source.EDITOR)
             val temp = File(file.parentFile, file.name + ".tmp")
             temp.writeText(text)
             if (!temp.renameTo(file)) {
@@ -110,20 +106,9 @@ class ConfigEditor(
         }
     }
 
-    fun history(): List<ConfigVersion> =
-        historyDir.listFiles()?.filter { it.isFile && it.name.endsWith(".json") }
-            ?.sortedByDescending { it.lastModified() }
-            ?.map { ConfigVersion(it, it.lastModified(), it.length()) }
-            .orEmpty()
+    fun history(): List<ConfigVersion> = versions.versions()
 
-    fun read(version: ConfigVersion): String = version.file.readText()
-
-    private fun snapshot(text: String) {
-        historyDir.mkdirs()
-        val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
-        File(historyDir, "opencode-$stamp.json").writeText(text)
-        history().drop(MAX_HISTORY).forEach { it.file.delete() }
-    }
+    fun read(version: ConfigVersion): String = versions.read(version)
 
     /** opencode's schema: memory, then the cached copy, then the network (and cache it). */
     private suspend fun schema(): JsonSchemaValidator? {
@@ -151,7 +136,7 @@ class ConfigEditor(
     companion object {
         const val SCHEMA_URL = "https://opencode.ai/config.json"
         private const val SCHEMA_MAX_AGE_MS = 7L * 24 * 60 * 60 * 1000
-        private const val MAX_HISTORY = 20
+
         private val CANDIDATES = listOf("opencode.jsonc", "opencode.json", "config.json")
         private const val DEFAULT_TEXT = "{\n  \"\$schema\": \"https://opencode.ai/config.json\"\n}\n"
     }

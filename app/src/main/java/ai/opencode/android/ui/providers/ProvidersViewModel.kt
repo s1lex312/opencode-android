@@ -7,6 +7,9 @@ import ai.opencode.android.data.model.FeaturedProviders
 import ai.opencode.android.data.model.OAuthSession
 import ai.opencode.android.data.model.ProviderAuthMethod
 import ai.opencode.android.data.model.ProviderInfo
+import ai.opencode.android.data.providers.ModelProbe
+import ai.opencode.android.data.providers.ModelTest
+import ai.opencode.android.data.providers.RemoteModel
 import ai.opencode.android.data.repo.ApiResult
 import ai.opencode.android.data.repo.ProviderRepository
 import ai.opencode.android.data.repo.ServerConnectionManager
@@ -24,7 +27,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 data class ProvidersUiState(
     val connected: Boolean = false,
@@ -170,12 +176,73 @@ data class CustomProviderUiState(
     val error: UiText? = null,
     val done: Boolean = false,
     val message: UiText? = null,
+    /** Models the endpoint lists under `GET /models`. */
+    val remoteModels: List<RemoteModel> = emptyList(),
+    val fetching: Boolean = false,
+    val fetchError: String? = null,
+    /** Listed models picked for the provider. */
+    val selected: Set<String> = emptySet(),
+    val tests: Map<String, ModelTest> = emptyMap(),
+    val testing: Set<String> = emptySet(),
 )
 
-class CustomProviderViewModel(private val repository: ProviderRepository) : ViewModel() {
+class CustomProviderViewModel(private val repository: ProviderRepository, private val probe: ModelProbe) : ViewModel() {
 
     private val _state = MutableStateFlow(CustomProviderUiState())
     val state: StateFlow<CustomProviderUiState> = _state.asStateFlow()
+    private val testJobs = mutableListOf<Job>()
+
+    fun fetchModels(baseUrl: String, apiKey: String) {
+        _state.update { it.copy(fetching = true, fetchError = null) }
+        viewModelScope.launch {
+            runCatching { probe.listModels(baseUrl, apiKey) }
+                .onSuccess { models ->
+                    _state.update { state ->
+                        state.copy(
+                            fetching = false,
+                            remoteModels = models,
+                            // Keep picks that still exist; a short list starts fully selected.
+                            selected = state.selected.filter { id -> models.any { it.id == id } }.toSet()
+                                .ifEmpty { if (models.size <= AUTO_SELECT_MAX) models.map { it.id }.toSet() else emptySet() },
+                            fetchError = if (models.isEmpty()) "" else null,
+                        )
+                    }
+                }
+                .onFailure { e -> _state.update { it.copy(fetching = false, fetchError = e.message ?: e.javaClass.simpleName) } }
+        }
+    }
+
+    fun toggle(id: String) = _state.update { it.copy(selected = if (id in it.selected) it.selected - id else it.selected + id) }
+
+    fun select(ids: Collection<String>) = _state.update { it.copy(selected = ids.toSet()) }
+
+    /** Keeps only the models whose test answered. */
+    fun selectWorking() = _state.update { state -> state.copy(selected = state.selected.filter { state.tests[it]?.ok == true }.toSet()) }
+
+    /** Sends every model in [models] a one-line prompt, [PARALLEL_TESTS] at a time. */
+    fun test(baseUrl: String, apiKey: String, models: Collection<String>) {
+        val pending = models.distinct().filterNot { it in _state.value.testing }
+        if (pending.isEmpty()) return
+        _state.update { it.copy(testing = it.testing + pending, tests = it.tests - pending.toSet()) }
+        testJobs.removeAll { it.isCompleted }
+        testJobs += viewModelScope.launch {
+            val gate = Semaphore(PARALLEL_TESTS)
+            pending.map { model ->
+                launch {
+                    gate.withPermit {
+                        val result = probe.test(baseUrl, apiKey, model)
+                        _state.update { it.copy(testing = it.testing - model, tests = it.tests + (model to result)) }
+                    }
+                }
+            }.joinAll()
+        }
+    }
+
+    fun stopTests() {
+        testJobs.forEach { it.cancel() }
+        testJobs.clear()
+        _state.update { it.copy(testing = emptySet()) }
+    }
 
     fun save(draft: CustomProviderDraft) {
         _state.update { it.copy(saving = true, error = null) }
@@ -192,13 +259,15 @@ class CustomProviderViewModel(private val repository: ProviderRepository) : View
 
     companion object {
         val ID_PATTERN = Regex("^[a-z0-9][a-z0-9-]{1,39}$")
+        private const val PARALLEL_TESTS = 3
+        private const val AUTO_SELECT_MAX = 5
 
         /** `My Local LLM` → `my-local-llm`, the id suggested while the user types a name. */
         fun slug(name: String): String =
             name.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').take(40)
 
         fun factory(container: AppContainer): ViewModelProvider.Factory = viewModelFactory {
-            initializer { CustomProviderViewModel(container.providerRepository) }
+            initializer { CustomProviderViewModel(container.providerRepository, ModelProbe(container.downloadClient)) }
         }
     }
 }

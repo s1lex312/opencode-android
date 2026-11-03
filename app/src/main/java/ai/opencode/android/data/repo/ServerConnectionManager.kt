@@ -137,7 +137,11 @@ class ServerConnectionManager(
         var attempt = 0
         var openedBefore = false
         connection.api.eventStream().collect { signal ->
+            // Any frame, and any gap in the stream, may mean the server changed: shared reads
+            // must not outlive it.
+            connection.api.http.invalidateReads()
             when (signal) {
+
                 is StreamSignal.Opened -> {
                     val wasReconnect = openedBefore || attempt > 0
                     attempt = 0

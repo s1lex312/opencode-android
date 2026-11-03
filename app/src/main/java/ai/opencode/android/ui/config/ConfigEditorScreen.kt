@@ -4,6 +4,7 @@ import ai.opencode.android.R
 import ai.opencode.android.data.config.ConfigCheck
 import ai.opencode.android.data.config.ConfigDocument
 import ai.opencode.android.data.config.ConfigEditor
+import ai.opencode.android.data.config.ConfigHistory
 import ai.opencode.android.data.config.ConfigVersion
 import ai.opencode.android.di.AppContainer
 import ai.opencode.android.ui.theme.csp
@@ -65,7 +66,7 @@ import java.util.Date
 @Composable
 fun ConfigEditorScreen(container: AppContainer, onBack: () -> Unit) {
     val editor = remember {
-        ConfigEditor(container.context, container.envPaths, container.settingsRepository, container.sessionRepository, ai.opencode.android.server.provision.EnvConfig.downloadClient())
+        ConfigEditor(container.context, container.envPaths, container.settingsRepository, container.sessionRepository, ai.opencode.android.server.provision.EnvConfig.downloadClient(), container.configHistory)
     }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -230,8 +231,15 @@ private fun CheckBanner(check: ConfigCheck?) {
     }
 }
 
+private fun sourceLabel(source: ConfigHistory.Source): Int = when (source) {
+    ConfigHistory.Source.EDITOR -> R.string.config_history_source_editor
+    ConfigHistory.Source.APP -> R.string.config_history_source_app
+    ConfigHistory.Source.EXTERNAL -> R.string.config_history_source_external
+}
+
 @Composable
-private fun HistoryDialog(versions: List<ConfigVersion>, onDismiss: () -> Unit, onRestore: (ConfigVersion) -> Unit) {
+private fun HistoryDialog(
+versions: List<ConfigVersion>, onDismiss: () -> Unit, onRestore: (ConfigVersion) -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.config_history)) },
@@ -239,12 +247,18 @@ private fun HistoryDialog(versions: List<ConfigVersion>, onDismiss: () -> Unit, 
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 if (versions.isEmpty()) Text(stringResource(R.string.config_history_empty))
                 versions.forEach { version ->
-                    Row(Modifier.fillMaxWidth()) {
-                        Text(
-                            "${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.MEDIUM).format(Date(version.createdAt))} · ${version.sizeBytes} B",
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.weight(1f).padding(vertical = 12.dp),
-                        )
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
+                            Text(
+                                DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.MEDIUM).format(Date(version.createdAt)),
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Text(
+                                "${stringResource(sourceLabel(version.source))} · ${version.sizeBytes} B",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                         TextButton(onClick = { onRestore(version) }) { Text(stringResource(R.string.config_history_open)) }
                     }
                 }

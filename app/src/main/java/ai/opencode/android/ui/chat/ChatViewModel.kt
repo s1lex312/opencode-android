@@ -287,6 +287,7 @@ class ChatViewModel(
     private var agent: String = ""
     private var systemPrompt: String? = null
     private var reloadJob: Job? = null
+    private var metaJob: Job? = null
     private var mentionSearchJob: Job? = null
     private var metaLoaded = false
     private var modelsValidated = false
@@ -1179,7 +1180,15 @@ class ChatViewModel(
                 }
             }
 
-            is OpencodeEvent.SessionsChanged -> loadSessionMeta()
+            is OpencodeEvent.SessionsChanged -> {
+                // A turn emits session.updated many times a second; the title and revert point
+                // only need the last one.
+                metaJob?.cancel()
+                metaJob = viewModelScope.launch {
+                    delay(META_DEBOUNCE_MS)
+                    loadSessionMeta()
+                }
+            }
 
             is OpencodeEvent.McpChanged -> loadCommands()
 
@@ -1389,6 +1398,8 @@ class ChatViewModel(
         private const val MENTION_DEBOUNCE_MS = 160L
         private const val MAX_MENTION_SUGGESTIONS = 40
         private const val QUEUE_DRAIN_DELAY_MS = 600L
+        private const val META_DEBOUNCE_MS = 300L
+
 
         /** [CommandSuggestion.source] of saved prompts. */
         const val SNIPPET_SOURCE = "snippet"

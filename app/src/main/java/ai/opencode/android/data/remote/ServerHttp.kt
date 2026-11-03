@@ -43,6 +43,7 @@ class ServerHttp(
 ) {
 
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
+    private val reads = ReadCoalescer()
 
     val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -78,8 +79,22 @@ class ServerHttp(
         return builder.build()
     }
 
-    suspend fun getJson(path: String, query: Map<String, String> = emptyMap()): JsonElement? =
-        withContext(Dispatchers.IO) { execute(Request.Builder().url(url(path, query)).get().build()) }
+    suspend fun getJson(path: String, query: Map<String, String> = emptyMap()): JsonElement? {
+        val target = url(path, query)
+        return reads.get(target.toString(), reusable = REUSABLE_PATHS.matches(target.encodedPath)) {
+            execute(Request.Builder().url(target).get().build())
+        }
+    }
+
+    /**
+     * Something on the server changed (an SSE frame arrived, a write went through): reads started
+     * before this moment may be stale and are no longer shared with new callers.
+     */
+    fun invalidateReads() = reads.invalidate()
+
+    /** GETs answered from a shared request instead of the network, for diagnostics. */
+    val sharedReads: Long get() = reads.shared
+
 
     suspend fun postJson(
         path: String,
@@ -130,6 +145,8 @@ class ServerHttp(
             .build()
 
     private fun execute(request: Request, httpClient: OkHttpClient = client): JsonElement? {
+        val write = request.method != "GET"
+        if (write) reads.invalidate()
         try {
             // MetadataLoggingInterceptor already logs method/path/status/duration once per call.
             httpClient.newCall(request).execute().use { response ->
@@ -143,6 +160,8 @@ class ServerHttp(
         } catch (t: Throwable) {
             if (BuildConfig.DEBUG) Log.d(LOG_TAG, "${request.method} ${request.url.encodedPath} failed: ${t.javaClass.simpleName}")
             throw ApiException(null, NetworkErrors.describe(t), cause = t)
+        } finally {
+            if (write) reads.invalidate()
         }
     }
 
@@ -223,5 +242,13 @@ class ServerHttp(
 
     private companion object {
         const val LOG_TAG = "opencode-http"
+
+        /**
+         * Reads whose every change is announced on the event stream, so a finished answer can be
+         * handed to callers that arrive before the next event. Other GETs (files, diffs, config)
+         * only share a request that is still in flight.
+         */
+        val REUSABLE_PATHS = Regex("^/(session(/[^/]+(/message)?)?|session/status|question|permission|agent|command|config/providers|mcp|provider)$")
     }
+
 }

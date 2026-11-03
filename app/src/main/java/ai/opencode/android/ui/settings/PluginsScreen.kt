@@ -94,7 +94,11 @@ fun PluginsScreen(container: AppContainer, onBack: () -> Unit, onOpenEnv: () -> 
         }
     }
 
-    LaunchedEffect(Unit) { if (state.catalog.isEmpty()) manager.loadCatalog() }
+    LaunchedEffect(Unit) {
+        if (state.catalog.isEmpty()) manager.loadCatalog()
+        // Plugins are a handful of small JSON files: checking them on every visit is cheap.
+        if (state.installed.isNotEmpty()) work.launch { runCatching { manager.checkUpdates() } }
+    }
 
     SettingsPage(
         title = stringResource(R.string.plugins_title),
@@ -124,13 +128,29 @@ fun PluginsScreen(container: AppContainer, onBack: () -> Unit, onOpenEnv: () -> 
                 InstalledRow(
                     plugin = plugin,
                     busy = plugin.manifest.id in state.busy,
+                    downloading = state.downloading[plugin.manifest.id],
+                    update = state.updates[plugin.manifest.id],
                     onToggle = { enabled -> work.launch { runCatching { manager.setEnabled(plugin.manifest.id, enabled) }.onFailure(::fail) } },
+                    onUpdate = { preview = state.updates[plugin.manifest.id] },
                     onRemove = { removing = plugin },
                 )
             }
-            state.installing.filterKeys { id -> state.installed.none { it.manifest.id == id } }.forEach { (_, name) ->
+            state.installing.filterKeys { id -> state.installed.none { it.manifest.id == id } }.forEach { (id, name) ->
                 if (state.installed.isNotEmpty()) SettingsDivider()
-                InstallingRow(name)
+                InstallingRow(name, downloading = state.downloading[id])
+            }
+            if (state.installed.isNotEmpty()) {
+                SettingsDivider()
+                SettingsItem(
+                    title = stringResource(R.string.plugins_check_updates),
+                    subtitle = when {
+                        state.checkingUpdates -> stringResource(R.string.plugins_checking_updates)
+                        state.updates.isEmpty() -> stringResource(R.string.plugins_no_updates)
+                        else -> stringResource(R.string.plugins_updates_found, state.updates.size)
+                    },
+                    icon = Icons.Default.Refresh,
+                    onClick = { if (!state.checkingUpdates) work.launch { runCatching { manager.checkUpdates() }.onFailure(::fail) } },
+                )
             }
         }
 
@@ -184,8 +204,10 @@ fun PluginsScreen(container: AppContainer, onBack: () -> Unit, onOpenEnv: () -> 
     }
 
     preview?.let { current ->
+        val updating = state.installed.firstOrNull { it.manifest.id == current.manifest.id }
         PreviewDialog(
             preview = current,
+            updateFrom = updating,
             busy = current.manifest.id in state.busy,
             onDismiss = { preview = null },
             onOpenEnv = onOpenEnv,
@@ -275,7 +297,15 @@ fun PluginsScreen(container: AppContainer, onBack: () -> Unit, onOpenEnv: () -> 
 }
 
 @Composable
-private fun InstalledRow(plugin: InstalledPlugin, busy: Boolean, onToggle: (Boolean) -> Unit, onRemove: () -> Unit) {
+private fun InstalledRow(
+    plugin: InstalledPlugin,
+    busy: Boolean,
+    downloading: String?,
+    update: PluginPreview?,
+    onToggle: (Boolean) -> Unit,
+    onUpdate: () -> Unit,
+    onRemove: () -> Unit,
+) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Default.Extension, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
@@ -285,6 +315,14 @@ private fun InstalledRow(plugin: InstalledPlugin, busy: Boolean, onToggle: (Bool
             }
             plugin.warnings.forEach {
                 Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+            }
+            if (busy && downloading != null) {
+                Text(stringResource(R.string.plugins_downloading, downloading), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+            }
+            if (update != null && !busy) {
+                TextButton(onClick = onUpdate, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
+                    Text(stringResource(R.string.plugins_update_to, versionChange(plugin, update)))
+                }
             }
         }
         if (busy) {
@@ -296,13 +334,29 @@ private fun InstalledRow(plugin: InstalledPlugin, busy: Boolean, onToggle: (Bool
     }
 }
 
+/** "1.0.0 → 1.1.0", or "1.0.0 (changed)" when the content changed under the same version. */
 @Composable
-private fun InstallingRow(name: String) {
+private fun versionChange(plugin: InstalledPlugin, update: PluginPreview): String {
+    val from = plugin.manifest.pluginVersion
+    val to = update.manifest.pluginVersion
+    return when {
+        from != to -> "$from → $to"
+        update.sha256 == plugin.sha256 -> to
+        else -> stringResource(R.string.plugins_same_version_changed, to)
+    }
+}
+
+@Composable
+private fun InstallingRow(name: String, downloading: String?) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Default.Extension, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
             Text(name, style = MaterialTheme.typography.bodyLarge)
-            Text(stringResource(R.string.plugins_installing_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                if (downloading != null) stringResource(R.string.plugins_downloading, downloading) else stringResource(R.string.plugins_installing_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
         CircularProgressIndicator(Modifier.padding(8.dp), strokeWidth = 2.dp)
     }
@@ -328,13 +382,29 @@ private fun CatalogRow(entry: CatalogEntry, installed: Boolean, installing: Bool
 }
 
 @Composable
-private fun PreviewDialog(preview: PluginPreview, busy: Boolean, onDismiss: () -> Unit, onOpenEnv: () -> Unit, onInstall: (Boolean) -> Unit) {
+private fun PreviewDialog(
+    preview: PluginPreview,
+    updateFrom: InstalledPlugin?,
+    busy: Boolean,
+    onDismiss: () -> Unit,
+    onOpenEnv: () -> Unit,
+    onInstall: (Boolean) -> Unit,
+) {
     val manifest = preview.manifest
     val p = preview.permissions
-    var enableHooks by rememberSaveable { mutableStateOf(false) }
+    // An update keeps the user's choice about hooks.
+    var enableHooks by rememberSaveable { mutableStateOf(updateFrom?.hooksEnabled ?: false) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("${manifest.name} ${manifest.pluginVersion}") },
+        title = {
+            Text(
+                if (updateFrom != null) {
+                    stringResource(R.string.plugins_update_title, manifest.name, versionChange(updateFrom, preview))
+                } else {
+                    "${manifest.name} ${manifest.pluginVersion}"
+                },
+            )
+        },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (manifest.description.isNotBlank()) Text(manifest.description, style = MaterialTheme.typography.bodyMedium)
@@ -367,7 +437,16 @@ private fun PreviewDialog(preview: PluginPreview, busy: Boolean, onDismiss: () -
         },
         confirmButton = {
             TextButton(enabled = !busy, onClick = { onInstall(enableHooks) }) {
-                Text(stringResource(if (busy) R.string.plugins_badge_installing else R.string.plugins_install))
+                Text(
+                    stringResource(
+                        when {
+                            busy -> R.string.plugins_badge_installing
+                            updateFrom != null -> R.string.plugins_update
+                            else -> R.string.plugins_install
+                        },
+                    ),
+                )
+
             }
         },
 

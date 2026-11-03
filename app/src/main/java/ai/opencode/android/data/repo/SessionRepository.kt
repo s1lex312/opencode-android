@@ -1,6 +1,7 @@
 package ai.opencode.android.data.repo
 
 import ai.opencode.android.data.cache.SessionCache
+import ai.opencode.android.data.mcp.McpMonitor
 import ai.opencode.android.data.model.AgentDetail
 import ai.opencode.android.data.model.AgentOption
 import ai.opencode.android.data.model.ChatMessage
@@ -25,6 +26,7 @@ import kotlinx.serialization.json.JsonObject
 class SessionRepository(
     private val connection: ServerConnectionManager,
     private val cache: SessionCache,
+    private val mcpMonitor: McpMonitor = McpMonitor(),
 ) {
 
     suspend fun loadSessions(): ApiResult<List<ServerSession>> {
@@ -103,13 +105,18 @@ class SessionRepository(
 
     suspend fun findPaths(query: String): ApiResult<List<MentionCandidate>> = call { findPaths(query) }
 
-    suspend fun mcpServers(): ApiResult<List<McpServerInfo>> = call { mcpServers() }
+    suspend fun mcpServers(): ApiResult<List<McpServerInfo>> =
+        call { mcpServers() }.also { if (it is ApiResult.Ok) mcpMonitor.observe(it.value) }
 
-    suspend fun mcpSave(name: String, config: McpConfig): ApiResult<Unit> = call { mcpSave(name, config) }
+    /** Saving an enabled server connects it, so it is timed like a connect. */
+    suspend fun mcpSave(name: String, config: McpConfig): ApiResult<Unit> =
+        if (config.enabled) mcpMonitor.timed(name, { call { mcpSave(name, config) } }, ::errorOf) else call { mcpSave(name, config) }
 
     suspend fun mcpRemove(name: String): ApiResult<Boolean> = call { mcpRemove(name) }
 
-    suspend fun mcpConnect(name: String): ApiResult<Unit> = call { mcpConnect(name) }
+    suspend fun mcpConnect(name: String): ApiResult<Unit> = mcpMonitor.timed(name, { call { mcpConnect(name) } }, ::errorOf)
+
+    private fun errorOf(result: ApiResult<*>): String? = (result as? ApiResult.Err)?.message
 
     suspend fun mcpDisconnect(name: String): ApiResult<Unit> = call { mcpDisconnect(name) }
 

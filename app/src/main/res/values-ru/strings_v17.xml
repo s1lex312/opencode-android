@@ -294,7 +294,7 @@
     <string name="config_format_failed">Сначала исправьте синтаксис</string>
     <string name="config_history">Предыдущие версии</string>
     <string name="config_history_empty">Сохранённых версий пока нет</string>
-    <string name="config_history_hint">Версия откроется в редакторе; сохраните, чтобы откатиться на неё.</string>
+    <string name="config_history_hint">Конфиг до каждого изменения: ваши сохранения здесь, правки самого приложения и перезаписи сервером или агентом. Версия откроется в редакторе; сохраните, чтобы откатиться на неё.</string>
     <string name="config_history_open">Открыть</string>
     <string name="config_history_loaded">Старая версия загружена; сохраните, чтобы применить</string>
     <string name="config_save">Сохранить</string>

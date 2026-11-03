@@ -111,7 +111,8 @@ class AppContainer(context: Context) {
     /** True when this APK ships and can read `assets/local-env.tar.gz`. */
     val hasEmbeddedBundle: Boolean get() = embeddedBundleState.isEmbedded
 
-    private val downloadClient by lazy { EnvConfig.downloadClient() }
+    /** Plain HTTPS client (downloads, catalogues, provider probes) honouring the app proxy setting. */
+    val downloadClient: okhttp3.OkHttpClient by lazy { EnvConfig.downloadClient() }
 
     val provisioner: EnvProvisioner by lazy {
         EnvProvisioner(
@@ -128,7 +129,7 @@ class AppContainer(context: Context) {
     val sessionCache: SessionCache by lazy { SessionCache(appContext) }
 
     val sessionRepository: SessionRepository by lazy {
-        SessionRepository(connectionManager, sessionCache)
+        SessionRepository(connectionManager, sessionCache, mcpMonitor)
     }
 
     /** AI providers configured on the connected opencode server (API keys, OAuth, custom endpoints). */
@@ -151,7 +152,20 @@ class AppContainer(context: Context) {
     }
 
     /** The in-app server's global opencode config, for edits the HTTP API cannot express. */
-    val localConfigFile: LocalConfigFile by lazy { LocalConfigFile(envPaths) }
+    /** Status changes, connect times and last errors of MCP servers since the app started. */
+    val mcpMonitor: ai.opencode.android.data.mcp.McpMonitor by lazy { ai.opencode.android.data.mcp.McpMonitor() }
+
+    val localConfigFile: LocalConfigFile by lazy { LocalConfigFile(envPaths, configHistory) }
+
+    /** Previous versions of the in-app server's config, one per change, newest first. */
+    val configHistory: ai.opencode.android.data.config.ConfigHistory by lazy {
+        ai.opencode.android.data.config.ConfigHistory(java.io.File(appContext.filesDir, "config-history"))
+    }
+
+    /** Files every change of the in-app server's config into [configHistory], whoever made it. */
+    val configWatcher: ai.opencode.android.data.config.ConfigWatcher by lazy {
+        ai.opencode.android.data.config.ConfigWatcher({ localConfigFile.dir }, configHistory, java.io.File(appContext.filesDir, "config-watch"))
+    }
 
     /** Android tools MCP server and its registration in opencode. */
     val phoneAccess: PhoneAccessManager by lazy {
@@ -229,9 +243,16 @@ class AppContainer(context: Context) {
 
     /** Declarative plugins: MCP servers, agents, commands, prompts, snippets and hooks from a manifest. */
     val plugins: ai.opencode.android.plugins.PluginManager by lazy {
-        ai.opencode.android.plugins.PluginManager(appContext, downloadClient, settingsRepository, sessionRepository, workbench, localConfigFile) {
-            restartLocalServerService()
-        }
+        ai.opencode.android.plugins.PluginManager(
+            appContext,
+            downloadClient,
+            settingsRepository,
+            sessionRepository,
+            workbench,
+            localConfigFile,
+            restartServer = { restartLocalServerService() },
+            prepareMcp = { commands, onServer -> ai.opencode.android.data.mcp.McpWarmup.prepare(remoteExec, commands, onServer) },
+        )
     }
 
     /** Prompts typed while the server was unreachable, per chat, kept on disk. */
@@ -284,6 +305,7 @@ class AppContainer(context: Context) {
         hookRunner.start()
         backgroundTasks.start()
         configBackup.start()
+        appScope.launch(kotlinx.coroutines.Dispatchers.IO) { runCatching { configWatcher.start() } }
         appUpdater.start()
         appScope.launch {
             settingsRepository.settings.collect { storageBindEnabled = it.phone.storage }
@@ -292,6 +314,9 @@ class AppContainer(context: Context) {
         appScope.launch {
             localServerManager.state.collect { state ->
                 if (state.phase == LocalServerState.Phase.READY) {
+                    // First start after installing the environment: the config directory exists now.
+                    launch(kotlinx.coroutines.Dispatchers.IO) { runCatching { configWatcher.start() } }
+
                     runCatching {
                         opencodeUpdater.maybeAutoUpdate {
                             (sessionRepository.loadSessions() as? ApiResult.Ok)?.value?.any { it.busy } ?: true

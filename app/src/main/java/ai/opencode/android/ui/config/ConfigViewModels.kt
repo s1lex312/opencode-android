@@ -74,6 +74,8 @@ data class McpUiState(
     val connected: Boolean = false,
     /** URL the server could not open itself (MCP OAuth); the screen opens it once. */
     val pendingAuthUrl: String? = null,
+    /** History the app recorded per server: status changes, connect times, last error. */
+    val health: Map<String, ai.opencode.android.data.mcp.McpMonitor.Health> = emptyMap(),
 )
 
 class McpViewModel(private val container: AppContainer) : ViewModel() {
@@ -91,6 +93,9 @@ class McpViewModel(private val container: AppContainer) : ViewModel() {
             }
         }
         viewModelScope.launch {
+            container.mcpMonitor.health.collect { health -> _state.update { it.copy(health = health) } }
+        }
+        viewModelScope.launch {
             container.connectionManager.events.collect { event ->
                 when (event) {
                     is OpencodeEvent.McpAuthUrl -> _state.update { it.copy(pendingAuthUrl = event.url) }
@@ -99,6 +104,26 @@ class McpViewModel(private val container: AppContainer) : ViewModel() {
                 }
             }
         }
+    }
+
+    /**
+     * Re-reads the status while the screen is visible: every few seconds while a server is
+     * connecting, otherwise slowly enough to notice one that dropped.
+     */
+    suspend fun autoRefresh() {
+        while (true) {
+            val connecting = _state.value.working.isNotEmpty() ||
+                _state.value.servers.any { it.status == McpServerInfo.Status.PENDING }
+            kotlinx.coroutines.delay(if (connecting) FAST_REFRESH_MS else SLOW_REFRESH_MS)
+            if (_state.value.connected) refresh(silent = true)
+        }
+    }
+
+    /** Reconnects every enabled server that failed. */
+    fun reconnectFailed() {
+        _state.value.servers
+            .filter { it.status == McpServerInfo.Status.FAILED && it.config?.enabled != false }
+            .forEach { reconnect(it.name) }
     }
 
     fun refresh(silent: Boolean = false) {
@@ -156,11 +181,17 @@ class McpViewModel(private val container: AppContainer) : ViewModel() {
 
     fun save(name: String, config: McpConfig, previousName: String?) {
         work(name, UiText.of(R.string.mcp_saved, name)) {
+            // npx/uvx download the package on first start; doing it now keeps the connect fast.
+            if (config is McpConfig.Local && config.enabled && (previousConfig(name) as? McpConfig.Local)?.command != config.command) {
+                ai.opencode.android.data.mcp.McpWarmup.prepare(container.remoteExec, mapOf(name to config.command))
+            }
             val result = repository.mcpSave(name, config)
             if (result is ApiResult.Ok && previousName != null && previousName != name) removeQuietly(previousName)
             result
         }
     }
+
+    private fun previousConfig(name: String): McpConfig? = _state.value.servers.firstOrNull { it.name == name }?.config
 
     fun remove(name: String) {
         work(name, null) {
@@ -168,6 +199,7 @@ class McpViewModel(private val container: AppContainer) : ViewModel() {
                 is ApiResult.Err -> result
                 is ApiResult.Ok -> {
                     val removed = result.value || removeFromLocalFile(name)
+                    if (removed) container.mcpMonitor.forget(name)
                     _state.update { it.copy(message = UiText.of(if (removed) R.string.mcp_removed else R.string.mcp_disabled_instead, name)) }
                     ApiResult.Ok(Unit)
                 }
@@ -195,6 +227,9 @@ class McpViewModel(private val container: AppContainer) : ViewModel() {
     fun logout(name: String) = work(name, UiText.of(R.string.mcp_logged_out, name)) { repository.mcpLogout(name) }
 
     companion object {
+        private const val FAST_REFRESH_MS = 3_000L
+        private const val SLOW_REFRESH_MS = 15_000L
+
         fun factory(container: AppContainer): ViewModelProvider.Factory = viewModelFactory {
             initializer { McpViewModel(container) }
         }

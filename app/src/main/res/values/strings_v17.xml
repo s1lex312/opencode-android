@@ -294,7 +294,7 @@
     <string name="config_format_failed">Fix the syntax first</string>
     <string name="config_history">Previous versions</string>
     <string name="config_history_empty">No saved versions yet</string>
-    <string name="config_history_hint">A version opens in the editor; save to roll back to it.</string>
+    <string name="config_history_hint">The config as it was before each change: your saves here, the app\'s own edits and rewrites by the server or the agent. A version opens in the editor; save to roll back to it.</string>
     <string name="config_history_open">Open</string>
     <string name="config_history_loaded">Old version loaded; save to apply it</string>
     <string name="config_save">Save</string>
