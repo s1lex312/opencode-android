@@ -20,6 +20,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.util.ArrayDeque
 import java.util.concurrent.TimeUnit
 
@@ -63,10 +65,14 @@ class LocalServerManager(
     val logFilePath: String get() = logStore.path()
 
     /** Starts the server (idempotent). Never throws: failures land in [state]. */
+    @Synchronized
     fun start(settings: LocalServerSettings) {
         if (_state.value.running) return
         userStopped = false
         supervisorJob?.cancel()
+        // Mark the server as starting right away: a second caller racing in before the supervisor
+        // runs must see it and return, not cancel this supervisor and orphan its process.
+        _state.update { it.copy(phase = LocalServerState.Phase.STARTING, message = null) }
         supervisorJob = scope.launch(Dispatchers.IO) { supervise(settings) }
     }
 
@@ -151,9 +157,18 @@ class LocalServerManager(
             appendLog("WARNING: environment ABI is ${installed.abi}, arm64-v8a is expected on most devices")
         }
 
+        var current: Process? = null
         try {
             while (currentCoroutineContext().isActive) {
+                if (!freePort(port)) {
+                    fail(
+                        "Port $port is already in use by another process. Pick another port in " +
+                            "Settings → Local server, or stop the program that uses it.",
+                    )
+                    return
+                }
                 val started = launchProcess(settings, port) ?: return
+                current = started
                 val ready = awaitReady(started, port, settings)
                 if (!ready) {
                     val code = exitCodeOf(started)
@@ -213,10 +228,62 @@ class LocalServerManager(
                 delay(delayMs)
             }
         } finally {
-            destroy(process)
-            process = null
-            logPumpJob?.cancel()
+            // Only this supervisor's own process: a newer supervisor may already own [process].
+            destroy(current)
+            if (process === current) {
+                process = null
+                logPumpJob?.cancel()
+            }
         }
+    }
+
+    /**
+     * Runs before every launch, when no server of ours should be alive: kills processes orphaned by
+     * an earlier run (see [StaleProcesses]) and waits until nothing listens on [port], so the health
+     * check can only ever talk to the process just started.
+     */
+    private suspend fun freePort(port: Int): Boolean {
+        val killed = reapStale()
+        if (killed > 0) {
+            appendLog("Stopped $killed leftover process(es) from an earlier run")
+            logStore.appendNote("reaped $killed stale process(es) before launch")
+        }
+        if (!portBusy(port)) return true
+        appendLog("Port $port is busy, waiting for it to free up")
+        val deadline = System.currentTimeMillis() + PORT_FREE_TIMEOUT_MS
+        while (System.currentTimeMillis() < deadline) {
+            delay(250)
+            if (!portBusy(port)) return true
+        }
+        return false
+    }
+
+    private fun portBusy(port: Int): Boolean = runCatching {
+        Socket().use { it.connect(InetSocketAddress("127.0.0.1", port), 300) }
+        true
+    }.getOrDefault(false)
+
+    /** Kills every process of ours except the app and the server tree in [keep]. Returns the count. */
+    private suspend fun reapStale(keep: Set<Int> = emptySet()): Int {
+        val victims = StaleProcesses.victims(
+            all = StaleProcesses.scan(),
+            selfPid = android.os.Process.myPid(),
+            selfUid = android.os.Process.myUid(),
+            packageName = context.packageName,
+            keep = keep,
+        )
+        if (victims.isEmpty()) return 0
+        // proot first, the polite way: SIGQUIT makes it kill all of its tracees and exit.
+        victims.filter { it.isProot }.forEach { sendSignal(it.pid, android.os.Process.SIGNAL_QUIT) }
+        if (victims.any { it.isProot }) delay(1_000)
+        val alive = StaleProcesses.scan().map { it.pid }.toSet()
+        victims.filter { it.pid in alive }.forEach { sendSignal(it.pid, android.os.Process.SIGNAL_KILL) }
+        Log.i(TAG, "reaped ${victims.size} stale process(es)")
+        return victims.size
+    }
+
+    private fun sendSignal(pid: Int, signal: Int) {
+        runCatching { android.os.Process.sendSignal(pid, signal) }
     }
 
     private fun launchProcess(settings: LocalServerSettings, port: Int): Process? {
@@ -393,11 +460,20 @@ class LocalServerManager(
 
     private fun snapshotLogs(): List<String> = synchronized(logBuffer) { logBuffer.toList() }
 
+    /**
+     * Stops proot together with everything it runs. proot ignores SIGTERM ([Process.destroy]), and
+     * SIGKILL detaches its tracees instead of killing them, which leaves `opencode serve` running
+     * and holding the port. SIGQUIT is proot's own "kill all tracees, then exit".
+     */
     private fun destroy(started: Process?) {
         if (started == null) return
         runCatching {
-            started.destroy()
-            if (!started.waitFor(5, TimeUnit.SECONDS)) started.destroyForcibly()
+            val pid = pidOf(started)
+            if (pid != null) sendSignal(pid, android.os.Process.SIGNAL_QUIT) else started.destroy()
+            if (!started.waitFor(5, TimeUnit.SECONDS)) {
+                started.destroyForcibly()
+                started.waitFor(2, TimeUnit.SECONDS)
+            }
         }
     }
 
@@ -443,5 +519,6 @@ class LocalServerManager(
         const val MAX_HEALTH_FAILURES = 3
         const val DEFAULT_PORT = 4096
         const val DEFAULT_COMMAND = "opencode serve --hostname 127.0.0.1 --port {port}"
+        const val PORT_FREE_TIMEOUT_MS = 8_000L
     }
 }
